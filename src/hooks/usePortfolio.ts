@@ -162,7 +162,12 @@ export function usePortfolio() {
   }, [recordNetWorthSnapshot]);
 
   const updateCash = useCallback(async (newCash: Partial<CashSettings>) => {
-    const dbUpdates: Record<string, number> = {};
+    const dbUpdates: {
+      liquid_cash?: number;
+      vault_cash?: number;
+      pf_balance?: number;
+      credit_card_debt?: number;
+    } = {};
     if (newCash.liquidCash !== undefined) dbUpdates.liquid_cash = newCash.liquidCash;
     if (newCash.vaultCash !== undefined) dbUpdates.vault_cash = newCash.vaultCash;
     if (newCash.pfBalance !== undefined) dbUpdates.pf_balance = newCash.pfBalance;
