@@ -1,0 +1,1 @@
+ALTER TABLE public.goal_allocations ADD COLUMN IF NOT EXISTS quantity numeric;

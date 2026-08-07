@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS public.benchmark_history;
