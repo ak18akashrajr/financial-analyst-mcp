@@ -276,7 +276,17 @@ function GoalTrackContent() {
     value: number,
   ) {
     if (value <= 0) return;
-    const payload =
+    // Explicitly typed to match the goal_allocations Insert shape as one flat
+    // type — without this, TS infers a union of two distinct object-literal
+    // shapes from the ternary, which Supabase's excess-property-checking
+    // insert() overload can't reconcile against a single table row shape.
+    const payload: {
+      goal_id: string;
+      source_type: 'symbol' | 'liquid_cash' | 'vault_cash';
+      symbol: string | null;
+      amount: number;
+      quantity: number | null;
+    } =
       sourceType === 'symbol'
         ? { goal_id: goalId, source_type: sourceType, symbol, amount: 0, quantity: value }
         : { goal_id: goalId, source_type: sourceType, symbol: null, amount: value, quantity: null };
