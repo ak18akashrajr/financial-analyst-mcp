@@ -1,5 +1,20 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
+// Portfolio AI agent backend.
+//
+// Provider selection: Claude Sonnet 5 (Anthropic) if ANTHROPIC_API_KEY is
+// set, otherwise Groq with a two-tier gpt-oss-20b/120b heuristic router for
+// token optimization (see _shared/router.ts). Switching providers later is
+// an env-var change only — no code changes needed.
+//
+// Tools: no more prose-pretend tools or single mega context-dump. Every
+// portfolio fact is fetched on demand through a real MCP tools/call request
+// to portfolio-mcp-server (see docs/llm-mcp-agent-plan.md).
+import { McpClient } from "../_shared/mcp-client.ts";
+import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, isComplexQuery, shouldEscalate } from "../_shared/router.ts";
+import { findTool } from "../_shared/mcp-tools.ts";
+import { GroqProvider } from "../_shared/providers/groq.ts";
+import { AnthropicProvider } from "../_shared/providers/anthropic.ts";
+import type { LlmProvider, ToolResultForProvider } from "../_shared/providers/types.ts";
+import { chunkText, createSseStream } from "../_shared/sse.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,243 +22,125 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-function buildPortfolioContext(holdings: any[], totalInvested: number, totalCurrentValue: number, totalPnl: number, liquidCash: number, vaultCash: number, totalPortfolioValue: number, geoExposure: Record<string, number>, catExposure: Record<string, number>, concentrationRisk: any[], top5Weight: number, topGainers: any[], topLosers: any[], recentTxns: any[]) {
-  const formatExposure = (map: Record<string, number>) =>
-    Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .map(([label, value]) => ({
-        label,
-        value: Math.round(value),
-        percent: totalCurrentValue > 0 ? ((value / totalCurrentValue) * 100).toFixed(1) : "0",
-      }));
+const CLAUDE_MODEL = "claude-sonnet-5";
+const MAX_TOOL_TURNS = 5;
 
-  return `
-## LIVE PORTFOLIO DATA (as of ${new Date().toISOString()})
+const SYSTEM_PROMPT = `You are Portfolio Intelligence AI, an expert portfolio analyst with real tool access to the user's live portfolio data via the Model Context Protocol (MCP).
 
-### Summary
-- Total Invested: ₹${totalInvested.toLocaleString("en-IN")}
-- Current Market Value: ₹${totalCurrentValue.toLocaleString("en-IN")}
-- Total P&L: ₹${totalPnl.toLocaleString("en-IN")} (${totalInvested !== 0 ? ((totalPnl / totalInvested) * 100).toFixed(2) : 0}%)
-- Liquid Cash: ₹${liquidCash.toLocaleString("en-IN")}
-- Vault Cash: ₹${vaultCash.toLocaleString("en-IN")}
-- Total Portfolio Value (incl. cash): ₹${totalPortfolioValue.toLocaleString("en-IN")}
+You do not have any portfolio data memorized — call the provided tools to get real, current numbers before answering. Never guess or fabricate financial figures.
 
-### Holdings (${holdings.length} active positions)
-${holdings.map(h => `- ${h.symbol}: ${h.quantity} units @ avg ₹${h.avgPrice.toFixed(2)}, CMP ₹${h.currentPrice}, Value ₹${Math.round(h.currentValue).toLocaleString("en-IN")}, P&L ₹${Math.round(h.pnl).toLocaleString("en-IN")} (${h.pnlPercent.toFixed(1)}%) [${h.geography}/${h.category}]`).join("\n")}
+Guidelines:
+- Call whichever tools are needed to answer accurately; you may call more than one tool per question.
+- Format currency in Indian style (₹, Lakhs, Crores) where the data is in INR.
+- Be specific: name actual holdings and percentages from tool results, never generic advice.
+- Use clear formatting — headers, bullet points, bold for key figures.
+- Be conversational but data-driven, and end with a recommendation when appropriate.
+- The user's message may contain typos or informal phrasing — interpret their intent rather than asking for clarification on minor spelling issues.`;
 
-### Exposure by Geography
-${formatExposure(geoExposure).map(e => `- ${e.label}: ₹${e.value.toLocaleString("en-IN")} (${e.percent}%)`).join("\n")}
-
-### Exposure by Category
-${formatExposure(catExposure).map(e => `- ${e.label}: ₹${e.value.toLocaleString("en-IN")} (${e.percent}%)`).join("\n")}
-
-### Concentration Risk (Top 5)
-${concentrationRisk.map(c => `- ${c.symbol}: ${c.weight}% (₹${c.value.toLocaleString("en-IN")})`).join("\n")}
-- Top 5 combined: ${top5Weight.toFixed(1)}%
-
-### Top Gainers
-${topGainers.map(h => `- ${h.symbol}: +${h.pnlPercent.toFixed(1)}% (₹${Math.round(h.pnl).toLocaleString("en-IN")})`).join("\n")}
-
-### Top Losers
-${topLosers.length > 0 ? topLosers.map(h => `- ${h.symbol}: ${h.pnlPercent.toFixed(1)}% (₹${Math.round(h.pnl).toLocaleString("en-IN")})`).join("\n") : "None"}
-
-### Recent Transactions
-${recentTxns.map(t => `- ${t.date}: ${t.type} ${t.quantity} × ${t.symbol} @ ₹${t.price}`).join("\n")}
-`;
+interface ChatRequestMessage {
+  role: "user" | "assistant";
+  content: string;
 }
 
-const SYSTEM_PROMPT_TEMPLATE = (portfolioContext: string) => `You are Portfolio Intelligence AI — an expert portfolio analyst connected to the user's live portfolio data via MCP (Model Context Protocol).
+function buildProvider(): { provider: LlmProvider; model: string; attribution: string } {
+  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
+  if (anthropicKey) {
+    return { provider: new AnthropicProvider(anthropicKey), model: CLAUDE_MODEL, attribution: "Claude Sonnet 5" };
+  }
 
-You have REAL-TIME access to the user's actual portfolio. All data below is live — not sample data.
+  const groqKey = Deno.env.get("GROQ_API_KEY");
+  if (!groqKey) throw new Error("No LLM API keys configured (set GROQ_API_KEY or ANTHROPIC_API_KEY)");
+  return { provider: new GroqProvider(groqKey), model: "", attribution: "" }; // model/attribution set per-request by the router
+}
 
-${portfolioContext}
-
-## Your Capabilities (Tools Available)
-1. **get_portfolio_summary** — High-level snapshot of the portfolio
-2. **list_holdings** — All current positions with details
-3. **get_exposure_by_sector / geography / category** — Breakdown analysis
-4. **get_concentration_risk** — Top holdings by weight, flags dangerous concentration
-5. **get_risk_metrics** — Beta, volatility estimates based on holdings
-6. **run_stress_test** — Simulate market crashes (-20%, -35%, -50%) on actual holdings
-7. **check_limit_breaches** — Flag overweight sectors or concentrated positions
-8. **compare_to_benchmark** — Compare against NIFTY 50 performance
-9. **get_exposure_drift** — Track how weights changed over time
-10. **ask_portfolio_intelligence** — Natural language Q&A grounded in real data
-
-## Response Guidelines
-- Always use the REAL data provided above. Never hallucinate numbers.
-- Format currency in Indian style (₹, Lakhs, Crores where appropriate).
-- When discussing risk, be specific — name the stocks and percentages.
-- Use clear formatting with headers, bullet points, and bold text for key figures.
-- If asked to run a stress test, simulate it using the actual holdings and their weights.
-- For concentration risk, flag any single holding above 15% or top-5 above 50%.
-- Be conversational but data-driven. You are the user's personal risk analyst.
-- When showing tool calls, mention which "tool" you're using (e.g., "Let me run get_concentration_risk...").
-- Keep responses focused and actionable. End with a recommendation when appropriate.`;
-
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { messages } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY");
-
-    if (!LOVABLE_API_KEY && !GROQ_API_KEY) {
-      throw new Error("No AI API keys configured");
+    const { messages } = (await req.json()) as { messages: ChatRequestMessage[] };
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new Error("Request must include a non-empty `messages` array");
     }
 
-    // Fetch portfolio data
+    const history = messages.slice(0, -1);
+    const latest = messages[messages.length - 1];
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const sb = createClient(supabaseUrl, supabaseKey);
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const mcpClient = new McpClient(`${supabaseUrl}/functions/v1/portfolio-mcp-server`, `Bearer ${serviceRoleKey}`);
+    await mcpClient.initialize();
+    const tools = await mcpClient.listTools();
 
-    const [txnRes, cashRes, priceRes, metaRes] = await Promise.all([
-      sb.from("transactions").select("*").order("date", { ascending: false }),
-      sb.from("cash_settings").select("*").limit(1).single(),
-      sb.from("current_prices").select("*"),
-      sb.from("symbol_metadata").select("*"),
-    ]);
+    const { provider, model: fixedModel, attribution: fixedAttribution } = buildProvider();
+    const usingAnthropic = fixedModel === CLAUDE_MODEL;
 
-    const txns = txnRes.data || [];
-    const prices: Record<string, number> = {};
-    for (const p of priceRes.data || []) prices[p.symbol] = Number(p.price);
-    const meta: Record<string, { geography: string; sector: string }> = {};
-    for (const m of metaRes.data || []) meta[m.symbol] = { geography: m.geography, sector: m.sector };
-
-    const bySymbol: Record<string, { qty: number; invested: number }> = {};
-    for (const t of txns) {
-      if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { qty: 0, invested: 0 };
-      const entry = bySymbol[t.symbol];
-      if (t.type === "BUY") {
-        entry.qty += Number(t.quantity);
-        entry.invested += Number(t.quantity) * Number(t.price);
-      } else {
-        entry.qty -= Number(t.quantity);
-        entry.invested -= Number(t.quantity) * Number(t.price);
-      }
+    // Groq two-tier routing: pick the model up front from the heuristic, escalate mid-loop if needed.
+    let model = fixedModel;
+    let attribution = fixedAttribution;
+    let escalated = false;
+    if (!usingAnthropic) {
+      model = isComplexQuery(latest.content) ? GROQ_COMPLEX_MODEL : GROQ_SIMPLE_MODEL;
+      attribution = model === GROQ_COMPLEX_MODEL ? "GPT-OSS 120B via Groq" : "GPT-OSS 20B via Groq";
     }
 
-    const holdings = Object.entries(bySymbol)
-      .filter(([_, h]) => h.qty > 0)
-      .map(([symbol, h]) => {
-        const cp = prices[symbol] || 0;
-        const currentValue = cp * h.qty;
-        const pnl = currentValue - h.invested;
-        const pnlPct = h.invested !== 0 ? (pnl / h.invested) * 100 : 0;
-        const m = meta[symbol];
-        return { symbol, quantity: h.qty, avgPrice: h.invested / h.qty, currentPrice: cp, invested: h.invested, currentValue, pnl, pnlPercent: pnlPct, geography: m?.geography || "Untagged", category: m?.sector || "Untagged" };
-      });
+    provider.loadHistory(history);
+    provider.addUserMessage(latest.content);
 
-    const totalInvested = holdings.reduce((s, h) => s + h.invested, 0);
-    const totalCurrentValue = holdings.reduce((s, h) => s + h.currentValue, 0);
-    const totalPnl = totalCurrentValue - totalInvested;
-    const liquidCash = Number(cashRes.data?.liquid_cash || 0);
-    const vaultCash = Number(cashRes.data?.vault_cash || 0);
-    const totalPortfolioValue = totalCurrentValue + liquidCash + vaultCash;
+    const stream = createSseStream(async (send) => {
+      let toolCallCount = 0;
+      let invokedComplexTool = false;
+      let finalText = "";
 
-    const geoExposure: Record<string, number> = {};
-    const catExposure: Record<string, number> = {};
-    for (const h of holdings) {
-      geoExposure[h.geography] = (geoExposure[h.geography] || 0) + h.currentValue;
-      catExposure[h.category] = (catExposure[h.category] || 0) + h.currentValue;
-    }
+      for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
+        const result = await provider.runTurn(model, SYSTEM_PROMPT, tools);
 
-    const sorted = [...holdings].sort((a, b) => b.pnlPercent - a.pnlPercent);
-    const topGainers = sorted.slice(0, 3);
-    const topLosers = sorted.filter(h => h.pnlPercent < 0).slice(-3).reverse();
-
-    const concentrationRisk = [...holdings]
-      .sort((a, b) => b.currentValue - a.currentValue)
-      .slice(0, 5)
-      .map(h => ({
-        symbol: h.symbol,
-        weight: totalCurrentValue > 0 ? ((h.currentValue / totalCurrentValue) * 100).toFixed(1) : "0",
-        value: Math.round(h.currentValue),
-      }));
-    const top5Weight = concentrationRisk.reduce((s, c) => s + parseFloat(c.weight), 0);
-
-    const recentTxns = txns.slice(0, 10).map(t => ({
-      symbol: t.symbol, type: t.type, quantity: t.quantity, price: t.price, date: t.date,
-    }));
-
-    const portfolioContext = buildPortfolioContext(holdings, totalInvested, totalCurrentValue, totalPnl, liquidCash, vaultCash, totalPortfolioValue, geoExposure, catExposure, concentrationRisk, top5Weight, topGainers, topLosers, recentTxns);
-    const systemPrompt = SYSTEM_PROMPT_TEMPLATE(portfolioContext);
-
-    // --- Primary: Lovable AI Gateway (Gemini 2.5 Flash) ---
-    if (LOVABLE_API_KEY) {
-      try {
-        const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [{ role: "system", content: systemPrompt }, ...messages],
-            stream: true,
-          }),
-        });
-
-        if (response.ok) {
-          // Inject model tag into the stream
-          const modelTag = "\n\n---\n*🤖 Response by **Gemini 2.5 Flash** (Primary)*\n";
-          const taggedStream = injectModelTag(response.body!, modelTag);
-          return new Response(taggedStream, {
-            headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-          });
+        // Explicit `=== true` (not a bare truthy check) so TS reliably narrows
+        // this boolean-discriminated union in the `else` path below.
+        if (result.done === true) {
+          finalText = result.text;
+          break;
         }
 
-        // If 429/402, fall through to Groq
-        if (response.status === 429 || response.status === 402) {
-          console.log(`Primary model returned ${response.status}, falling back to Groq...`);
-        } else {
-          const t = await response.text();
-          console.error("AI gateway error:", response.status, t);
-          // Still try fallback
+        // Groq-only escalation safety net: if the cheap tier needs too many tool
+        // calls or touches a "complex" tool, restart this turn on the bigger model.
+        if (!usingAnthropic && model === GROQ_SIMPLE_MODEL) {
+          toolCallCount += result.calls.length;
+          invokedComplexTool ||= result.calls.some((c) => findTool(c.name)?.complexity === "complex");
+          if (shouldEscalate(toolCallCount, invokedComplexTool) && !escalated) {
+            escalated = true;
+            model = GROQ_COMPLEX_MODEL;
+            attribution = "GPT-OSS 120B via Groq (escalated)";
+          }
         }
-      } catch (err) {
-        console.error("Primary model call failed:", err);
-      }
-    }
 
-    // --- Fallback: Groq (LLaMA 3.1 8B Instant) ---
-    if (GROQ_API_KEY) {
-      console.log("Using Groq fallback (llama-3.1-8b-instant)");
-      const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "llama-3.1-8b-instant",
-          messages: [{ role: "system", content: systemPrompt }, ...messages],
-          stream: true,
-        }),
-      });
+        const toolResults: ToolResultForProvider[] = [];
+        for (const call of result.calls) {
+          send("tool_call", { name: call.name, args: call.arguments });
+          try {
+            const toolResult = await mcpClient.callTool(call.name, call.arguments);
+            toolResults.push({ id: call.id, name: call.name, result: toolResult });
+          } catch (err) {
+            toolResults.push({
+              id: call.id,
+              name: call.name,
+              result: { error: err instanceof Error ? err.message : "Tool call failed" },
+            });
+          }
+        }
+        provider.appendToolResults(toolResults);
 
-      if (!groqResponse.ok) {
-        const t = await groqResponse.text();
-        console.error("Groq error:", groqResponse.status, t);
-        return new Response(JSON.stringify({ error: "Both primary and fallback AI failed." }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        if (turn === MAX_TOOL_TURNS - 1) {
+          throw new Error("Tool loop exceeded the maximum number of turns");
+        }
       }
 
-      const modelTag = "\n\n---\n*🦙 Response by **LLaMA 3.1 8B** via Groq (Fallback)*\n";
-      const taggedStream = injectModelTag(groqResponse.body!, modelTag);
-      return new Response(taggedStream, {
-        headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-      });
-    }
-
-    return new Response(JSON.stringify({ error: "All AI providers unavailable." }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      for (const chunk of chunkText(finalText)) {
+        send("delta", { text: chunk });
+      }
+      send("done", { attribution });
     });
+
+    return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
   } catch (e) {
     console.error("portfolio-ai error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
@@ -252,58 +149,3 @@ serve(async (req) => {
     });
   }
 });
-
-/**
- * Injects a model attribution tag as the final SSE data chunk before [DONE].
- */
-function injectModelTag(body: ReadableStream<Uint8Array>, modelTag: string): ReadableStream<Uint8Array> {
-  const reader = body.getReader();
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  return new ReadableStream({
-    async pull(controller) {
-      const { done, value } = await reader.read();
-      if (done) {
-        // Flush remaining buffer
-        if (buffer.trim()) {
-          controller.enqueue(encoder.encode(buffer));
-        }
-        controller.close();
-        return;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-
-      // Check if [DONE] is in the buffer
-      const doneIdx = buffer.indexOf("data: [DONE]");
-      if (doneIdx !== -1) {
-        // Send everything before [DONE]
-        const before = buffer.slice(0, doneIdx);
-        if (before) controller.enqueue(encoder.encode(before));
-
-        // Inject model tag as a proper SSE chunk
-        const tagChunk = `data: ${JSON.stringify({
-          choices: [{ delta: { content: modelTag }, index: 0 }],
-        })}\n\n`;
-        controller.enqueue(encoder.encode(tagChunk));
-
-        // Send [DONE] and anything after
-        const rest = buffer.slice(doneIdx);
-        controller.enqueue(encoder.encode(rest));
-        buffer = "";
-      } else {
-        // Forward data but keep last 50 chars in buffer to catch split [DONE]
-        if (buffer.length > 50) {
-          const toSend = buffer.slice(0, buffer.length - 50);
-          buffer = buffer.slice(buffer.length - 50);
-          controller.enqueue(encoder.encode(toSend));
-        }
-      }
-    },
-    cancel() {
-      reader.cancel();
-    },
-  });
-}
