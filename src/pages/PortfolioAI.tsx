@@ -20,15 +20,26 @@ const PRESET_QUESTIONS = [
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portfolio-ai`;
 
+/**
+ * Parses portfolio-ai's normalized SSE format — the backend owns the whole
+ * generation (real MCP tool-use loop) and emits exactly three event types
+ * regardless of which provider/model actually served the request:
+ *   event: tool_call   { name, args }   — a real MCP tool is being invoked
+ *   event: delta        { text }         — a chunk of the final answer
+ *   event: done          { attribution } — stream finished
+ *   event: error          { message }    — stream finished with an error
+ */
 async function streamChat({
   messages,
   onDelta,
+  onToolCall,
   onDone,
   onError,
 }: {
   messages: Msg[];
   onDelta: (text: string) => void;
-  onDone: () => void;
+  onToolCall: (name: string) => void;
+  onDone: (attribution?: string) => void;
   onError: (msg: string) => void;
 }) {
   const resp = await fetch(CHAT_URL, {
@@ -41,62 +52,54 @@ async function streamChat({
   });
 
   if (resp.status === 429) { onError('Rate limited — please wait a moment and try again.'); return; }
-  if (resp.status === 402) { onError('Credits exhausted — please add funds.'); return; }
-  if (!resp.ok || !resp.body) { onError('Failed to connect to AI.'); return; }
+  if (!resp.ok || !resp.body) {
+    const body = await resp.json().catch(() => null);
+    onError(body?.error || 'Failed to connect to AI.');
+    return;
+  }
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
-  let done = false;
 
-  while (!done) {
-    const { done: d, value } = await reader.read();
-    if (d) break;
+  const handleEvent = (rawEvent: string) => {
+    let eventType = 'message';
+    let dataLine = '';
+    for (const line of rawEvent.split('\n')) {
+      if (line.startsWith('event:')) eventType = line.slice(6).trim();
+      else if (line.startsWith('data:')) dataLine += line.slice(5).trim();
+    }
+    if (!dataLine) return;
+    let parsed: any;
+    try { parsed = JSON.parse(dataLine); } catch { return; }
+
+    if (eventType === 'delta') onDelta(parsed.text);
+    else if (eventType === 'tool_call') onToolCall(parsed.name);
+    else if (eventType === 'done') onDone(parsed.attribution);
+    else if (eventType === 'error') onError(parsed.message);
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
     buf += decoder.decode(value, { stream: true });
 
     let idx: number;
-    while ((idx = buf.indexOf('\n')) !== -1) {
-      let line = buf.slice(0, idx);
-      buf = buf.slice(idx + 1);
-      if (line.endsWith('\r')) line = line.slice(0, -1);
-      if (line.startsWith(':') || !line.trim()) continue;
-      if (!line.startsWith('data: ')) continue;
-      const json = line.slice(6).trim();
-      if (json === '[DONE]') { done = true; break; }
-      try {
-        const parsed = JSON.parse(json);
-        const content = parsed.choices?.[0]?.delta?.content;
-        if (content) onDelta(content);
-      } catch {
-        buf = line + '\n' + buf;
-        break;
-      }
+    while ((idx = buf.indexOf('\n\n')) !== -1) {
+      const rawEvent = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      handleEvent(rawEvent);
     }
   }
 
-  // flush
-  if (buf.trim()) {
-    for (let raw of buf.split('\n')) {
-      if (!raw) continue;
-      if (raw.endsWith('\r')) raw = raw.slice(0, -1);
-      if (!raw.startsWith('data: ')) continue;
-      const json = raw.slice(6).trim();
-      if (json === '[DONE]') continue;
-      try {
-        const parsed = JSON.parse(json);
-        const content = parsed.choices?.[0]?.delta?.content;
-        if (content) onDelta(content);
-      } catch { /* skip */ }
-    }
-  }
-
-  onDone();
+  if (buf.trim()) handleEvent(buf);
 }
 
 const PortfolioAI = () => {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [toolStatus, setToolStatus] = useState<string | null>(null);
   const chatBodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -112,9 +115,11 @@ const PortfolioAI = () => {
     setMessages(allMsgs);
     setInput('');
     setIsLoading(true);
+    setToolStatus(null);
 
     let assistantSoFar = '';
     const upsert = (chunk: string) => {
+      setToolStatus(null); // first text chunk means tool resolution is done
       assistantSoFar += chunk;
       setMessages(prev => {
         const last = prev[prev.length - 1];
@@ -125,19 +130,31 @@ const PortfolioAI = () => {
       });
     };
 
+    const finish = (attribution?: string) => {
+      if (attribution) {
+        assistantSoFar += `\n\n---\n*🤖 Response by **${attribution}***\n`;
+        setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
+      }
+      setIsLoading(false);
+      setToolStatus(null);
+    };
+
     try {
       await streamChat({
         messages: allMsgs,
         onDelta: upsert,
-        onDone: () => setIsLoading(false),
+        onToolCall: (name) => setToolStatus(name.replace(/_/g, ' ')),
+        onDone: finish,
         onError: (msg) => {
           setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }]);
           setIsLoading(false);
+          setToolStatus(null);
         },
       });
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error. Please try again.' }]);
       setIsLoading(false);
+      setToolStatus(null);
     }
   }, [messages, isLoading]);
 
@@ -275,7 +292,7 @@ const PortfolioAI = () => {
                   </div>
                   <span className="text-[10px] text-muted-foreground ml-2 flex items-center gap-1">
                     <Zap className="w-3 h-3" />
-                    Querying portfolio data via MCP...
+                    {toolStatus ? `Calling ${toolStatus} via MCP...` : 'Thinking...'}
                   </span>
                 </div>
               </div>
