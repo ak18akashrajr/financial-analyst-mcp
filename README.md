@@ -15,7 +15,7 @@ A premium, interactive web application built with **React**, **TypeScript**, **T
     *   **Seasonality Heatmap:** Monthly returns visualizer to spot historical trends.
 *   **🎯 Goal Planning & Projections:** Track financial target goals and assign allocations from your active portfolio.
 *   **💸 Taxes Dashboard:** Automatically calculate Short-Term Capital Gains (STCG) and Long-Term Capital Gains (LTCG) based on tax rules and transaction dates.
-*   **🤖 Portfolio AI Chatbot:** Talk directly with a smart financial assistant powered by **Gemini 2.5 Flash** and **LLaMA 3.1** via Supabase Edge Functions with context about your live holdings.
+*   **🤖 Portfolio AI Chatbot:** Talk directly with a smart financial assistant backed by a real **Model Context Protocol (MCP) server** exposing live portfolio tools (holdings, exposure, risk metrics, stress tests, benchmark comparisons). Runs on **Groq (`gpt-oss-20b`/`gpt-oss-120b`, two-tier routed for cost)** by default, or **Claude Sonnet 5** automatically if an Anthropic key is configured — see [`docs/llm-mcp-agent-plan.md`](docs/llm-mcp-agent-plan.md) for the architecture.
 *   **📝 Quarterly/Annual Reports:** Generate summaries, performance commentary, and outlooks.
 
 ---
@@ -33,9 +33,15 @@ A premium, interactive web application built with **React**, **TypeScript**, **T
 ## 📂 Project Structure
 
 ```text
+├── docs/
+│   └── llm-mcp-agent-plan.md  # Portfolio AI architecture: real MCP server + multi-provider agent
 ├── supabase/
 │   ├── migrations/      # SQL database schema and RLS policies
-│   └── functions/       # Deno Edge Functions (fetch-prices, portfolio-ai, etc.)
+│   └── functions/
+│       ├── _shared/            # Portfolio data/calculations, MCP tool registry, LLM provider adapters
+│       ├── portfolio-mcp-server/  # Real MCP (JSON-RPC) server exposing portfolio tools
+│       ├── portfolio-ai/       # Agent backend: tool-use loop against the MCP server
+│       └── ...                 # fetch-prices, fetch-fx-rates, etc.
 ├── src/
 │   ├── components/      # UI components (HoldingsTable, CashSection, charts, etc.)
 │   ├── contexts/        # React context providers
@@ -99,14 +105,21 @@ To point the application to your own Supabase instance:
     ```bash
     npx supabase@1.190.0 db push
     ```
-4.  **Deploy Edge Functions:**
+4.  **Deploy Edge Functions:** (this deploys both `portfolio-mcp-server` and `portfolio-ai`, among others)
     ```bash
     npx supabase functions deploy --use-api
     ```
-5.  **Set Secrets for AI Edge Function:**
+5.  **Set Secrets for the AI Agent:**
     ```bash
-    npx supabase secrets set GROQ_API_KEY="your_groq_key" LOVABLE_API_KEY="your_lovable_key"
+    npx supabase secrets set GROQ_API_KEY="your_groq_key"
     ```
+    `GROQ_API_KEY` is required — it's the default provider (`gpt-oss-20b`/`gpt-oss-120b`, routed
+    by query complexity). To upgrade to Claude Sonnet 5 instead, also set:
+    ```bash
+    npx supabase secrets set ANTHROPIC_API_KEY="your_anthropic_key"
+    ```
+    When `ANTHROPIC_API_KEY` is present, the agent uses Claude exclusively — no code changes
+    needed to switch. See [`docs/llm-mcp-agent-plan.md`](docs/llm-mcp-agent-plan.md) for details.
 
 ---
 
