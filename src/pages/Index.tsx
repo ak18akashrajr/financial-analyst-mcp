@@ -15,7 +15,6 @@ import { usePortfolio } from '@/hooks/usePortfolio';
 import { RefreshCw, Eye, EyeOff, CreditCard, AlertTriangle } from 'lucide-react';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { SiteFooter } from '@/components/SiteFooter';
-import { LoginGate } from '@/components/LoginGate';
 import { getDynamicGreeting } from '@/lib/greeting';
 
 const IndexContent = () => {
@@ -175,11 +174,9 @@ function DynamicWelcome() {
 }
 
 const Index = () => (
-  <LoginGate>
-    <PrivacyProvider>
-      <IndexContent />
-    </PrivacyProvider>
-  </LoginGate>
+  <PrivacyProvider>
+    <IndexContent />
+  </PrivacyProvider>
 );
 
 export default Index;

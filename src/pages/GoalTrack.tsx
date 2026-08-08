@@ -3,7 +3,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { AppNav } from '@/components/AppNav';
 import { SiteFooter } from '@/components/SiteFooter';
-import { LoginGate } from '@/components/LoginGate';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Plus, Trash2, Target, Home, GraduationCap, Plane, Car, Heart, Briefcase, PiggyBank, CalendarDays, TrendingUp, Info, Pencil } from 'lucide-react';
@@ -933,11 +932,9 @@ function EditGoalDialog({
 
 
 const GoalTrack = () => (
-  <LoginGate>
-    <PrivacyProvider>
-      <GoalTrackContent />
-    </PrivacyProvider>
-  </LoginGate>
+  <PrivacyProvider>
+    <GoalTrackContent />
+  </PrivacyProvider>
 );
 
 export default GoalTrack;

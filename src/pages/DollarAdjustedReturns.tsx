@@ -11,7 +11,6 @@ import {
   YAxis,
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
-import { LoginGate } from '@/components/LoginGate';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { SiteFooter } from '@/components/SiteFooter';
 import { AuditPopover, AuditSection, AuditTable, Formula } from '@/components/AuditPopover';
@@ -498,11 +497,9 @@ function AttrCell({ label, pct, strong }: { label: string; pct: number; strong?:
 }
 
 const DollarAdjustedReturns = () => (
-  <LoginGate>
-    <PrivacyProvider>
-      <Content />
-    </PrivacyProvider>
-  </LoginGate>
+  <PrivacyProvider>
+    <Content />
+  </PrivacyProvider>
 );
 
 export default DollarAdjustedReturns;

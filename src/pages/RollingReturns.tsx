@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AppNav } from '@/components/AppNav';
 import { SiteFooter } from '@/components/SiteFooter';
-import { LoginGate } from '@/components/LoginGate';
 import { PrivacyProvider } from '@/contexts/PrivacyContext';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { supabase } from '@/integrations/supabase/client';
@@ -346,11 +345,9 @@ const RollingContent = () => {
 };
 
 const RollingReturns = () => (
-  <LoginGate>
-    <PrivacyProvider>
-      <RollingContent />
-    </PrivacyProvider>
-  </LoginGate>
+  <PrivacyProvider>
+    <RollingContent />
+  </PrivacyProvider>
 );
 
 export default RollingReturns;

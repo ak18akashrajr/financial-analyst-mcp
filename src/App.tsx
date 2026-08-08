@@ -17,36 +17,45 @@ import DollarAdjustedReturns from "./pages/DollarAdjustedReturns.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { SideNav } from "@/components/SideNav";
 import { MobileTopNav } from "@/components/MobileTopNav";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <SideNav />
-        <MobileTopNav />
-        <div className="md:pl-[calc(var(--sidenav-w,16rem)+1.25rem)] transition-[padding] duration-300 ease-out">
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/taxes" element={<Taxes />} />
-            <Route path="/charts" element={<Charts />} />
-            <Route path="/projections" element={<Projections />} />
-            <Route path="/deployment-plan" element={<DeploymentPlan />} />
-            <Route path="/ai" element={<PortfolioAI />} />
-            <Route path="/goal-track" element={<GoalTrack />} />
-            <Route path="/updates" element={<Updates />} />
-            <Route path="/rolling-returns" element={<RollingReturns />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </div>
-      </BrowserRouter>
-    </TooltipProvider>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <SideNav />
+          <MobileTopNav />
+          <div className="md:pl-[calc(var(--sidenav-w,16rem)+1.25rem)] transition-[padding] duration-300 ease-out">
+            <Routes>
+              {/* Single centralized auth gate — every route below requires a real
+                  Supabase Auth session. Adding a new page here automatically
+                  inherits protection; nothing extra to remember per-page. */}
+              <Route element={<ProtectedRoute />}>
+                <Route path="/" element={<Index />} />
+                <Route path="/taxes" element={<Taxes />} />
+                <Route path="/charts" element={<Charts />} />
+                <Route path="/projections" element={<Projections />} />
+                <Route path="/deployment-plan" element={<DeploymentPlan />} />
+                <Route path="/ai" element={<PortfolioAI />} />
+                <Route path="/goal-track" element={<GoalTrack />} />
+                <Route path="/updates" element={<Updates />} />
+                <Route path="/rolling-returns" element={<RollingReturns />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
+              </Route>
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </div>
+        </BrowserRouter>
+      </TooltipProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 

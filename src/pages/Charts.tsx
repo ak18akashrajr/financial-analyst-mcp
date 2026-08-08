@@ -9,7 +9,6 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
-import { LoginGate } from '@/components/LoginGate';
 
 const ChartsContent = () => {
   const { hidden, toggle } = usePrivacy();
@@ -81,11 +80,9 @@ const ChartsContent = () => {
 };
 
 const Charts = () => (
-  <LoginGate>
-    <PrivacyProvider>
-      <ChartsContent />
-    </PrivacyProvider>
-  </LoginGate>
+  <PrivacyProvider>
+    <ChartsContent />
+  </PrivacyProvider>
 );
 
 export default Charts;
