@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { generateTaxReport, TaxReport } from '@/lib/taxCalculator';
-import { LoginGate } from '@/components/LoginGate';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
@@ -323,11 +322,9 @@ const TaxesContent = () => {
 };
 
 const Taxes = () => (
-  <LoginGate>
-    <PrivacyProvider>
-      <TaxesContent />
-    </PrivacyProvider>
-  </LoginGate>
+  <PrivacyProvider>
+    <TaxesContent />
+  </PrivacyProvider>
 );
 
 export default Taxes;

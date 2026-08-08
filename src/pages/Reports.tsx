@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, FileSpreadsheet, Save, Printer, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Sparkles, AlertTriangle, Compass, Activity, Wand2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
-import { LoginGate } from '@/components/LoginGate';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
@@ -660,11 +659,9 @@ const NarrativeBlock = ({ label, value, onChange, placeholder, icon }: { label: 
 );
 
 const Reports = () => (
-  <LoginGate>
-    <PrivacyProvider>
-      <ReportsContent />
-    </PrivacyProvider>
-  </LoginGate>
+  <PrivacyProvider>
+    <ReportsContent />
+  </PrivacyProvider>
 );
 export default Reports;
 

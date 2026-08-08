@@ -4,7 +4,6 @@ import { ArrowLeft, Send, Bot, User, Zap, MessageSquare } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { LoginGate } from '@/components/LoginGate';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -327,10 +326,4 @@ const PortfolioAI = () => {
   );
 };
 
-const PortfolioAIPage = () => (
-  <LoginGate>
-    <PortfolioAI />
-  </LoginGate>
-);
-
-export default PortfolioAIPage;
+export default PortfolioAI;

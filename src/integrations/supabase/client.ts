@@ -10,7 +10,11 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: localStorage,
+    // sessionStorage (not localStorage) so the session expires when the
+    // browser/tab closes, rather than persisting indefinitely. Note: this
+    // deviates from the codegen default above the createClient call — if
+    // this file is ever regenerated, re-apply this line.
+    storage: sessionStorage,
     persistSession: true,
     autoRefreshToken: true,
   }

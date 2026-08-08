@@ -17,6 +17,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useAuth } from '@/contexts/AuthContext';
 
 const tabs = [
   { to: '/', label: 'Overview', icon: LayoutDashboard },
@@ -35,6 +36,7 @@ const EXPANDED = '16rem';
 const COLLAPSED = '5rem';
 
 export function SideNav() {
+  const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('sidenav_collapsed') === '1';
@@ -46,8 +48,7 @@ export function SideNav() {
   }, [collapsed]);
 
   const logout = () => {
-    sessionStorage.removeItem('portfolio_auth');
-    window.location.reload();
+    signOut();
   };
 
   return (

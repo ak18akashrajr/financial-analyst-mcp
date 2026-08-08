@@ -120,6 +120,11 @@ To point the application to your own Supabase instance:
     ```
     When `ANTHROPIC_API_KEY` is present, the agent uses Claude exclusively — no code changes
     needed to switch. See [`docs/llm-mcp-agent-plan.md`](docs/llm-mcp-agent-plan.md) for details.
+6.  **Create your login account:** the app is gated by real Supabase Auth (email + password),
+    single-user. Go to your project's **Supabase Dashboard → Authentication → Users → Add user**
+    and create one account for yourself — there is no signup flow in the app itself. The session
+    is scoped to the browser tab (expires when it's closed, not persisted indefinitely). See
+    [`docs/auth-rls-plan.md`](docs/auth-rls-plan.md) for the full security rationale.
 
 ---
 

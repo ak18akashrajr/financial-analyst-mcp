@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Play, TrendingDown, Shuffle, ArrowDownUp, Percent, Target, Flame, AlertTriangle } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
-import { LoginGate } from '@/components/LoginGate';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -410,11 +409,9 @@ const ProjectionsContent = () => {
 };
 
 const Projections = () => (
-  <LoginGate>
-    <PrivacyProvider>
-      <ProjectionsContent />
-    </PrivacyProvider>
-  </LoginGate>
+  <PrivacyProvider>
+    <ProjectionsContent />
+  </PrivacyProvider>
 );
 
 export default Projections;

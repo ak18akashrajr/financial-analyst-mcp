@@ -14,6 +14,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useAuth } from '@/contexts/AuthContext';
 
 const tabs = [
   { to: '/', label: 'Overview', icon: LayoutDashboard },
@@ -29,9 +30,9 @@ const tabs = [
 ];
 
 export function MobileTopNav() {
+  const { signOut } = useAuth();
   const logout = () => {
-    sessionStorage.removeItem('portfolio_auth');
-    window.location.reload();
+    signOut();
   };
   return (
     <header className="md:hidden sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border">

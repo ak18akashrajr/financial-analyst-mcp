@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { LoginGate } from '@/components/LoginGate';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider } from '@/contexts/PrivacyContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -373,9 +372,7 @@ const DeploymentPlanContent = () => {
 export default function DeploymentPlan() {
   return (
     <PrivacyProvider>
-      <LoginGate>
-        <DeploymentPlanContent />
-      </LoginGate>
+      <DeploymentPlanContent />
     </PrivacyProvider>
   );
 }
