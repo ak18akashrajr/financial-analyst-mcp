@@ -50,6 +50,7 @@ const ReportsContent = () => {
   const [edits, setEdits] = useState<Record<string, Partial<PeriodReportRow>>>({});
   const [saving, setSaving] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
+  const [backfillingBenchmark, setBackfillingBenchmark] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false);
 
   // Page rows in batches — Supabase caps a single response at 1,000 rows.
@@ -101,6 +102,26 @@ const ReportsContent = () => {
       toast.error(`Backfill failed: ${e?.message ?? e}`, { id: t });
     } finally {
       setBackfilling(false);
+    }
+  };
+
+  // Populates public.benchmark_history (see fetch-benchmark-prices) so the
+  // MCP compare_to_benchmark / get_risk_metrics tools have data to read.
+  const backfillBenchmark = async () => {
+    setBackfillingBenchmark(true);
+    const t = toast.loading('Backfilling benchmark data…');
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-benchmark-prices', {
+        body: { symbols: ['NIFTY50'], range: '2y', interval: '1d' },
+      });
+      if (error) throw error;
+      const failed = Object.entries(data?.benchmarks ?? {}).filter(([, v]: [string, any]) => v?.error);
+      if (failed.length > 0) throw new Error(failed.map(([sym, v]: [string, any]) => `${sym}: ${v.error}`).join('; '));
+      toast.success('Backfilled benchmark data', { id: t });
+    } catch (e: any) {
+      toast.error(`Backfill failed: ${e?.message ?? e}`, { id: t });
+    } finally {
+      setBackfillingBenchmark(false);
     }
   };
 
@@ -364,6 +385,9 @@ One concise paragraph (3-4 sentences) summarising the period.
             </button>
             <button onClick={backfillFY} disabled={backfilling} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-50 flex items-center gap-1.5">
               <Activity className="w-3.5 h-3.5" /> {backfilling ? 'Backfilling…' : 'Backfill FY26-27 prices'}
+            </button>
+            <button onClick={backfillBenchmark} disabled={backfillingBenchmark} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-50 flex items-center gap-1.5">
+              <Activity className="w-3.5 h-3.5" /> {backfillingBenchmark ? 'Backfilling…' : 'Backfill benchmark data'}
             </button>
             <button onClick={generateAINarrative} disabled={generatingAI} className="text-xs px-3 py-1.5 rounded-md border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 flex items-center gap-1.5">
               <Wand2 className="w-3.5 h-3.5" /> {generatingAI ? 'Drafting…' : 'AI Narrative'}

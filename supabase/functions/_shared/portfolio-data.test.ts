@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  buildBenchmarkCompareNote,
   checkLimitBreaches,
+  compareToBenchmark,
   computeHoldingsFromTxns,
   concentrationRisk,
   exposureBy,
+  getRiskMetrics,
   runStressTest,
   type Holding,
   type Txn,
@@ -120,5 +124,177 @@ describe("runStressTest", () => {
     expect(result.totalPortfolioBefore).toBe(1500);
     expect(result.totalPortfolioAfter).toBe(1300); // 800 equity + 500 cash
     expect(result.totalLoss).toBe(200);
+  });
+});
+
+// --- Fake SupabaseClient for testing compareToBenchmark/getRiskMetrics -----
+//
+// Mimics the .from(table).select().eq().order().limit() / .single() chain
+// used by portfolio-data.ts, backed by an in-memory table of rows (or a
+// simulated query error, e.g. to reproduce benchmark_history missing).
+type FakeTable = { rows: Record<string, unknown>[] } | { error: string };
+
+function makeQueryBuilder(table: FakeTable) {
+  if ("error" in table) {
+    const err = { data: null, error: { message: table.error } };
+    const builder: any = {
+      select: () => builder,
+      eq: () => builder,
+      order: () => builder,
+      limit: () => builder,
+      single: () => Promise.resolve(err),
+      then: (resolve: any) => Promise.resolve(err).then(resolve),
+    };
+    return builder;
+  }
+
+  let rows = [...table.rows];
+  const builder: any = {
+    select: () => builder,
+    eq: (col: string, val: unknown) => {
+      rows = rows.filter((r) => r[col] === val);
+      return builder;
+    },
+    order: (col: string, opts?: { ascending?: boolean }) => {
+      const asc = opts?.ascending !== false;
+      rows = [...rows].sort((a, b) => {
+        const av = a[col] as string | number;
+        const bv = b[col] as string | number;
+        if (av === bv) return 0;
+        return asc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+      });
+      return builder;
+    },
+    limit: (n: number) => {
+      rows = rows.slice(0, n);
+      return builder;
+    },
+    single: () => Promise.resolve({ data: rows[0] ?? null, error: rows[0] ? null : { message: "no rows" } }),
+    then: (resolve: any) => Promise.resolve({ data: rows, error: null }).then(resolve),
+  };
+  return builder;
+}
+
+function makeFakeSb(tables: Record<string, FakeTable>): SupabaseClient {
+  return { from: (table: string) => makeQueryBuilder(tables[table] || { rows: [] }) } as unknown as SupabaseClient;
+}
+
+describe("buildBenchmarkCompareNote", () => {
+  it("returns undefined when both series have enough history", () => {
+    expect(buildBenchmarkCompareNote(10, 10, "NIFTY50")).toBeUndefined();
+  });
+
+  it("points at fetch-benchmark-prices when only the benchmark is short", () => {
+    const note = buildBenchmarkCompareNote(10, 0, "NIFTY50");
+    expect(note).toContain("NIFTY50");
+    expect(note).toContain("fetch-benchmark-prices");
+  });
+
+  it("mentions net_worth_history when only the portfolio series is short", () => {
+    expect(buildBenchmarkCompareNote(1, 10, "NIFTY50")).toBe("Insufficient history in net_worth_history for this window.");
+  });
+
+  it("mentions both sources when neither has enough history", () => {
+    const note = buildBenchmarkCompareNote(0, 0, "NIFTY50");
+    expect(note).toContain("net_worth_history");
+    expect(note).toContain("NIFTY50");
+  });
+});
+
+describe("compareToBenchmark", () => {
+  const holdings: Holding[] = [];
+
+  it("computes portfolio vs. benchmark return when both series have data", async () => {
+    const sb = makeFakeSb({
+      net_worth_history: {
+        rows: [
+          { recorded_at: "2026-01-01", portfolio_value: 100000 },
+          { recorded_at: "2026-02-01", portfolio_value: 110000 },
+        ],
+      },
+      benchmark_history: {
+        rows: [
+          { symbol: "NIFTY50", date: "2026-01-01", close: 20000 },
+          { symbol: "NIFTY50", date: "2026-02-01", close: 21000 },
+        ],
+      },
+    });
+    const result = await compareToBenchmark(sb, holdings, "NIFTY50", 90);
+    expect(result.portfolioReturnPercent).toBeCloseTo(10);
+    expect(result.benchmarkReturnPercent).toBeCloseTo(5);
+    expect(result.outperformancePercent).toBeCloseTo(5);
+    expect(result.note).toBeUndefined();
+  });
+
+  it("degrades gracefully (no throw, clear note) when benchmark_history has no rows for the symbol", async () => {
+    const sb = makeFakeSb({
+      net_worth_history: {
+        rows: [
+          { recorded_at: "2026-01-01", portfolio_value: 100000 },
+          { recorded_at: "2026-02-01", portfolio_value: 110000 },
+        ],
+      },
+      benchmark_history: { rows: [] },
+    });
+    const result = await compareToBenchmark(sb, holdings, "NIFTY50", 90);
+    expect(result.benchmarkReturnPercent).toBeNull();
+    expect(result.outperformancePercent).toBeNull();
+    expect(result.note).toContain("fetch-benchmark-prices");
+  });
+
+  it("degrades gracefully (no throw) when the benchmark_history query itself errors", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sb = makeFakeSb({
+      net_worth_history: {
+        rows: [
+          { recorded_at: "2026-01-01", portfolio_value: 100000 },
+          { recorded_at: "2026-02-01", portfolio_value: 110000 },
+        ],
+      },
+      benchmark_history: { error: 'relation "public.benchmark_history" does not exist' },
+    });
+    const result = await compareToBenchmark(sb, holdings, "NIFTY50", 90);
+    expect(result.benchmarkReturnPercent).toBeNull();
+    expect(result.note).toContain("fetch-benchmark-prices");
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+});
+
+describe("getRiskMetrics", () => {
+  const holdings: Holding[] = [makeHolding({ symbol: "AAPL", currentValue: 1000 })];
+  const historicalRows = Array.from({ length: 30 }, (_, i) => ({
+    symbol: "AAPL",
+    date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+    close: 100 + i,
+  }));
+
+  it("reports null beta (not a misleading 0.00) when benchmark_history has no NIFTY50 data", async () => {
+    const sb = makeFakeSb({
+      historical_prices: { rows: historicalRows },
+      benchmark_history: { rows: [] },
+    });
+    const result = await getRiskMetrics(sb, holdings, 30);
+    expect(result.portfolioBetaVsNifty50).toBeNull();
+    expect(result.perHolding[0].beta).toBeNull();
+    expect(result.note).toContain("fetch-benchmark-prices");
+    // Volatility is still computed from historical_prices alone.
+    expect(result.portfolioAnnualizedVolatilityPercent).toBeGreaterThan(0);
+  });
+
+  it("computes a real beta once benchmark_history has matching data", async () => {
+    const benchRows = Array.from({ length: 30 }, (_, i) => ({
+      symbol: "NIFTY50",
+      date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+      close: 20000 + i * 10,
+    }));
+    const sb = makeFakeSb({
+      historical_prices: { rows: historicalRows },
+      benchmark_history: { rows: benchRows },
+    });
+    const result = await getRiskMetrics(sb, holdings, 30);
+    expect(result.portfolioBetaVsNifty50).not.toBeNull();
+    expect(typeof result.portfolioBetaVsNifty50).toBe("number");
+    expect(result.note).not.toContain("not available");
   });
 });
