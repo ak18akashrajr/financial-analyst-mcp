@@ -1,9 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createLogger } from "../_shared/logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const logger = createLogger("fetch-fx-rates");
 
 const PAIR = "USDINR";
 
@@ -140,6 +143,8 @@ Deno.serve(async (req) => {
         note: cached ? `last stored ${cached.date}` : "no cached rate",
       });
 
+      logger.warn("All live FX sources failed, serving cached rate", { attempts, cached: !!cached });
+
       return new Response(
         JSON.stringify({
           rate: cached?.rate ?? null,
@@ -165,10 +170,11 @@ Deno.serve(async (req) => {
       const { error } = await supabase
         .from("fx_rates")
         .upsert(rows.slice(i, i + 500), { onConflict: "pair,date" });
-      if (error) console.error("upsert error", error.message);
+      if (error) logger.error("Upsert error", { error });
     }
 
     const latest = points.reduce((a, b) => (a.date >= b.date ? a : b));
+    logger.info("FX rate fetch complete", { source, inserted: rows.length, attempts });
 
     return new Response(
       JSON.stringify({
@@ -182,7 +188,7 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("fetch-fx-rates error:", err);
+    logger.error("Unhandled error", { error: err, attempts });
     return new Response(JSON.stringify({ error: "Internal server error", attempts }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

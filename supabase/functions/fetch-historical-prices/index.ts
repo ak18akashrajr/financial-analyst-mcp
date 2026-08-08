@@ -1,9 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createLogger } from "../_shared/logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const logger = createLogger("fetch-historical-prices");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -44,16 +47,23 @@ Deno.serve(async (req) => {
           }
         }
       } catch (err) {
-        console.error(`Error fetching ${sym}:`, err);
+        logger.error("Failed to fetch historical prices", { symbol: sym, error: err });
         result[sym] = [];
       }
     }
+
+    const failed = Object.entries(result).filter(([, points]) => points.length === 0).map(([sym]) => sym);
+    logger.info("Historical price fetch batch complete", {
+      requested: symbols.length,
+      succeeded: symbols.length - failed.length,
+      failed,
+    });
 
     return new Response(JSON.stringify({ prices: result }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("Error:", err);
+    logger.error("Unhandled error", { error: err });
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

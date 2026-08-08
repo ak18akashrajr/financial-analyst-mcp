@@ -15,6 +15,9 @@ import { GroqProvider } from "../_shared/providers/groq.ts";
 import { AnthropicProvider } from "../_shared/providers/anthropic.ts";
 import type { LlmProvider, ToolResultForProvider } from "../_shared/providers/types.ts";
 import { chunkText, createSseStream } from "../_shared/sse.ts";
+import { createLogger } from "../_shared/logger.ts";
+
+const logger = createLogger("portfolio-ai");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,63 +96,83 @@ Deno.serve(async (req: Request) => {
     provider.loadHistory(history);
     provider.addUserMessage(latest.content);
 
+    logger.info("Chat request started", { model, attribution, historyLength: history.length });
+    const requestStartedAt = Date.now();
+
     const stream = createSseStream(async (send) => {
       let toolCallCount = 0;
       let invokedComplexTool = false;
       let finalText = "";
 
-      for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
-        const result = await provider.runTurn(model, SYSTEM_PROMPT, tools);
+      try {
+        for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
+          const result = await provider.runTurn(model, SYSTEM_PROMPT, tools);
 
-        // Explicit `=== true` (not a bare truthy check) so TS reliably narrows
-        // this boolean-discriminated union in the `else` path below.
-        if (result.done === true) {
-          finalText = result.text;
-          break;
-        }
+          // Explicit `=== true` (not a bare truthy check) so TS reliably narrows
+          // this boolean-discriminated union in the `else` path below.
+          if (result.done === true) {
+            finalText = result.text;
+            break;
+          }
 
-        // Groq-only escalation safety net: if the cheap tier needs too many tool
-        // calls or touches a "complex" tool, restart this turn on the bigger model.
-        if (!usingAnthropic && model === GROQ_SIMPLE_MODEL) {
-          toolCallCount += result.calls.length;
-          invokedComplexTool ||= result.calls.some((c) => findTool(c.name)?.complexity === "complex");
-          if (shouldEscalate(toolCallCount, invokedComplexTool) && !escalated) {
-            escalated = true;
-            model = GROQ_COMPLEX_MODEL;
-            attribution = "GPT-OSS 120B via Groq (escalated)";
+          // Groq-only escalation safety net: if the cheap tier needs too many tool
+          // calls or touches a "complex" tool, restart this turn on the bigger model.
+          if (!usingAnthropic && model === GROQ_SIMPLE_MODEL) {
+            toolCallCount += result.calls.length;
+            invokedComplexTool ||= result.calls.some((c) => findTool(c.name)?.complexity === "complex");
+            if (shouldEscalate(toolCallCount, invokedComplexTool) && !escalated) {
+              escalated = true;
+              model = GROQ_COMPLEX_MODEL;
+              attribution = "GPT-OSS 120B via Groq (escalated)";
+            }
+          }
+
+          const toolResults: ToolResultForProvider[] = [];
+          for (const call of result.calls) {
+            send("tool_call", { name: call.name, args: call.arguments });
+            try {
+              const toolResult = await mcpClient.callTool(call.name, call.arguments);
+              toolResults.push({ id: call.id, name: call.name, result: toolResult });
+            } catch (err) {
+              logger.error("Tool call failed", { tool: call.name, error: err });
+              toolResults.push({
+                id: call.id,
+                name: call.name,
+                result: { error: err instanceof Error ? err.message : "Tool call failed" },
+              });
+            }
+          }
+          provider.appendToolResults(toolResults);
+
+          if (turn === MAX_TOOL_TURNS - 1) {
+            throw new Error("Tool loop exceeded the maximum number of turns");
           }
         }
 
-        const toolResults: ToolResultForProvider[] = [];
-        for (const call of result.calls) {
-          send("tool_call", { name: call.name, args: call.arguments });
-          try {
-            const toolResult = await mcpClient.callTool(call.name, call.arguments);
-            toolResults.push({ id: call.id, name: call.name, result: toolResult });
-          } catch (err) {
-            toolResults.push({
-              id: call.id,
-              name: call.name,
-              result: { error: err instanceof Error ? err.message : "Tool call failed" },
-            });
-          }
+        for (const chunk of chunkText(finalText)) {
+          send("delta", { text: chunk });
         }
-        provider.appendToolResults(toolResults);
-
-        if (turn === MAX_TOOL_TURNS - 1) {
-          throw new Error("Tool loop exceeded the maximum number of turns");
-        }
+        send("done", { attribution });
+        logger.info("Chat request completed", {
+          model,
+          attribution,
+          escalated,
+          toolCallCount,
+          duration_ms: Date.now() - requestStartedAt,
+        });
+      } catch (err) {
+        logger.error("Chat stream failed", {
+          model,
+          duration_ms: Date.now() - requestStartedAt,
+          error: err,
+        });
+        throw err;
       }
-
-      for (const chunk of chunkText(finalText)) {
-        send("delta", { text: chunk });
-      }
-      send("done", { attribution });
     });
 
     return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
   } catch (e) {
-    console.error("portfolio-ai error:", e);
+    logger.error("portfolio-ai error", { error: e });
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

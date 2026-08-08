@@ -5,11 +5,14 @@
 // MCP compare_to_benchmark / get_risk_metrics tools read from this table but
 // have no way to fill it themselves.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createLogger } from "../_shared/logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const logger = createLogger("fetch-benchmark-prices");
 
 // Friendly names used by compare_to_benchmark / get_risk_metrics -> the
 // actual Yahoo Finance ticker for that index. Update here if Yahoo renames a
@@ -74,16 +77,23 @@ Deno.serve(async (req) => {
           }
         }
       } catch (err) {
-        console.error(`Error fetching benchmark ${sym} (${ticker}):`, err);
+        logger.error("Failed to fetch benchmark", { symbol: sym, ticker, error: err });
         result[sym] = { error: String(err) };
       }
     }
+
+    const failed = Object.entries(result).filter(([, v]) => "error" in v).map(([sym]) => sym);
+    logger.info("Benchmark fetch batch complete", {
+      requested: requested.length,
+      succeeded: requested.length - failed.length,
+      failed,
+    });
 
     return new Response(JSON.stringify({ benchmarks: result }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("Error:", err);
+    logger.error("Unhandled error", { error: err });
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -1,7 +1,11 @@
+import { createLogger } from "../_shared/logger.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const logger = createLogger("fetch-pe-ratio");
 
 // Replicate yfinance's crumb-based auth flow
 async function getCrumbAndCookies(): Promise<{ crumb: string; cookie: string }> {
@@ -48,7 +52,7 @@ Deno.serve(async (req) => {
 
     // Get crumb + cookies (like yfinance does)
     const { crumb, cookie } = await getCrumbAndCookies();
-    console.log("Got crumb:", crumb ? "yes" : "no");
+    logger.info("Got crumb", { symbol, hasCrumb: !!crumb });
 
     // Fetch quoteSummary with crumb (same as yfinance ticker.info)
     const modules = "summaryDetail,price,defaultKeyStatistics";
@@ -62,7 +66,7 @@ Deno.serve(async (req) => {
     });
 
     if (!res.ok) {
-      console.error(`quoteSummary returned ${res.status} for ${symbol}`);
+      logger.warn("quoteSummary returned non-OK status, falling back to chart endpoint", { symbol, status: res.status });
       // Fallback to chart endpoint for price only
       const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
       const chartRes = await fetch(chartUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
@@ -106,7 +110,7 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("Error in fetch-pe-ratio:", err);
+    logger.error("Unhandled error", { error: err });
     return new Response(
       JSON.stringify({ error: "Internal server error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
