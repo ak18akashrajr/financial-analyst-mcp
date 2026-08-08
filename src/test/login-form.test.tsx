@@ -1,0 +1,59 @@
+// LoginForm now calls real Supabase Auth via useAuth().signIn() instead of
+// comparing hardcoded strings. useAuth() is mocked so this stays a unit test.
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { LoginForm } from '@/components/LoginForm';
+import { useAuth } from '@/contexts/AuthContext';
+
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: vi.fn(),
+}));
+
+const mockedUseAuth = vi.mocked(useAuth);
+
+describe('LoginForm', () => {
+  it('calls signIn with the entered email/password on submit', async () => {
+    const signIn = vi.fn().mockResolvedValue({ error: null });
+    mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
+
+    render(<LoginForm />);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'correct-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    await waitFor(() => expect(signIn).toHaveBeenCalledWith('me@example.com', 'correct-password'));
+  });
+
+  it('shows the error message returned by a failed sign-in', async () => {
+    const signIn = vi.fn().mockResolvedValue({ error: 'Invalid login credentials' });
+    mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
+
+    render(<LoginForm />);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
+  });
+
+  it('never hardcodes a working credential locally — the old exploit pair always goes through signIn', async () => {
+    // Regression guard for the old vulnerability: username === 'ak18' && password === '2003'
+    // compared entirely client-side with no network call at all. Using a
+    // validly-formatted email here (the <input type="email"> field applies
+    // browser-native format validation, which would otherwise block submit
+    // before onSubmit even fires) — the point is the old password '2003'
+    // must now always be checked server-side, never accepted locally.
+    const signIn = vi.fn().mockResolvedValue({ error: 'Invalid login credentials' });
+    mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
+
+    render(<LoginForm />);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'ak18@old-exploit.test' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: '2003' } });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    await waitFor(() => expect(signIn).toHaveBeenCalledWith('ak18@old-exploit.test', '2003'));
+    // The old hardcoded password must now always go through the real auth call
+    // (which is mocked to fail here) rather than being accepted locally.
+    expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
+  });
+});
