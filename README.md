@@ -128,6 +128,29 @@ To point the application to your own Supabase instance:
 
 ---
 
+## 🌐 Frontend Deployment (Vercel, free tier)
+
+The backend (Supabase) is already public once you've completed the steps above — the only
+remaining piece is hosting the built static frontend so it's reachable from any device.
+
+1.  **Push to GitHub** (already done for this repo — Vercel deploys straight from the connected
+    branch on every push).
+2.  **Import the repo on [vercel.com](https://vercel.com)** → New Project → select this
+    repository. Vercel auto-detects Vite; [`vercel.json`](vercel.json) pins the build command
+    and adds the SPA rewrite rule react-router needs (all paths fall back to `index.html`).
+3.  **Set environment variables** in Vercel → Project Settings → Environment Variables (same
+    values as your local `.env` — these are the public anon key, safe to expose client-side):
+    ```
+    VITE_SUPABASE_URL
+    VITE_SUPABASE_PUBLISHABLE_KEY
+    VITE_SUPABASE_PROJECT_ID
+    ```
+4.  **Deploy.** Vercel gives you a free `https://<project>.vercel.app` URL with HTTPS,
+    auto-redeploying on every push to `main`. A custom domain can be attached for free under
+    Project Settings → Domains.
+
+---
+
 ## 🧪 Testing
 
 Run unit tests using Vitest:
