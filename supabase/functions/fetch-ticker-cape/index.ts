@@ -2,10 +2,14 @@
 // Uses Yahoo Finance timeSeries endpoint for annual EPS. Fails gracefully for
 // symbols without 10Y data (MFs, small caps) — those return { cape: null }.
 
+import { createLogger } from "../_shared/logger.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const logger = createLogger("fetch-ticker-cape");
 
 // Approx India CPI YoY (last 15 years, %). Used to inflation-adjust historical EPS.
 // Source: MOSPI/RBI aggregates. Approximation flagged in UI.
@@ -82,9 +86,10 @@ Deno.serve(async (req) => {
     ]);
 
     if (eps.length < 5 || price == null) {
+      const reason = eps.length < 5 ? "insufficient EPS history (<5Y)" : "no price";
+      logger.warn("Could not compute CAPE", { symbol, reason, epsYears: eps.length, price });
       return new Response(JSON.stringify({
-        symbol, cape: null, eps_10y: eps, price,
-        reason: eps.length < 5 ? "insufficient EPS history (<5Y)" : "no price",
+        symbol, cape: null, eps_10y: eps, price, reason,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -98,7 +103,7 @@ Deno.serve(async (req) => {
       symbol, cape, eps_10y: last10, price, mean_real_eps: meanRealEPS,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
-    console.error("fetch-ticker-cape error:", err);
+    logger.error("Unhandled error", { error: err });
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

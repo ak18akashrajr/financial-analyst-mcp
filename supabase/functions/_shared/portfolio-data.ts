@@ -3,6 +3,9 @@
 // approach of dumping the entire portfolio into one context string.
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
+import { createLogger } from "./logger.ts";
+
+const logger = createLogger("portfolio-data");
 
 export function getSupabaseClient(): SupabaseClient {
   const url = Deno.env.get("SUPABASE_URL")!;
@@ -210,7 +213,7 @@ export async function getRiskMetrics(
     .order("date", { ascending: false })
     .limit(lookbackDays + 1);
   if (benchError) {
-    console.error("getRiskMetrics: benchmark_history query failed:", benchError.message);
+    logger.error("getRiskMetrics: benchmark_history query failed", { error: benchError });
   }
   const benchCloses = (benchRows || []).map((r) => Number(r.close)).reverse();
   const benchReturns: number[] = [];
@@ -357,14 +360,14 @@ export async function compareToBenchmark(
     .select("recorded_at, portfolio_value")
     .order("recorded_at", { ascending: false })
     .limit(days + 1);
-  if (nwError) console.error("compareToBenchmark: net_worth_history query failed:", nwError.message);
+  if (nwError) logger.error("compareToBenchmark: net_worth_history query failed", { error: nwError });
   const { data: benchRows, error: benchError } = await sb
     .from("benchmark_history")
     .select("date, close")
     .eq("symbol", benchmarkSymbol)
     .order("date", { ascending: false })
     .limit(days + 1);
-  if (benchError) console.error("compareToBenchmark: benchmark_history query failed:", benchError.message);
+  if (benchError) logger.error("compareToBenchmark: benchmark_history query failed", { error: benchError });
 
   const portfolioSeries = (nwRows || []).map((r) => Number(r.portfolio_value)).reverse();
   const benchSeries = (benchRows || []).map((r) => Number(r.close)).reverse();

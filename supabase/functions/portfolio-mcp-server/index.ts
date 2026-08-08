@@ -19,6 +19,9 @@
 // enforced by the platform). No additional OAuth layer is implemented here.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 import { findTool, TOOL_REGISTRY } from "../_shared/mcp-tools.ts";
+import { createLogger } from "../_shared/logger.ts";
+
+const logger = createLogger("portfolio-mcp-server");
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -78,16 +81,22 @@ async function handleRpc(req: JsonRpcRequest): Promise<Record<string, unknown> |
       const name = String(req.params?.name || "");
       const args = (req.params?.arguments as Record<string, unknown>) || {};
       const tool = findTool(name);
-      if (!tool) return rpcError(req.id, -32602, `Unknown tool: ${name}`);
+      if (!tool) {
+        logger.warn("Unknown tool requested", { name });
+        return rpcError(req.id, -32602, `Unknown tool: ${name}`);
+      }
+      const startedAt = Date.now();
       try {
         const sb = getSupabaseClient();
         const result = await tool.handler(args, sb);
+        logger.info("Tool call succeeded", { tool: name, duration_ms: Date.now() - startedAt });
         return rpcResult(req.id, {
           content: [{ type: "text", text: JSON.stringify(result) }],
           isError: false,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Tool execution failed";
+        logger.error("Tool call failed", { tool: name, duration_ms: Date.now() - startedAt, error: err });
         return rpcResult(req.id, {
           content: [{ type: "text", text: JSON.stringify({ error: message }) }],
           isError: true,

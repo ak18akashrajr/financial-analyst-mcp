@@ -1,10 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createLogger } from "../_shared/logger.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
 };
+
+const logger = createLogger("fetch-prices");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -34,7 +37,7 @@ Deno.serve(async (req) => {
         });
 
         if (!response.ok) {
-          console.error(`Yahoo Finance returned ${response.status} for ${symbol}`);
+          logger.warn("Yahoo Finance returned non-OK status", { symbol, status: response.status });
           prices[symbol] = null;
           continue;
         }
@@ -49,10 +52,17 @@ Deno.serve(async (req) => {
           prices[symbol] = null;
         }
       } catch (err) {
-        console.error(`Error fetching price for ${symbol}:`, err);
+        logger.error("Failed to fetch price", { symbol, error: err });
         prices[symbol] = null;
       }
     }
+
+    const failed = Object.entries(prices).filter(([, p]) => p == null).map(([sym]) => sym);
+    logger.info("Price fetch batch complete", {
+      requested: symbols.length,
+      succeeded: symbols.length - failed.length,
+      failed,
+    });
 
     // Update prices in the database
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -71,7 +81,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("Error in fetch-prices:", err);
+    logger.error("Unhandled error", { error: err });
     return new Response(
       JSON.stringify({ error: "Internal server error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
