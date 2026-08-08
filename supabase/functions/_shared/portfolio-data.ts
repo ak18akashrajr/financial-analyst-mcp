@@ -203,17 +203,21 @@ export async function getRiskMetrics(
   lookbackDays = 90,
 ) {
   const totalValue = holdings.reduce((s, h) => s + h.currentValue, 0);
-  const { data: benchRows } = await sb
+  const { data: benchRows, error: benchError } = await sb
     .from("benchmark_history")
     .select("date, close")
     .eq("symbol", "NIFTY50")
     .order("date", { ascending: false })
     .limit(lookbackDays + 1);
+  if (benchError) {
+    console.error("getRiskMetrics: benchmark_history query failed:", benchError.message);
+  }
   const benchCloses = (benchRows || []).map((r) => Number(r.close)).reverse();
   const benchReturns: number[] = [];
   for (let i = 1; i < benchCloses.length; i++) {
     if (benchCloses[i - 1] > 0) benchReturns.push((benchCloses[i] - benchCloses[i - 1]) / benchCloses[i - 1]);
   }
+  const benchmarkDataAvailable = benchReturns.length >= 2;
 
   const perHolding = [];
   let weightedVol = 0;
@@ -222,7 +226,7 @@ export async function getRiskMetrics(
     const returns = await fetchDailyReturns(sb, h.symbol, lookbackDays);
     const dailyVol = stdDev(returns);
     const annualizedVol = dailyVol * Math.sqrt(252) * 100; // %
-    const symbolBeta = benchReturns.length >= 2 ? beta(returns, benchReturns) : null;
+    const symbolBeta = benchmarkDataAvailable ? beta(returns, benchReturns) : null;
     const weight = totalValue > 0 ? h.currentValue / totalValue : 0;
     if (returns.length >= 2) {
       weightedVol += annualizedVol * weight;
@@ -238,11 +242,16 @@ export async function getRiskMetrics(
 
   return {
     portfolioAnnualizedVolatilityPercent: Number(weightedVol.toFixed(1)),
-    portfolioBetaVsNifty50: Number(weightedBeta.toFixed(2)),
+    // null (not 0.00) when there's no NIFTY50 benchmark data to compare
+    // against yet — a real zero-beta result would be misleading here. Run
+    // the fetch-benchmark-prices edge function to populate benchmark_history.
+    portfolioBetaVsNifty50: benchmarkDataAvailable ? Number(weightedBeta.toFixed(2)) : null,
     perHolding,
-    note:
-      "Volatility/beta estimated from available historical_prices/benchmark_history rows; " +
-      "symbols with fewer than 2 data points are excluded from the weighted average.",
+    note: benchmarkDataAvailable
+      ? "Volatility/beta estimated from available historical_prices/benchmark_history rows; " +
+        "symbols with fewer than 2 data points are excluded from the weighted average."
+      : "Volatility estimated from historical_prices; beta vs NIFTY50 is not available because " +
+        "benchmark_history has no NIFTY50 data yet — run the fetch-benchmark-prices edge function to backfill it.",
   };
 }
 
@@ -316,6 +325,26 @@ export function checkLimitBreaches(holdings: Holding[]): LimitBreach[] {
   return breaches;
 }
 
+/** Builds the user-facing `note` for compareToBenchmark based on which series lack history. */
+export function buildBenchmarkCompareNote(
+  portfolioPoints: number,
+  benchmarkPoints: number,
+  benchmarkSymbol: string,
+): string | undefined {
+  const portfolioShort = portfolioPoints < 2;
+  const benchmarkShort = benchmarkPoints < 2;
+  if (!portfolioShort && !benchmarkShort) return undefined;
+  if (portfolioShort && benchmarkShort) {
+    return `Insufficient history in net_worth_history and no ${benchmarkSymbol} data in benchmark_history for this window ` +
+      "— run the fetch-benchmark-prices edge function to backfill the benchmark.";
+  }
+  if (benchmarkShort) {
+    return `No ${benchmarkSymbol} data in benchmark_history for this window — run the fetch-benchmark-prices ` +
+      "edge function to backfill it.";
+  }
+  return "Insufficient history in net_worth_history for this window.";
+}
+
 /** Compares portfolio total-return % against a benchmark's return % over the same window. */
 export async function compareToBenchmark(
   sb: SupabaseClient,
@@ -323,17 +352,19 @@ export async function compareToBenchmark(
   benchmarkSymbol: string,
   days: number,
 ) {
-  const { data: nwRows } = await sb
+  const { data: nwRows, error: nwError } = await sb
     .from("net_worth_history")
     .select("recorded_at, portfolio_value")
     .order("recorded_at", { ascending: false })
     .limit(days + 1);
-  const { data: benchRows } = await sb
+  if (nwError) console.error("compareToBenchmark: net_worth_history query failed:", nwError.message);
+  const { data: benchRows, error: benchError } = await sb
     .from("benchmark_history")
     .select("date, close")
     .eq("symbol", benchmarkSymbol)
     .order("date", { ascending: false })
     .limit(days + 1);
+  if (benchError) console.error("compareToBenchmark: benchmark_history query failed:", benchError.message);
 
   const portfolioSeries = (nwRows || []).map((r) => Number(r.portfolio_value)).reverse();
   const benchSeries = (benchRows || []).map((r) => Number(r.close)).reverse();
@@ -356,10 +387,7 @@ export async function compareToBenchmark(
       portfolioReturnPercent !== null && benchmarkReturnPercent !== null
         ? Number((portfolioReturnPercent - benchmarkReturnPercent).toFixed(2))
         : null,
-    note:
-      portfolioSeries.length < 2 || benchSeries.length < 2
-        ? "Insufficient history in net_worth_history or benchmark_history for this window."
-        : undefined,
+    note: buildBenchmarkCompareNote(portfolioSeries.length, benchSeries.length, benchmarkSymbol),
   };
 }
 

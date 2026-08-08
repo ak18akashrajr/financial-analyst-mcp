@@ -49,8 +49,10 @@ completely open. Both need fixing together.
 - Explicit `GRANT ... TO anon` statements on `period_reports`, `market_indicators`,
   `ticker_fundamentals`, `fx_rates` are revoked.
 - Applies to all 12 currently-live tables. (`benchmark_history` was created then dropped in an
-  earlier migration and no longer exists — excluded here; its removal surfaced a separate latent
-  bug in the MCP `compare_to_benchmark` tool, tracked separately, not part of this change.)
+  earlier migration and no longer existed at the time of this plan — excluded here; its removal
+  surfaced a separate latent bug in the MCP `compare_to_benchmark` tool, tracked separately, not
+  part of this change. **Resolved** on `fix/benchmark-history-missing-table`: the table was
+  recreated authenticated-only from the start, with `fetch-benchmark-prices` added to populate it.)
 - **This must land after real auth exists** — locking down RLS before any real Supabase Auth
   session can be created would lock out the app entirely, including its owner.
 
@@ -78,7 +80,7 @@ This needs to be run against the live project by the developer, not simulated he
 - No multi-user partitioning (`auth.uid()`/`user_id` columns) — single-user app, per confirmed
   decision.
 - No fix to the unrelated `compare_to_benchmark` / dropped `benchmark_history` table issue found
-  along the way (tracked as a separate follow-up).
+  along the way (tracked as a separate follow-up — resolved on `fix/benchmark-history-missing-table`).
 - No change to the MCP agent work from `feature/claude-mcp-agent` — the `portfolio-mcp-server` and
   `portfolio-ai` edge functions use the Supabase **service role** key (`SUPABASE_SERVICE_ROLE_KEY`),
   which bypasses RLS entirely by design, so this lockdown does not affect the AI chat feature.
