@@ -12,6 +12,7 @@ import { DollarReturnsCard } from '@/components/DollarReturnsCard';
 
 import { DebtChart } from '@/components/DebtChart';
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { useAutoRefreshPricesOnLoad } from '@/hooks/useAutoRefreshPricesOnLoad';
 import { RefreshCw, Eye, EyeOff, CreditCard, AlertTriangle } from 'lucide-react';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { SiteFooter } from '@/components/SiteFooter';
@@ -39,6 +40,11 @@ const IndexContent = () => {
     fetchLivePrices,
     payCreditCardBill,
   } = usePortfolio();
+
+  // Dashboard shows whatever was last written to current_prices, which can be
+  // stale by the time you open the app — refresh live prices once on first
+  // load rather than waiting for a manual click of the "Prices" button.
+  useAutoRefreshPricesOnLoad(loading, holdings.length, fetchLivePrices);
 
   const bumpRefresh = useCallback(() => {}, []);
 
