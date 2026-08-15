@@ -1,6 +1,6 @@
 # Real Authentication + RLS Lockdown — Migration Plan
 
-Status: **Approved, in progress** on branch `feature/real-auth-rls`.
+Status: **Shipped** — merged via [PR #5](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/5) from `feature/real-auth-rls`. Kept here as the design record for why the auth/RLS model looks the way it does.
 
 ## Why
 

@@ -26,7 +26,7 @@ A premium, interactive web application built with **React**, **TypeScript**, **T
 *   **State & Queries:** `@tanstack/react-query` (React Query) for performant cache management.
 *   **Backend Database:** Supabase (PostgreSQL with Row Level Security).
 *   **Edge Functions:** Deno-based Supabase Edge Functions for third-party API fetches (pricing, FX rates) and LLM streaming.
-*   **Testing:** Vitest for unit/integration tests and Playwright for browser testing.
+*   **Testing:** Vitest for unit/integration tests.
 
 ---
 
@@ -34,7 +34,9 @@ A premium, interactive web application built with **React**, **TypeScript**, **T
 
 ```text
 ├── docs/
-│   └── llm-mcp-agent-plan.md  # Portfolio AI architecture: real MCP server + multi-provider agent
+│   ├── auth-rls-plan.md        # Auth + Row Level Security design record
+│   ├── llm-mcp-agent-plan.md   # Portfolio AI architecture: real MCP server + multi-provider agent
+│   └── logging-monitoring.md   # Structured logging across edge functions
 ├── supabase/
 │   ├── migrations/      # SQL database schema and RLS policies
 │   └── functions/
@@ -153,7 +155,18 @@ remaining piece is hosting the built static frontend so it's reachable from any 
 
 ## 🧪 Testing
 
+Every PR into `main` is required to pass the Vitest suite, a TypeScript typecheck, and a Gitleaks
+secret scan before it can be merged.
+
 Run unit tests using Vitest:
 ```bash
 npm test
+```
+Run the typecheck:
+```bash
+npx tsc --noEmit -p tsconfig.app.json
+```
+Run the linter:
+```bash
+npm run lint
 ```

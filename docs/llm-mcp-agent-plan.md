@@ -1,6 +1,6 @@
 # Portfolio AI: Real MCP + Multi-Provider Agent — Migration Plan
 
-Status: **Approved, in progress** on branch `feature/claude-mcp-agent`.
+Status: **Shipped** — merged via [PR #3](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/3) from `feature/claude-mcp-agent`. Kept here as the architecture record for the MCP server + provider routing.
 
 ## Why
 
