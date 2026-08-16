@@ -17,6 +17,7 @@ on:
     branches: [main]
     paths:
       - "supabase/functions/**"
+  workflow_dispatch: {} # allows a manual "Run workflow" from the Actions tab, e.g. to verify secrets
 
 permissions:
   contents: read
