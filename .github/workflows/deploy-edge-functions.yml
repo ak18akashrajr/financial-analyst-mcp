@@ -1,0 +1,36 @@
+name: Deploy Edge Functions
+
+# Automatically deploys Supabase edge functions whenever a change under
+# supabase/functions/** lands on main (i.e. right after a PR merges), so
+# `npx supabase functions deploy --use-api` no longer has to be run by hand
+# per the README's manual deploy steps.
+#
+# Requires two repo secrets (Settings -> Secrets and variables -> Actions):
+#   SUPABASE_ACCESS_TOKEN - a Supabase personal access token
+#                           (https://supabase.com/dashboard/account/tokens)
+#   SUPABASE_PROJECT_ID   - the project ref (Project Settings -> General)
+#
+# DB migrations (`supabase db push`) are intentionally NOT automated here —
+# schema changes stay a manual, reviewed step.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy edge functions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy edge functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          npx supabase@1.190.0 functions deploy --use-api --project-ref "${{ secrets.SUPABASE_PROJECT_ID }}"

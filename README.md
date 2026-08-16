@@ -111,6 +111,13 @@ To point the application to your own Supabase instance:
     ```bash
     npx supabase functions deploy --use-api
     ```
+    *(One-time manual step for your own fork/instance. On this repo, edge function deploys are
+    automated — see [`deploy-edge-functions.yml`](.github/workflows/deploy-edge-functions.yml):
+    any push to `main` touching `supabase/functions/**` redeploys automatically. To enable it on
+    your own fork, add repo secrets `SUPABASE_ACCESS_TOKEN`
+    ([generate one](https://supabase.com/dashboard/account/tokens)) and `SUPABASE_PROJECT_ID`
+    (your project ref) under Settings → Secrets and variables → Actions. DB schema changes
+    (`db push`, step 3 above) remain manual by design — a reviewed step, not an automatic one.)*
 5.  **Set Secrets for the AI Agent:**
     ```bash
     npx supabase secrets set GROQ_API_KEY="your_groq_key"
