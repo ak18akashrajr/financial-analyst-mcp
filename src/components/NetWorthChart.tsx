@@ -10,6 +10,9 @@ import {
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
+import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
+import { computeRangeReturn } from '@/lib/chartRange';
+import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -32,6 +35,7 @@ interface Props {
 export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vaultCash, refreshKey }: Props) {
   const { hidden } = usePrivacy();
   const [data, setData] = useState<NetWorthPoint[]>([]);
+  const { selection, handlers, clear } = useChartRangeSelection();
 
   // Load history on mount and when refreshKey changes
   useEffect(() => {
@@ -62,6 +66,11 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
 
   if (data.length < 2) return null;
 
+  const rangeResult =
+    selection.startIndex !== null && selection.endIndex !== null
+      ? computeRangeReturn(data, selection.startIndex, selection.endIndex, 'net_worth', 'label')
+      : null;
+
   const yAxisFormatter = (v: number) => hidden ? '•••' : `₹${(v / 100000).toFixed(1)}L`;
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -79,9 +88,9 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
   return (
     <div>
       <h2 className="text-sm font-medium text-muted-foreground mb-2">AUM Over Time</h2>
-      <div className="rounded-lg border border-border bg-card p-4">
+      <div className="relative rounded-lg border border-border bg-card p-4">
         <ResponsiveContainer width="100%" height={250}>
-          <AreaChart data={data}>
+          <AreaChart data={data} {...handlers}>
             <defs>
               <linearGradient id="gradNetWorth" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="hsl(213, 75%, 55%)" stopOpacity={0.3} />
@@ -92,6 +101,7 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
             <XAxis dataKey="label" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
             <YAxis tickFormatter={yAxisFormatter} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={60} />
             <Tooltip content={<CustomTooltip />} />
+            <ChartRangeReferenceArea selection={selection} data={data} labelKey="label" />
             <Area
               type="monotone"
               dataKey="net_worth"
@@ -102,6 +112,7 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
             />
           </AreaChart>
         </ResponsiveContainer>
+        <ChartRangeBadge selection={selection} result={rangeResult} onClear={clear} unit="currency" valueLabel="AUM" />
       </div>
     </div>
   );

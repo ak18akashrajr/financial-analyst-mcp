@@ -11,6 +11,9 @@ import {
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
+import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
+import { computeRangeReturn } from '@/lib/chartRange';
+import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -26,6 +29,7 @@ interface Point {
 export function DebtChart({ refreshKey }: { refreshKey: number }) {
   const { hidden } = usePrivacy();
   const [data, setData] = useState<Point[]>([]);
+  const { selection, handlers, clear } = useChartRangeSelection();
 
   useEffect(() => {
     (async () => {
@@ -55,6 +59,11 @@ export function DebtChart({ refreshKey }: { refreshKey: number }) {
   const hasAnyDebt = data.some((d) => d.debt > 0);
   if (!hasAnyDebt) return null;
 
+  const rangeResult =
+    selection.startIndex !== null && selection.endIndex !== null
+      ? computeRangeReturn(data, selection.startIndex, selection.endIndex, 'net_worth', 'label')
+      : null;
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
     const p = payload[0].payload as Point;
@@ -71,9 +80,9 @@ export function DebtChart({ refreshKey }: { refreshKey: number }) {
   return (
     <div>
       <h2 className="text-sm font-medium text-muted-foreground mb-2">Debt % vs AUM Over Time</h2>
-      <div className="rounded-lg border border-border bg-card p-4">
+      <div className="relative rounded-lg border border-border bg-card p-4">
         <ResponsiveContainer width="100%" height={260}>
-          <ComposedChart data={data}>
+          <ComposedChart data={data} {...handlers}>
             <defs>
               <linearGradient id="gradNW" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="hsl(213, 75%, 55%)" stopOpacity={0.3} />
@@ -98,6 +107,7 @@ export function DebtChart({ refreshKey }: { refreshKey: number }) {
               className="fill-muted-foreground"
             />
             <Tooltip content={<CustomTooltip />} />
+            <ChartRangeReferenceArea selection={selection} data={data} labelKey="label" />
             <Area
               yAxisId="left"
               type="monotone"
@@ -118,6 +128,7 @@ export function DebtChart({ refreshKey }: { refreshKey: number }) {
             />
           </ComposedChart>
         </ResponsiveContainer>
+        <ChartRangeBadge selection={selection} result={rangeResult} onClear={clear} unit="currency" valueLabel="AUM" />
         <p className="text-xs text-muted-foreground mt-2">
           Debt % = Outstanding Liabilities / (AUM + Liability). Lower is better.
         </p>

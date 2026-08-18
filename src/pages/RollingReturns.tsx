@@ -10,6 +10,9 @@ import { Loader2, RefreshCw, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Transaction } from '@/types/portfolio';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
+import { computeRangeReturn } from '@/lib/chartRange';
+import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 interface PricePoint { date: string; close: number; }
 
@@ -228,6 +231,12 @@ const RollingContent = () => {
     return out;
   }, [monthEnds, selected, windowYears, pricesBySymbol, txnsBySymbol, transactions]);
 
+  const { selection: rangeSelection, handlers: rangeHandlers, clear: clearRange } = useChartRangeSelection();
+  const rangeResult =
+    rangeSelection.startIndex !== null && rangeSelection.endIndex !== null
+      ? computeRangeReturn(chartData, rangeSelection.startIndex, rangeSelection.endIndex, 'xirr', 'date')
+      : null;
+
   const fmtPct = (r: number | null) => r == null ? '—' : `${(r * 100).toFixed(2)}%`;
 
   return (
@@ -316,19 +325,23 @@ const RollingContent = () => {
                 <Info className="w-3.5 h-3.5" />
                 Rolling {windowYears}Y XIRR — each point is the XIRR computed over the prior {windowYears} year(s) ending that month.
               </div>
-              <ResponsiveContainer width="100%" height={320}>
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={v => `${v}%`} />
-                  <Tooltip
-                    contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
-                    formatter={(v: any) => v == null ? '—' : `${v}%`}
-                  />
-                  <Legend />
-                  <Line type="monotone" dataKey="xirr" name={`${windowYears}Y XIRR`} stroke="hsl(var(--primary))" dot={false} strokeWidth={2} connectNulls />
-                </LineChart>
-              </ResponsiveContainer>
+              <div className="relative">
+                <ResponsiveContainer width="100%" height={320}>
+                  <LineChart data={chartData} {...rangeHandlers}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={v => `${v}%`} />
+                    <Tooltip
+                      contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }}
+                      formatter={(v: any) => v == null ? '—' : `${v}%`}
+                    />
+                    <Legend />
+                    <ChartRangeReferenceArea selection={rangeSelection} data={chartData} labelKey="date" />
+                    <Line type="monotone" dataKey="xirr" name={`${windowYears}Y XIRR`} stroke="hsl(var(--primary))" dot={false} strokeWidth={2} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+                <ChartRangeBadge selection={rangeSelection} result={rangeResult} onClear={clearRange} unit="rate" valueLabel={`${windowYears}Y XIRR`} />
+              </div>
             </div>
 
             {symbols.length > 0 && Object.keys(pricesBySymbol).length === 0 && (

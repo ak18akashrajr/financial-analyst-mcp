@@ -3,6 +3,9 @@ import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tool
 import { Flame } from 'lucide-react';
 import { simulateFire } from '@/lib/monteCarloAdvanced';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
+import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
+import { computeRangeReturn } from '@/lib/chartRange';
+import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 
 function fmt(n: number) {
@@ -48,6 +51,12 @@ export function FireModule({
 
   const combinedTL = [...result.accumTimeline, ...result.drawdownTimeline.slice(1)];
 
+  const { selection: corpusRangeSelection, handlers: corpusRangeHandlers, clear: clearCorpusRange } = useChartRangeSelection();
+  const corpusRangeResult =
+    corpusRangeSelection.startIndex !== null && corpusRangeSelection.endIndex !== null
+      ? computeRangeReturn(combinedTL, corpusRangeSelection.startIndex, corpusRangeSelection.endIndex, 'p50', 'age')
+      : null;
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border bg-muted/30 p-4 text-xs text-muted-foreground leading-relaxed">
@@ -81,20 +90,31 @@ export function FireModule({
       {/* Chart */}
       <div className="rounded-lg border border-border bg-card p-4">
         <h3 className="text-xs font-medium text-muted-foreground mb-2">Corpus by age — accumulation → drawdown (p10/p50/p90)</h3>
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={combinedTL}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-            <XAxis dataKey="age" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
-            <YAxis tickFormatter={v => hidden ? '•••' : fmt(v)} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={70} />
-            <Tooltip formatter={(v: number) => hidden ? '••••' : fmt(v)} labelFormatter={(l) => `Age ${l}`} />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            <ReferenceLine x={retirementAge} stroke="hsl(45,93%,47%)" strokeDasharray="4 4" label={{ value: 'Retire', position: 'top', fill: 'hsl(45,93%,47%)', fontSize: 10 }} />
-            <ReferenceLine y={result.requiredCorpusAtRetirement} stroke="hsl(0,72%,51%)" strokeDasharray="2 2" label={{ value: 'Required', position: 'right', fill: 'hsl(0,72%,51%)', fontSize: 10 }} />
-            <Line type="monotone" dataKey="p90" name="p90" stroke="hsl(142,71%,45%)" dot={false} strokeWidth={1.5} />
-            <Line type="monotone" dataKey="p50" name="Median" stroke="hsl(220,70%,55%)" dot={false} strokeWidth={2} />
-            <Line type="monotone" dataKey="p10" name="p10" stroke="hsl(0,72%,51%)" dot={false} strokeWidth={1.5} strokeDasharray="4 4" />
-          </LineChart>
-        </ResponsiveContainer>
+        <div className="relative">
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={combinedTL} {...corpusRangeHandlers}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
+              <XAxis dataKey="age" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
+              <YAxis tickFormatter={v => hidden ? '•••' : fmt(v)} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={70} />
+              <Tooltip formatter={(v: number) => hidden ? '••••' : fmt(v)} labelFormatter={(l) => `Age ${l}`} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <ReferenceLine x={retirementAge} stroke="hsl(45,93%,47%)" strokeDasharray="4 4" label={{ value: 'Retire', position: 'top', fill: 'hsl(45,93%,47%)', fontSize: 10 }} />
+              <ReferenceLine y={result.requiredCorpusAtRetirement} stroke="hsl(0,72%,51%)" strokeDasharray="2 2" label={{ value: 'Required', position: 'right', fill: 'hsl(0,72%,51%)', fontSize: 10 }} />
+              <ChartRangeReferenceArea selection={corpusRangeSelection} data={combinedTL} labelKey="age" />
+              <Line type="monotone" dataKey="p90" name="p90" stroke="hsl(142,71%,45%)" dot={false} strokeWidth={1.5} />
+              <Line type="monotone" dataKey="p50" name="Median" stroke="hsl(220,70%,55%)" dot={false} strokeWidth={2} />
+              <Line type="monotone" dataKey="p10" name="p10" stroke="hsl(0,72%,51%)" dot={false} strokeWidth={1.5} strokeDasharray="4 4" />
+            </LineChart>
+          </ResponsiveContainer>
+          <ChartRangeBadge
+            selection={corpusRangeSelection}
+            result={corpusRangeResult}
+            onClear={clearCorpusRange}
+            unit="currency"
+            formatValue={fmt}
+            valueLabel="Median corpus (p50)"
+          />
+        </div>
       </div>
     </div>
   );
