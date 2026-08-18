@@ -14,6 +14,9 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import { AuditPopover, Formula, AuditSection, AuditTable, SourceBadge } from '@/components/AuditPopover';
+import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
+import { computeRangeReturn } from '@/lib/chartRange';
+import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import type { ReactNode } from 'react';
 import type { PeriodSnapshot, PeriodActivity } from '@/lib/periodReports';
 
@@ -222,6 +225,12 @@ const ReportsContent = () => {
       };
     });
   }, [periods, transactions, currentPrices, symbolMetaLite, history, cash, historicalPrices]);
+
+  const { selection: trendRangeSelection, handlers: trendRangeHandlers, clear: clearTrendRange } = useChartRangeSelection();
+  const trendRangeResult =
+    trendRangeSelection.startIndex !== null && trendRangeSelection.endIndex !== null
+      ? computeRangeReturn(trend, trendRangeSelection.startIndex, trendRangeSelection.endIndex, 'netWorth', 'label')
+      : null;
 
   if (!active || loading) {
     return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading reports…</div>;
@@ -495,19 +504,28 @@ One concise paragraph (3-4 sentences) summarising the period.
         {/* Performance trend across FY */}
         <div className="rounded-2xl border border-border bg-card p-5">
           <h3 className="text-sm font-semibold text-foreground mb-3">Performance Trend · {active.fy}</h3>
-          <div className="h-72">
+          <div className="h-72 relative">
             <ResponsiveContainer>
-              <LineChart data={trend}>
+              <LineChart data={trend} {...trendRangeHandlers}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={11} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v: any) => fmt(Number(v), hidden)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
+                <ChartRangeReferenceArea selection={trendRangeSelection} data={trend} labelKey="label" />
                 <Line type="monotone" dataKey="invested" stroke="#64748b" strokeWidth={2} dot={false} name="Principal Capital Allocated" />
                 <Line type="monotone" dataKey="current" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} name="Current" />
                 <Line type="monotone" dataKey="netWorth" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} name="AUM" />
               </LineChart>
             </ResponsiveContainer>
+            <ChartRangeBadge
+              selection={trendRangeSelection}
+              result={trendRangeResult}
+              onClear={clearTrendRange}
+              unit="currency"
+              formatValue={(v) => fmt(v, false)}
+              valueLabel="AUM"
+            />
           </div>
         </div>
 

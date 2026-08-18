@@ -17,6 +17,9 @@ import { AuditPopover, AuditSection, AuditTable, Formula } from '@/components/Au
 import { useDollarReturns } from '@/hooks/useDollarReturns';
 import { fmtInr, fmtUsd, rateOn } from '@/lib/fx';
 import { AlertTriangle, Database, DollarSign, Download, RefreshCw } from 'lucide-react';
+import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
+import { computeRangeReturn } from '@/lib/chartRange';
+import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 const RANGES = [
   { key: '1y', years: 1 },
@@ -79,6 +82,18 @@ function Content() {
       return { date: p.date, inr: p.inr, usd: rate ? p.inr / rate : 0 };
     });
   }, [nwHistory, rates, spot]);
+
+  const dualRange = useChartRangeSelection();
+  const dualRangeResult =
+    dualRange.selection.startIndex !== null && dualRange.selection.endIndex !== null
+      ? computeRangeReturn(dualSeries, dualRange.selection.startIndex, dualRange.selection.endIndex, 'usd', 'date')
+      : null;
+
+  const rateRange = useChartRangeSelection();
+  const rateRangeResult =
+    rateRange.selection.startIndex !== null && rateRange.selection.endIndex !== null
+      ? computeRangeReturn(rateSeries, rateRange.selection.startIndex, rateRange.selection.endIndex, 'rate', 'date')
+      : null;
 
   const provenance = useMemo(() => {
     const counts = new Map<string, number>();
@@ -288,24 +303,35 @@ function Content() {
               {dualSeries.length < 2 ? (
                 <p className="text-xs text-muted-foreground">Not enough net worth snapshots yet.</p>
               ) : (
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={dualSeries}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                    <YAxis yAxisId="l" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                    <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip
-                      contentStyle={{
-                        background: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Line yAxisId="l" type="monotone" dataKey="inr" name="AUM (INR)" stroke="hsl(var(--foreground))" dot={false} strokeWidth={2} />
-                    <Line yAxisId="r" type="monotone" dataKey="usd" name="AUM (USD)" stroke="hsl(var(--gain))" dot={false} strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <div className="relative">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart data={dualSeries} {...dualRange.handlers}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                      <YAxis yAxisId="l" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                      <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                      <Tooltip
+                        contentStyle={{
+                          background: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                      <ChartRangeReferenceArea selection={dualRange.selection} data={dualSeries} labelKey="date" />
+                      <Line yAxisId="l" type="monotone" dataKey="inr" name="AUM (INR)" stroke="hsl(var(--foreground))" dot={false} strokeWidth={2} />
+                      <Line yAxisId="r" type="monotone" dataKey="usd" name="AUM (USD)" stroke="hsl(var(--gain))" dot={false} strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <ChartRangeBadge
+                    selection={dualRange.selection}
+                    result={dualRangeResult}
+                    onClear={dualRange.clear}
+                    unit="currency"
+                    formatValue={fmtUsd}
+                    valueLabel="AUM (USD)"
+                  />
+                </div>
               )}
             </div>
 
@@ -332,22 +358,33 @@ function Content() {
               {rateSeries.length < 2 ? (
                 <p className="text-xs text-muted-foreground">No rate history for this range — backfill first.</p>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <AreaChart data={rateSeries}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" minTickGap={40} />
-                    <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip
-                      contentStyle={{
-                        background: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Area type="monotone" dataKey="rate" stroke="hsl(var(--foreground))" fill="hsl(var(--foreground))" fillOpacity={0.08} strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <div className="relative">
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={rateSeries} {...rateRange.handlers}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" minTickGap={40} />
+                      <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+                      <Tooltip
+                        contentStyle={{
+                          background: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                      <ChartRangeReferenceArea selection={rateRange.selection} data={rateSeries} labelKey="date" />
+                      <Area type="monotone" dataKey="rate" stroke="hsl(var(--foreground))" fill="hsl(var(--foreground))" fillOpacity={0.08} strokeWidth={2} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  <ChartRangeBadge
+                    selection={rateRange.selection}
+                    result={rateRangeResult}
+                    onClear={rateRange.clear}
+                    unit="currency"
+                    formatValue={(v) => v.toFixed(4)}
+                    valueLabel="USD-INR"
+                  />
+                </div>
               )}
             </div>
 

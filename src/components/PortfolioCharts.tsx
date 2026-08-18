@@ -12,6 +12,9 @@ import {
 } from 'recharts';
 import type { Transaction } from '@/types/portfolio';
 import { usePrivacy } from '@/contexts/PrivacyContext';
+import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
+import { computeRangeReturn } from '@/lib/chartRange';
+import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -44,6 +47,8 @@ interface TimelinePoint {
 
 export function PortfolioCharts({ transactions, currentPrices }: Props) {
   const { hidden, mask } = usePrivacy();
+  const investedVsCurrent = useChartRangeSelection();
+  const pnlOverTime = useChartRangeSelection();
 
   const timelineData = useMemo(() => {
     if (transactions.length === 0) return [];
@@ -128,6 +133,15 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
     return null;
   }
 
+  const investedVsCurrentRange =
+    investedVsCurrent.selection.startIndex !== null && investedVsCurrent.selection.endIndex !== null
+      ? computeRangeReturn(timelineData, investedVsCurrent.selection.startIndex, investedVsCurrent.selection.endIndex, 'currentValue', 'dateLabel')
+      : null;
+  const pnlRange =
+    pnlOverTime.selection.startIndex !== null && pnlOverTime.selection.endIndex !== null
+      ? computeRangeReturn(timelineData, pnlOverTime.selection.startIndex, pnlOverTime.selection.endIndex, 'pnl', 'dateLabel')
+      : null;
+
   // Determine if latest P&L is negative for color
   const latestPnl = timelineData[timelineData.length - 1]?.pnl ?? 0;
   const pnlIsNegative = latestPnl < 0;
@@ -156,9 +170,9 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
         <h2 className="text-sm font-medium text-muted-foreground mb-2">
           Principal Capital Allocated vs Current Value
         </h2>
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="relative rounded-lg border border-border bg-card p-4">
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={timelineData}>
+            <AreaChart data={timelineData} {...investedVsCurrent.handlers}>
               <defs>
                 <linearGradient id="gradInvested" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="hsl(220, 70%, 55%)" stopOpacity={0.3} />
@@ -183,6 +197,7 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
+              <ChartRangeReferenceArea selection={investedVsCurrent.selection} data={timelineData} labelKey="dateLabel" />
               <Area
                 type="monotone"
                 dataKey="invested"
@@ -201,6 +216,13 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
               />
             </AreaChart>
           </ResponsiveContainer>
+          <ChartRangeBadge
+            selection={investedVsCurrent.selection}
+            result={investedVsCurrentRange}
+            onClear={investedVsCurrent.clear}
+            unit="currency"
+            valueLabel="Current Value"
+          />
         </div>
       </div>
 
@@ -209,9 +231,9 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
         <h2 className="text-sm font-medium text-muted-foreground mb-2">
           P&L Over Time
         </h2>
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="relative rounded-lg border border-border bg-card p-4">
           <ResponsiveContainer width="100%" height={250}>
-            <AreaChart data={timelineData}>
+            <AreaChart data={timelineData} {...pnlOverTime.handlers}>
               <defs>
                 <linearGradient id="gradPnl" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={pnlColor} stopOpacity={0.4} />
@@ -232,6 +254,7 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
               />
               <Tooltip content={<CustomTooltip />} />
               <ReferenceLine y={0} stroke="hsl(0, 0%, 50%)" strokeDasharray="3 3" />
+              <ChartRangeReferenceArea selection={pnlOverTime.selection} data={timelineData} labelKey="dateLabel" />
               <Area
                 type="monotone"
                 dataKey="pnl"
@@ -242,6 +265,13 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
               />
             </AreaChart>
           </ResponsiveContainer>
+          <ChartRangeBadge
+            selection={pnlOverTime.selection}
+            result={pnlRange}
+            onClear={pnlOverTime.clear}
+            unit="currency"
+            valueLabel="P&L"
+          />
         </div>
       </div>
     </div>

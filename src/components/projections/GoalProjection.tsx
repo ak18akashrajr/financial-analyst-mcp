@@ -3,6 +3,9 @@ import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tool
 import { Target, Sparkles } from 'lucide-react';
 import { runGoalMonteCarlo, solveRequiredSIP } from '@/lib/monteCarloAdvanced';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
+import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
+import { computeRangeReturn } from '@/lib/chartRange';
+import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 
 interface Goal {
@@ -35,6 +38,7 @@ export function GoalProjection({
   const [selectedId, setSelectedId] = useState<string>(goals[0]?.id ?? '');
   const [monthlySIP, setMonthlySIP] = useState<number>(10000);
   const [confidence, setConfidence] = useState<number>(80);
+  const { selection: fanRangeSelection, handlers: fanRangeHandlers, clear: clearFanRange } = useChartRangeSelection();
 
   const selected = goals.find(g => g.id === selectedId);
 
@@ -92,6 +96,11 @@ export function GoalProjection({
     p90: result.timelines.p90[i] ?? 0,
     target: Number(selected?.target_amount ?? 0),
   })) ?? [];
+
+  const fanRangeResult =
+    fanRangeSelection.startIndex !== null && fanRangeSelection.endIndex !== null
+      ? computeRangeReturn(chartData, fanRangeSelection.startIndex, fanRangeSelection.endIndex, 'p50', 'year')
+      : null;
 
   return (
     <div className="space-y-4">
@@ -152,25 +161,36 @@ export function GoalProjection({
             <InfoHint title="Fan chart" side="right">Each line is a percentile of the 800 simulations over time: p90 optimistic, p50 median, p10 pessimistic. Where the target line sits inside the fan tells you how comfortably the goal is funded.</InfoHint>
           </h3>
 
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="gGoal90" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(142,71%,45%)" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="hsl(142,71%,45%)" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
-              <XAxis dataKey="year" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
-              <YAxis tickFormatter={v => hidden ? '•••' : fmt(v)} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={70} />
-              <Tooltip formatter={(v: number) => hidden ? '••••' : fmt(v)} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Area type="monotone" dataKey="p90" name="p90 (optimistic)" stroke="hsl(142,71%,45%)" fill="url(#gGoal90)" strokeWidth={1.5} />
-              <Area type="monotone" dataKey="p50" name="Median" stroke="hsl(220,70%,55%)" fill="none" strokeWidth={2} />
-              <Area type="monotone" dataKey="p10" name="p10 (pessimistic)" stroke="hsl(0,72%,51%)" fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
-              <Area type="monotone" dataKey="target" name="Target" stroke="hsl(45,93%,47%)" fill="none" strokeWidth={1.5} strokeDasharray="6 2" />
-            </AreaChart>
-          </ResponsiveContainer>
+          <div className="relative">
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={chartData} {...fanRangeHandlers}>
+                <defs>
+                  <linearGradient id="gGoal90" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(142,71%,45%)" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="hsl(142,71%,45%)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
+                <XAxis dataKey="year" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
+                <YAxis tickFormatter={v => hidden ? '•••' : fmt(v)} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={70} />
+                <Tooltip formatter={(v: number) => hidden ? '••••' : fmt(v)} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <ChartRangeReferenceArea selection={fanRangeSelection} data={chartData} labelKey="year" />
+                <Area type="monotone" dataKey="p90" name="p90 (optimistic)" stroke="hsl(142,71%,45%)" fill="url(#gGoal90)" strokeWidth={1.5} />
+                <Area type="monotone" dataKey="p50" name="Median" stroke="hsl(220,70%,55%)" fill="none" strokeWidth={2} />
+                <Area type="monotone" dataKey="p10" name="p10 (pessimistic)" stroke="hsl(0,72%,51%)" fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
+                <Area type="monotone" dataKey="target" name="Target" stroke="hsl(45,93%,47%)" fill="none" strokeWidth={1.5} strokeDasharray="6 2" />
+              </AreaChart>
+            </ResponsiveContainer>
+            <ChartRangeBadge
+              selection={fanRangeSelection}
+              result={fanRangeResult}
+              onClear={clearFanRange}
+              unit="currency"
+              formatValue={fmt}
+              valueLabel="Median (p50)"
+            />
+          </div>
         </div>
       )}
 
