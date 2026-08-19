@@ -3,8 +3,9 @@
 Scope, as agreed in [feature-ideas.md](feature-ideas.md#0-auto-sync-cash-balances-from-upi-transactions-priority):
 - Keeps **Operating Cash** (`liquidCash`) and **Cash Reserve** (`vaultCash`) in sync. `pfBalance`
   is explicitly out of scope.
-- Data source is a **manually uploaded ICICI statement export (CSV/XLS)** — no external API, no
-  credentials handled by the app.
+- Data source is a **manually uploaded bank statement export (CSV/XLS)** — no external API, no
+  credentials handled by the app. Vault and Operating Cash are held at two *different* banks, so
+  this needs two statement formats supported, not one (see §2).
 - Parsed rows land in a **review queue** as "pending." Nothing touches the real balance until you
   approve a row.
 - Approved rows become **auditable ledger entries**, not a raw overwrite of `cash_settings`. The
@@ -64,14 +65,20 @@ Notes:
 
 ## 2. Statement parsing
 
-- New dependency: `papaparse` for CSV (small, no XLS support) — ICICI's netbanking export is CSV by
-  default, so build for CSV first. XLS/XLSX support (`xlsx` or `exceljs`) can be added once you
-  confirm which export format you actually use day to day; don't build both blind.
+Vault and Operating Cash are held at two different banks — their netbanking exports will almost
+certainly differ in column layout, date format, and header/footer boilerplate. This plan treats
+that as two parser variants behind one interface, not one parser with a bank name hardcoded into
+it, so the docs/code stay bank-agnostic and adding a third account later is just a third variant.
+
+- New dependency: `papaparse` for CSV (small, no XLS support). XLS/XLSX support (`xlsx` or
+  `exceljs`) only gets added if one of the two exports actually comes as XLS — confirm this per
+  account before picking the dependency, don't build for both blind.
 - New pure module `src/lib/bankStatementParser.ts`:
-  - `parseIciciStatement(fileText: string, account: 'liquid' | 'vault'): ParsedRow[]`
-  - ICICI's CSV export has a known quirky format (header/footer boilerplate rows, "Sr No" columns,
-    DD/MM/YYYY dates, separate Debit/Credit columns rather than a signed amount) — this function
-    normalizes that into `{ txnDate, description, amount, reference }[]`.
+  - `parseBankStatement(fileText: string, account: 'liquid' | 'vault'): ParsedRow[]` — dispatches
+    to a per-account parsing function internally (e.g. `parseVaultAccountStatement` /
+    `parseOperatingAccountStatement`) once both real formats are known, normalizing whatever the
+    quirks are (boilerplate rows, "Sr No" columns, DD/MM/YYYY dates, separate Debit/Credit columns
+    vs. a signed amount) into one common `{ txnDate, description, amount, reference }[]` shape.
   - Kept as a pure function (no Supabase import) specifically so it's unit-testable per the repo's
     existing convention of testing pure `src/lib/*.ts` functions directly (`xirr.ts`,
     `taxCalculator.ts` etc. all follow this shape) — this is the one piece of new logic that can be
@@ -115,10 +122,10 @@ no react-query):
 
 ## 5. Tests
 
-- `src/test/bank-statement-parser.test.ts` — pure function tests over `bankStatementParser.ts`
-  (sample ICICI CSV fixtures: normal rows, a debit row, a credit row, a malformed row that should
-  throw/reject). This is the highest-value test here and fits the existing pure-lib test pattern
-  exactly.
+- `src/test/bank-statement-parser.test.ts` — pure function tests over `bankStatementParser.ts`,
+  with fixtures for *both* accounts' real export formats once known (normal rows, a debit row, a
+  credit row, a malformed row that should throw/reject, for each). This is the highest-value test
+  here and fits the existing pure-lib test pattern exactly.
 - `src/test/bank-sync-page.test.tsx` — component test mocking `usePortfolio` directly (per the
   established `vi.mock('@/hooks/usePortfolio', ...)`-style pattern used for
   `protected-route.test.tsx` / `exposure-section.test.tsx`), not the Supabase client — asserts
@@ -131,22 +138,33 @@ no react-query):
 ## 6. Sequencing / effort
 
 1. Migration + RLS policy (small, mechanical).
-2. `bankStatementParser.ts` + its tests (medium — the ICICI CSV quirks are the real unknown here;
-   **needs a real sample export from you to build against**, a synthetic fixture risks not
-   matching the real format).
+2. `bankStatementParser.ts` + its tests (medium — the real per-bank CSV quirks are the unknown
+   here, for *both* accounts since they're different banks; **needs real sample exports from you
+   to build against**, synthetic fixtures risk not matching either real format).
 3. `usePortfolio.ts` extensions (small–medium, follows existing conventions closely).
 4. Upload + review queue UI (medium — genuinely new UI, no prior art to lean on).
 5. Wire `CashSection.tsx` display to the derived balance (small).
 
-**Total: medium** — no single step is large, but step 2 has a real external dependency (an actual
-statement file to build the parser against) that blocks accurate scoping of its own effort.
+**Total: medium** — no single step is large, but step 2 has a real external dependency (actual
+statement files to build the parser against, for two different banks) that blocks accurate scoping
+of its own effort until those arrive.
 
-## Still open before implementation starts
+## Status / handoff notes
 
-- **Need one real (redacted-if-you-like) ICICI CSV/XLS export** to nail down the exact column
-  layout, date format, and header/footer boilerplate — the parser can't be built blind.
-- Confirm CSV vs XLS as the actual export format you'll use, so the right parsing dependency gets
-  added (`papaparse` vs `xlsx`).
-- Confirm whether "Cash Reserve" and "Operating Cash" are two sub-accounts under the same ICICI
-  statement export, or two separate exports — determines whether the upload flow needs an
-  account-selector per upload or can infer it from the file.
+Keep this section updated as the source of truth for "where we left off" across sessions/machines
+— check here first when resuming.
+
+- **Confirmed:** Vault and Operating Cash are two separate accounts at two different banks (exact
+  bank names intentionally omitted from this doc since it's pushed to GitHub — Claude has them
+  noted privately and doesn't need reminding). Each needs its own statement export and its own
+  parser variant per §2.
+- **Waiting on (blocks starting implementation):**
+  - A real (redact account numbers/personal identifiers if you like) statement export for the
+    Vault account.
+  - A real statement export for the Operating Cash account.
+  - Confirmation of CSV vs XLS for each — they may differ from each other.
+- **Once exports are shared, next step is:** inspect both formats together, finalize the exact
+  `ParsedRow` normalization for each, then start on step 1 (migration) while the parser is being
+  built against real fixtures — those two can happen in parallel.
+- **Nothing has been implemented yet** — no migration, no `bankStatementParser.ts`, no UI exist as
+  of this doc's last edit. Everything above is plan only.

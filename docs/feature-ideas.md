@@ -16,7 +16,7 @@ PF + credit card debt tracking, rolling XIRR, dollar-adjusted returns, a changel
 ---
 
 ## 0. Auto-sync cash balances from UPI transactions (priority)
-**Why:** `liquidCash` (Operating Cash) and `vaultCash` (Cash Reserve, ICICI savings) in
+**Why:** `liquidCash` (Operating Cash) and `vaultCash` (Cash Reserve) in
 `cash_settings` are entered by hand today ([CashSection.tsx](../src/components/CashSection.tsx)) —
 every UPI debit/credit means a manual edit or the number drifts from reality.
 **What it'd look like:** pull UPI transaction history for both bank accounts on a schedule (or on
@@ -35,17 +35,18 @@ data.
   auditable row (same shape as the existing `transactions` table pattern), and the cash balance
   becomes a derived total on top of that.
 - **Data source — building Phase 1 now, Phase 2 explicitly queued:**
-  - **Phase 1 (build target):** periodic ICICI bank statement upload (CSV/XLS export from
-    netbanking, done by hand) parsed into pending ledger rows in the review queue. No external
-    integration, no credentials ever touch the app, reuses the same parsing/validation shape as
-    backlog item #7 (CSV import). Fully within the app's existing security posture — this is what
-    gets scoped/built first.
-  - **📌 Phase 2 — planned upgrade, not yet started:** replace the manual export step with Gmail
-    API read-access that parses ICICI's transaction-alert emails straight into the same pending
-    queue, so sync no longer requires you to remember to export a statement. Adds inbox-read as a
-    new trust boundary, so this should only be picked up once Phase 1's parsing/review UI has been
-    used for a while and proven reliable. Revisit this explicitly rather than letting Phase 1 be
-    treated as the final state.
+  - **Phase 1 (build target):** periodic bank statement upload (CSV/XLS export from netbanking,
+    done by hand, one export per account) parsed into pending ledger rows in the review queue. No
+    external integration, no credentials ever touch the app, reuses the same parsing/validation
+    shape as backlog item #7 (CSV import). Fully within the app's existing security posture — this
+    is what gets scoped/built first. Note: Vault and Operating Cash are held at two *different*
+    banks, so the statement format differs per account — see the dedicated plan doc for details.
+  - **📌 Phase 2 — planned upgrade, not yet started:** replace the manual export step with email
+    (Gmail API) read-access that parses each bank's transaction-alert emails straight into the same
+    pending queue, so sync no longer requires you to remember to export a statement. Adds
+    inbox-read as a new trust boundary, so this should only be picked up once Phase 1's
+    parsing/review UI has been used for a while and proven reliable. Revisit this explicitly rather
+    than letting Phase 1 be treated as the final state.
   - *Ruled out:* the RBI Account Aggregator framework (Setu/Finvu/OneMoney) is the "textbook
     correct" regulated path, but production data-pull access is normally gated behind being a
     registered Financial Information User (FIU) — a licensed financial entity, not an individual
