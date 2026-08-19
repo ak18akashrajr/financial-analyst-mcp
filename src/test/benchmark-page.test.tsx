@@ -6,11 +6,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Benchmark from '@/pages/Benchmark';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 function renderPage() {
   return render(
     <MemoryRouter>
-      <Benchmark />
+      <TooltipProvider>
+        <Benchmark />
+      </TooltipProvider>
     </MemoryRouter>,
   );
 }
@@ -70,6 +73,24 @@ describe('Benchmark page', () => {
     expect(screen.getByText('+15.00%')).toBeInTheDocument(); // portfolio
     expect(screen.getByText('+5.00%')).toBeInTheDocument(); // benchmark
     expect(screen.getByText('+10.00%')).toBeInTheDocument(); // outperformance
+  });
+
+  it('shows a definition tooltip when a stat label hint is clicked', async () => {
+    netWorthRows.push(
+      { recorded_at: '2026-01-01T00:00:00Z', net_worth: 100000 },
+      { recorded_at: '2026-02-01T00:00:00Z', net_worth: 115000 },
+    );
+    benchmarkRows.push(
+      { date: '2026-01-01', close: 20000 },
+      { date: '2026-02-01', close: 21000 },
+    );
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Portfolio Return')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /what is portfolio return/i }));
+    // Radix's Tooltip renders the content into more than one DOM node (visible + accessibility
+    // copies), so assert presence via getAllByText rather than the single-match getByText.
+    await waitFor(() => expect(screen.getAllByText(/measured against its own starting value/i).length).toBeGreaterThan(0));
   });
 
   it('masks return figures when privacy mode is toggled on', async () => {

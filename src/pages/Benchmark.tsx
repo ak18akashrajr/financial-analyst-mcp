@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, TrendingUp, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -11,6 +11,7 @@ import {
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
+import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 
 // Mirrors BENCHMARK_TICKERS in supabase/functions/fetch-benchmark-prices/index.ts — the friendly
 // symbols benchmark_history is keyed by (not the underlying Yahoo tickers).
@@ -175,8 +176,18 @@ const BenchmarkContent = () => {
           <div className="flex items-center gap-3">
             <Link to="/" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /></Link>
             <div>
-              <h1 className="text-xl font-bold text-foreground flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Benchmark Comparison</h1>
-              <p className="text-xs text-muted-foreground">AUM vs {benchmarkLabel} · rebased to 100 at the start of the shared history</p>
+              <div className="text-xl font-bold text-foreground flex items-center gap-2">
+                <h1 className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Benchmark Comparison</h1>
+                <InfoHint title="Benchmark Comparison" side="right">
+                  Tracks how your portfolio's AUM (holdings + cash + PF − liabilities) has grown compared to a market index, so you can tell whether being invested the way you are has actually beaten just holding the index.
+                </InfoHint>
+              </div>
+              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                <span>AUM vs {benchmarkLabel} · rebased to 100 at the start of the shared history</span>
+                <InfoHint title="Rebased to 100" side="bottom" formula="value ÷ first overlapping value × 100">
+                  Both lines are scaled so they both start at 100 on the first date where AUM history and {benchmarkLabel} data overlap. This makes the two directly comparable regardless of your portfolio's ₹ size vs. the index's point level — a line at 110 means "+10% from the start," for either series.
+                </InfoHint>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -215,16 +226,53 @@ const BenchmarkContent = () => {
             {/* Stats */}
             {stats && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <Stat label="Portfolio Return" value={mask(fmtPct(stats.portfolioReturnPercent))} positive={stats.portfolioReturnPercent >= 0} />
-                <Stat label={`${benchmarkLabel} Return`} value={mask(fmtPct(stats.benchmarkReturnPercent))} positive={stats.benchmarkReturnPercent >= 0} />
-                <Stat label="Outperformance" value={mask(fmtPct(stats.outperformancePercent))} positive={stats.outperformancePercent >= 0} />
-                <Stat label="Window" value={`${stats.windowDays}d`} sub={`${stats.fromLabel} → ${stats.toLabel}`} />
+                <Stat
+                  label={
+                    <LabelWithHint label="Portfolio Return" title="Portfolio Return" side="top" formula="(last AUM index ÷ first AUM index − 1) × 100">
+                      How much your AUM (holdings + cash + PF − liabilities) has grown or shrunk, in %, over the shared history shown below — measured against its own starting value, not in absolute ₹.
+                    </LabelWithHint>
+                  }
+                  value={mask(fmtPct(stats.portfolioReturnPercent))}
+                  positive={stats.portfolioReturnPercent >= 0}
+                />
+                <Stat
+                  label={
+                    <LabelWithHint label={`${benchmarkLabel} Return`} title={`${benchmarkLabel} Return`} side="top">
+                      How much the {benchmarkLabel} index itself moved, in %, over the same date range — the same calculation as Portfolio Return, but for the index instead of your portfolio.
+                    </LabelWithHint>
+                  }
+                  value={mask(fmtPct(stats.benchmarkReturnPercent))}
+                  positive={stats.benchmarkReturnPercent >= 0}
+                />
+                <Stat
+                  label={
+                    <LabelWithHint label="Outperformance" title="Outperformance" side="top" formula="Portfolio Return − Benchmark Return">
+                      Positive means your portfolio beat {benchmarkLabel} over this window; negative means the index beat you.
+                    </LabelWithHint>
+                  }
+                  value={mask(fmtPct(stats.outperformancePercent))}
+                  positive={stats.outperformancePercent >= 0}
+                />
+                <Stat
+                  label={
+                    <LabelWithHint label="Window" title="Window" side="top">
+                      The number of calendar days between the first and last date where both AUM history and {benchmarkLabel} data are available — shown below as the actual start and end dates.
+                    </LabelWithHint>
+                  }
+                  value={`${stats.windowDays}d`}
+                  sub={`${stats.fromLabel} → ${stats.toLabel}`}
+                />
               </div>
             )}
 
             {/* Chart */}
             <div className="rounded-2xl border border-border bg-card p-5">
-              <h3 className="text-sm font-semibold text-foreground mb-3">Rebased Performance (start = 100)</h3>
+              <div className="text-sm font-semibold text-foreground mb-3 inline-flex items-center gap-1">
+                <h3>Rebased Performance (start = 100)</h3>
+                <InfoHint title="Rebased Performance" side="right" formula="value ÷ first overlapping value × 100">
+                  Green = Portfolio (AUM), blue = {benchmarkLabel}. Both start at 100 on the first overlapping date so you can compare the shape and pace of growth directly — drag across the chart to measure the return over any custom range.
+                </InfoHint>
+              </div>
               <div className="h-80 relative">
                 <ResponsiveContainer>
                   <LineChart data={chartData} {...handlers}>
@@ -264,9 +312,11 @@ const BenchmarkContent = () => {
   );
 };
 
-const Stat = ({ label, value, sub, positive }: { label: string; value: string; sub?: string; positive?: boolean }) => (
+const Stat = ({ label, value, sub, positive }: { label: ReactNode; value: string; sub?: string; positive?: boolean }) => (
   <div className="rounded-xl border border-border bg-card p-4">
-    <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+    {/* div, not <p> — label can carry a LabelWithHint, whose tooltip content itself contains
+        block elements (p, div), which is invalid nested inside a <p>. */}
+    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
     <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-green-600' : positive === false ? 'text-red-600' : 'text-foreground'}`}>{value}</p>
     {sub && <p className="text-[11px] text-muted-foreground mt-1">{sub}</p>}
   </div>
