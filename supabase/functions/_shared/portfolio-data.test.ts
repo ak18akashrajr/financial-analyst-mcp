@@ -7,8 +7,11 @@ import {
   computeHoldingsFromTxns,
   concentrationRisk,
   exposureBy,
+  getCurrentPortfolio,
+  getExposureDrift,
   getRiskMetrics,
   runStressTest,
+  splitByPriceAvailability,
   type Holding,
   type Txn,
 } from "./portfolio-data.ts";
@@ -49,6 +52,30 @@ describe("computeHoldingsFromTxns", () => {
     expect(aapl.quantity).toBe(10); // second BUY (2026-02-01) excluded
     expect(tcs.quantity).toBe(5); // SELL (2026-03-01) excluded, still open
   });
+
+  it("marks a symbol missing from priceMap as hasPriceData: false instead of a fabricated 100% loss", () => {
+    // TCS has no entry in this priceMap (e.g. current_prices hasn't synced it yet).
+    const holdings = computeHoldingsFromTxns(txns, { AAPL: 150 }, META);
+    const aapl = holdings.find((h) => h.symbol === "AAPL")!;
+    expect(aapl.hasPriceData).toBe(true);
+    // TCS is fully closed in this txn set regardless, so re-check with an open TCS position.
+    const openTcsTxns: Txn[] = [{ symbol: "TCS", type: "BUY", quantity: 5, price: 200, date: "2026-01-15" }];
+    const tcs = computeHoldingsFromTxns(openTcsTxns, {}, META)[0];
+    expect(tcs.hasPriceData).toBe(false);
+    expect(tcs.currentValue).toBe(0);
+    expect(tcs.pnl).toBe(0); // not -1000 (a fabricated 100% loss)
+    expect(tcs.invested).toBe(1000); // invested amount is still real and unaffected
+  });
+});
+
+describe("splitByPriceAvailability", () => {
+  it("separates priced holdings from those missing a price", () => {
+    const priced = makeHolding({ symbol: "A", hasPriceData: true });
+    const unpriced = makeHolding({ symbol: "B", hasPriceData: false });
+    const result = splitByPriceAvailability([priced, unpriced]);
+    expect(result.priced).toEqual([priced]);
+    expect(result.missingSymbols).toEqual(["B"]);
+  });
 });
 
 function makeHolding(overrides: Partial<Holding>): Holding {
@@ -63,6 +90,7 @@ function makeHolding(overrides: Partial<Holding>): Holding {
     pnlPercent: 0,
     geography: "India",
     category: "Tech",
+    hasPriceData: true,
     ...overrides,
   };
 }
@@ -153,6 +181,10 @@ function makeQueryBuilder(table: FakeTable) {
     select: () => builder,
     eq: (col: string, val: unknown) => {
       rows = rows.filter((r) => r[col] === val);
+      return builder;
+    },
+    lte: (col: string, val: unknown) => {
+      rows = rows.filter((r) => (r[col] as string | number) <= (val as string | number));
       return builder;
     },
     order: (col: string, opts?: { ascending?: boolean }) => {
@@ -258,6 +290,70 @@ describe("compareToBenchmark", () => {
     expect(result.note).toContain("fetch-benchmark-prices");
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
+  });
+});
+
+describe("getCurrentPortfolio", () => {
+  it("excludes a symbol with no current_prices row from totals and flags it, rather than pricing it at ₹0", async () => {
+    const sb = makeFakeSb({
+      transactions: {
+        rows: [
+          { symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-01-01" },
+          { symbol: "HDFC", type: "BUY", quantity: 5, price: 200, date: "2026-01-01" },
+        ],
+      },
+      current_prices: { rows: [{ symbol: "TCS", price: 150 }] }, // HDFC missing
+      symbol_metadata: {
+        rows: [
+          { symbol: "TCS", geography: "India", sector: "Tech" },
+          { symbol: "HDFC", geography: "India", sector: "Financials" },
+        ],
+      },
+      cash_settings: { rows: [{ liquid_cash: 1000, vault_cash: 0 }] },
+    });
+    const p = await getCurrentPortfolio(sb);
+    expect(p.holdings.map((h) => h.symbol)).toEqual(["TCS"]);
+    expect(p.missingPriceSymbols).toEqual(["HDFC"]);
+    // Totals reflect only the priced holding + cash — HDFC's ₹1000 invested is
+    // not silently counted as a ₹1000 loss.
+    expect(p.totalInvested).toBe(1000); // TCS only: 10 * 100
+    expect(p.totalCurrentValue).toBe(1500); // TCS only: 10 * 150
+    expect(p.totalPortfolioValue).toBe(2500); // 1500 + 1000 cash
+  });
+});
+
+describe("getExposureDrift", () => {
+  const txns = {
+    rows: [
+      { symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-01-01" },
+      // Bought before asOfDate, so it IS held as of asOfDate — the gap being
+      // tested is a missing historical_prices row, not "not yet owned".
+      { symbol: "HDFC", type: "BUY", quantity: 10, price: 100, date: "2026-01-05" },
+    ],
+  };
+  const meta = {
+    rows: [
+      { symbol: "TCS", geography: "India", sector: "Tech" },
+      { symbol: "HDFC", geography: "India", sector: "Financials" },
+    ],
+  };
+
+  it("excludes a symbol with no historical_prices row on/before asOfDate from the past side, instead of a fake 0% drift", async () => {
+    const sb = makeFakeSb({
+      transactions: txns,
+      current_prices: { rows: [{ symbol: "TCS", price: 150 }, { symbol: "HDFC", price: 120 }] },
+      symbol_metadata: meta,
+      // Only TCS has history on/before the asOfDate — HDFC was bought after it,
+      // so it has no historical_prices row that old.
+      historical_prices: { rows: [{ symbol: "TCS", date: "2026-01-01", close: 100 }] },
+    });
+    const result = await getExposureDrift(sb, "2026-01-15");
+    // Past-side sector exposure should be 100% Tech (TCS only) — HDFC excluded
+    // rather than contributing a fabricated 0%-weight "Financials" data point.
+    const techDrift = result.categoryDrift.find((d) => d.label === "Tech")!;
+    expect(techDrift.pastPercent).toBe(100);
+    expect(result.note).toContain("HDFC");
+    expect(result.note).toContain("excluded from past-side exposure");
   });
 });
 

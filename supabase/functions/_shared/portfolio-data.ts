@@ -24,6 +24,10 @@ export interface Holding {
   pnlPercent: number;
   geography: string;
   category: string;
+  /** False when `priceMap` had no entry for this symbol — currentValue/pnl are
+   * placeholders (0), not real figures. Callers should exclude these from
+   * totals/percentages rather than let a missing price read as a 100% loss. */
+  hasPriceData: boolean;
 }
 
 export interface Txn {
@@ -63,10 +67,11 @@ export function computeHoldingsFromTxns(
   return Object.entries(bySymbol)
     .filter(([, h]) => h.qty > 1e-9)
     .map(([symbol, h]) => {
-      const cp = priceMap[symbol] || 0;
-      const currentValue = cp * h.qty;
-      const pnl = currentValue - h.invested;
-      const pnlPercent = h.invested !== 0 ? (pnl / h.invested) * 100 : 0;
+      const hasPriceData = symbol in priceMap;
+      const cp = hasPriceData ? Number(priceMap[symbol]) : 0;
+      const currentValue = hasPriceData ? cp * h.qty : 0;
+      const pnl = hasPriceData ? currentValue - h.invested : 0;
+      const pnlPercent = hasPriceData && h.invested !== 0 ? (pnl / h.invested) * 100 : 0;
       const m = metaMap[symbol];
       return {
         symbol,
@@ -79,8 +84,26 @@ export function computeHoldingsFromTxns(
         pnlPercent,
         geography: m?.geography || "Untagged",
         category: m?.sector || "Untagged",
+        hasPriceData,
       };
     });
+}
+
+/**
+ * Splits holdings into those with a real price (current or point-in-time) and
+ * those without one — e.g. a just-bought symbol not yet synced into
+ * current_prices, or one with no historical_prices row on/before an asOfDate.
+ * Callers should aggregate totals/percentages from `priced` only and surface
+ * `missingSymbols` as a note, rather than let a missing price silently read
+ * as a fabricated ₹0 value / 100% loss.
+ */
+export function splitByPriceAvailability(
+  holdings: Holding[],
+): { priced: Holding[]; missingSymbols: string[] } {
+  return {
+    priced: holdings.filter((h) => h.hasPriceData),
+    missingSymbols: holdings.filter((h) => !h.hasPriceData).map((h) => h.symbol),
+  };
 }
 
 export async function fetchTxns(sb: SupabaseClient): Promise<Txn[]> {
@@ -117,12 +140,14 @@ export async function getCurrentPortfolio(sb: SupabaseClient) {
     fetchMetaMap(sb),
     fetchCash(sb),
   ]);
-  const holdings = computeHoldingsFromTxns(txns, prices, meta);
+  const { priced: holdings, missingSymbols: missingPriceSymbols } = splitByPriceAvailability(
+    computeHoldingsFromTxns(txns, prices, meta),
+  );
   const totalInvested = holdings.reduce((s, h) => s + h.invested, 0);
   const totalCurrentValue = holdings.reduce((s, h) => s + h.currentValue, 0);
   const totalPnl = totalCurrentValue - totalInvested;
   const totalPortfolioValue = totalCurrentValue + cash.liquid + cash.vault;
-  return { holdings, txns, totalInvested, totalCurrentValue, totalPnl, cash, totalPortfolioValue };
+  return { holdings, txns, totalInvested, totalCurrentValue, totalPnl, cash, totalPortfolioValue, missingPriceSymbols };
 }
 
 export function exposureBy(holdings: Holding[], key: "geography" | "category") {
@@ -409,8 +434,12 @@ export async function getExposureDrift(sb: SupabaseClient, asOfDate: string) {
     if (!(row.symbol in pastPriceMap)) pastPriceMap[row.symbol] = Number(row.close); // first hit = most recent <= asOfDate
   }
 
-  const currentHoldings = computeHoldingsFromTxns(txns, prices, meta);
-  const pastHoldings = computeHoldingsFromTxns(txns, pastPriceMap, meta, asOfDate);
+  const { priced: currentHoldings, missingSymbols: missingCurrentPrice } = splitByPriceAvailability(
+    computeHoldingsFromTxns(txns, prices, meta),
+  );
+  const { priced: pastHoldings, missingSymbols: missingPastPrice } = splitByPriceAvailability(
+    computeHoldingsFromTxns(txns, pastPriceMap, meta, asOfDate),
+  );
 
   const diffExposure = (key: "geography" | "category") => {
     const current = exposureBy(currentHoldings, key);
@@ -424,10 +453,23 @@ export async function getExposureDrift(sb: SupabaseClient, asOfDate: string) {
     }));
   };
 
+  const notes = ["Past valuation uses the closest historical_prices row on or before asOfDate per symbol."];
+  if (missingCurrentPrice.length > 0) {
+    notes.push(
+      `No current price available for ${missingCurrentPrice.join(", ")} — excluded from current-side exposure, not counted as 0%.`,
+    );
+  }
+  if (missingPastPrice.length > 0) {
+    notes.push(
+      `No historical_prices row on or before ${asOfDate} for ${missingPastPrice.join(", ")} — excluded from ` +
+        "past-side exposure; this does not necessarily mean the position was 0% back then.",
+    );
+  }
+
   return {
     asOfDate,
     geographyDrift: diffExposure("geography"),
     categoryDrift: diffExposure("category"),
-    note: "Past valuation uses the closest historical_prices row on or before asOfDate per symbol.",
+    note: notes.join(" "),
   };
 }

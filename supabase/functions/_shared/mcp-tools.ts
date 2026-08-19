@@ -19,7 +19,35 @@ import {
   getExposureDrift,
   getRiskMetrics,
   runStressTest,
+  type Holding,
 } from "./portfolio-data.ts";
+
+/** Rounds a holding's monetary fields to whole rupees and rates/percentages to
+ * 2 decimals — the single rounding convention every tool in this registry
+ * uses, so the model never sees two different precisions for "the same"
+ * number across tool calls and is never tempted to re-derive one from the
+ * other. */
+function roundHolding(h: Holding) {
+  return {
+    ...h,
+    avgPrice: Number(h.avgPrice.toFixed(2)),
+    currentPrice: Number(h.currentPrice.toFixed(2)),
+    invested: Math.round(h.invested),
+    currentValue: Math.round(h.currentValue),
+    pnl: Math.round(h.pnl),
+    pnlPercent: Number(h.pnlPercent.toFixed(2)),
+  };
+}
+
+/** Common `missingPriceSymbols`/`note` fields, only present when non-empty. */
+function missingPriceFields(missingPriceSymbols: string[], omittedFrom: string) {
+  if (missingPriceSymbols.length === 0) return {};
+  return {
+    missingPriceSymbols,
+    note:
+      `No current price available for ${missingPriceSymbols.join(", ")} — ${omittedFrom} rather than shown as a fabricated ₹0 value or 100% loss.`,
+  };
+}
 
 export type ToolComplexity = "simple" | "complex";
 
@@ -34,7 +62,11 @@ export interface ToolDefinition {
 export const TOOL_REGISTRY: ToolDefinition[] = [
   {
     name: "get_portfolio_summary",
-    description: "High-level snapshot: total invested, current value, P&L, cash, and total portfolio value.",
+    description:
+      "High-level snapshot: total invested, current value, P&L, cash, and total portfolio value. " +
+      "All monetary figures are rounded to the nearest rupee, percentages to 2 decimals — these are " +
+      "the authoritative totals; do not re-derive them by summing list_holdings yourself, since a " +
+      "symbol missing a current price is excluded here (see missingPriceSymbols) rather than priced at ₹0.",
     complexity: "simple",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: async (_args, sb) => {
@@ -48,17 +80,25 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
         vaultCash: Math.round(p.cash.vault),
         totalPortfolioValue: Math.round(p.totalPortfolioValue),
         holdingsCount: p.holdings.length,
+        ...missingPriceFields(p.missingPriceSymbols, "excluded from every total above"),
       };
     },
   },
   {
     name: "list_holdings",
-    description: "All current positions with quantity, average price, current price, value, and P&L.",
+    description:
+      "All current positions with quantity, average price, current price, value, and P&L. Monetary " +
+      "values are rounded to the nearest rupee, prices and percentages to 2 decimals — the same " +
+      "convention get_portfolio_summary uses (summing these rounded per-holding values may differ " +
+      "from get_portfolio_summary's totals by at most ₹1 due to independent rounding).",
     complexity: "simple",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: async (_args, sb) => {
       const p = await getCurrentPortfolio(sb);
-      return { holdings: p.holdings };
+      return {
+        holdings: p.holdings.map(roundHolding),
+        ...missingPriceFields(p.missingPriceSymbols, "omitted from this list"),
+      };
     },
   },
   {
