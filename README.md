@@ -53,6 +53,59 @@ hosted product for others to sign up to.
 
 ## Architecture
 
+```mermaid
+flowchart TB
+    subgraph Browser["Browser (React SPA)"]
+        Pages["src/pages/*<br/>(Holdings, Exposure, Taxes,<br/>Projections, Benchmark, AI, Reports)"]
+        Lib["src/lib/*<br/>(xirr, taxCalculator,<br/>projectionEngine, monteCarloAdvanced,<br/>periodReports)"]
+        Hook["usePortfolio.ts"]
+        Pages --> Lib
+        Pages --> Hook
+    end
+
+    subgraph Supabase["Supabase Project"]
+        Auth["Supabase Auth<br/>(single account, email+password,<br/>sessionStorage session)"]
+        DB[("PostgreSQL<br/>transactions, cash_settings,<br/>current_prices, symbol_metadata, ..<br/>RLS: auth.role() = 'authenticated'")]
+
+        subgraph EdgeFunctions["Edge Functions (Deno)"]
+            MCP["portfolio-mcp-server<br/>JSON-RPC 2.0 / MCP<br/>Streamable HTTP"]
+            Tools["_shared/mcp-tools.ts<br/>get_portfolio_summary, list_holdings,<br/>get_exposure_by_*, get_risk_metrics,<br/>run_stress_test, compare_to_benchmark"]
+            AI["portfolio-ai<br/>agent tool-use loop"]
+            Client["_shared/mcp-client.ts"]
+            Router["_shared/router.ts<br/>keyword routing (Groq path only)"]
+            Logger["_shared/logger.ts<br/>structured JSON logs"]
+            Fetchers["fetch-prices, fetch-fx-rates, ..."]
+        end
+    end
+
+    subgraph Providers["LLM Providers"]
+        Groq["Groq<br/>gpt-oss-20b / gpt-oss-120b<br/>(default)"]
+        Claude["Claude Sonnet 5<br/>(used exclusively once<br/>ANTHROPIC_API_KEY is set)"]
+    end
+
+    Hook -- "anon key, direct SQL<br/>(no backend API layer)" --> DB
+    Pages -. "sign in" .-> Auth
+    Auth -- "gates via RLS" --> DB
+
+    AI --> Client
+    Client -- "JSON-RPC calls" --> MCP
+    MCP --> Tools
+    Tools -- "SQL query per tool" --> DB
+    AI --> Router
+    Router --> Groq
+    AI -- "env-var provider switch" --> Groq
+    AI -- "env-var provider switch" --> Claude
+    EdgeFunctions -.-> Logger
+
+    Pages -- "chat" --> AI
+    Fetchers --> DB
+
+    style Browser fill:#1f2937,color:#fff,stroke:#4b5563
+    style Supabase fill:#0f172a,color:#fff,stroke:#334155
+    style EdgeFunctions fill:#111827,color:#fff,stroke:#374151
+    style Providers fill:#1f2937,color:#fff,stroke:#4b5563
+```
+
 There is exactly one Supabase Auth account for this application. Row Level Security policies gate
 on `auth.role() = 'authenticated'` only; there is no `user_id`/`auth.uid()` partitioning, because
 there is only ever one user. See [`docs/auth-rls-plan.md`](docs/auth-rls-plan.md) for the full
