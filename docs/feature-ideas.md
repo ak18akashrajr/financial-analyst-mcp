@@ -20,46 +20,6 @@ annualized XIRR on the chart drag-select badge for the cash-flow-backed charts
 
 ---
 
-## 0. Auto-sync cash balances from UPI transactions (priority)
-**Why:** `liquidCash` (Operating Cash) and `vaultCash` (Cash Reserve) in
-`cash_settings` are entered by hand today ([CashSection.tsx](../src/components/CashSection.tsx)) —
-every UPI debit/credit means a manual edit or the number drifts from reality.
-**What it'd look like:** pull UPI transaction history for both bank accounts on a schedule (or on
-demand) and reconcile it against `liquidCash`/`vaultCash` automatically — either adjusting the
-stored balance directly or posting matching entries to a transaction ledger so the adjustment is
-auditable.
-**Effort:** unclear until the data-source question below is answered — this is the one feature
-here that depends on an external integration decision rather than just more code over existing
-data.
-**Decided (2026-08-19):**
-- **Scope:** `liquidCash` (Operating Cash) and `vaultCash` (Cash Reserve). `pfBalance` stays
-  manual — PF/PPF/EPF has no UPI activity, out of scope.
-- **Flow:** review queue, not silent auto-apply — detected transactions land as "pending," you
-  approve before any balance changes.
-- **Storage:** ledger entries, not a raw balance overwrite — each synced transaction becomes an
-  auditable row (same shape as the existing `transactions` table pattern), and the cash balance
-  becomes a derived total on top of that.
-- **Data source — building Phase 1 now, Phase 2 explicitly queued:**
-  - **Phase 1 (build target):** periodic bank statement upload (CSV/XLS export from netbanking,
-    done by hand, one export per account) parsed into pending ledger rows in the review queue. No
-    external integration, no credentials ever touch the app, reuses the same parsing/validation
-    shape as backlog item #7 (CSV import). Fully within the app's existing security posture — this
-    is what gets scoped/built first. Note: Vault and Operating Cash are held at two *different*
-    banks, so the statement format differs per account — see the dedicated plan doc for details.
-  - **📌 Phase 2 — planned upgrade, not yet started:** replace the manual export step with email
-    (Gmail API) read-access that parses each bank's transaction-alert emails straight into the same
-    pending queue, so sync no longer requires you to remember to export a statement. Adds
-    inbox-read as a new trust boundary, so this should only be picked up once Phase 1's
-    parsing/review UI has been used for a while and proven reliable. Revisit this explicitly rather
-    than letting Phase 1 be treated as the final state.
-  - *Ruled out:* the RBI Account Aggregator framework (Setu/Finvu/OneMoney) is the "textbook
-    correct" regulated path, but production data-pull access is normally gated behind being a
-    registered Financial Information User (FIU) — a licensed financial entity, not an individual
-    developer. Sandbox access exists but won't pull real account data. Only worth revisiting if
-    that access constraint turns out not to apply.
-  - Screen-scraping via entered net-banking/UPI-app credentials is off the table outright —
-    credential entry is a hard no under this app's operating rules.
-
 ## 2. Rebalancing suggestions
 **Why:** `get_exposure_drift` and `get_concentration_risk` MCP tools already compute how far your
 allocation has drifted and how concentrated you are, but only the AI chat can surface it — there's
