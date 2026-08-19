@@ -14,6 +14,7 @@ import Updates from "./pages/Updates.tsx";
 import RollingReturns from "./pages/RollingReturns.tsx";
 import Reports from "./pages/Reports.tsx";
 import DollarAdjustedReturns from "./pages/DollarAdjustedReturns.tsx";
+import Benchmark from "./pages/Benchmark.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { SideNav } from "@/components/SideNav";
 import { MobileTopNav } from "@/components/MobileTopNav";
@@ -48,6 +49,7 @@ const App = () => (
                 <Route path="/rolling-returns" element={<RollingReturns />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
+                <Route path="/benchmark" element={<Benchmark />} />
               </Route>
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

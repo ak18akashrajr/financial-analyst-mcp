@@ -15,6 +15,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   DollarSign,
+  TrendingUp,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +24,7 @@ const tabs = [
   { to: '/', label: 'Overview', icon: LayoutDashboard },
   { to: '/charts', label: 'Charts', icon: BarChart3 },
   { to: '/reports', label: 'Reports', icon: FileSpreadsheet },
+  { to: '/benchmark', label: 'Benchmark', icon: TrendingUp },
   { to: '/dollar-adjusted-returns', label: 'USD View', icon: DollarSign },
   { to: '/taxes', label: 'Taxes', icon: FileText },
   { to: '/projections', label: 'Projections', icon: Crosshair },

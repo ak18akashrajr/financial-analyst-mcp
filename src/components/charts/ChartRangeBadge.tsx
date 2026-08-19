@@ -76,6 +76,14 @@ interface ChartRangeBadgeProps {
   formatValue?: (value: number) => string;
   /** Label for the value rows, e.g. "AUM", "XIRR", "USD-INR rate". Defaults to "Value". */
   valueLabel?: string;
+  /**
+   * Annualized (XIRR) return for the selected range, as a percentage (5 = 5%). Only meaningful on
+   * cash-flow-backed charts (NetWorthChart, PortfolioCharts) — omit entirely (leave `undefined`)
+   * on charts with no transaction history behind them, and the row won't render at all. Pass
+   * `null` when the caller does support XIRR here but couldn't compute one for this particular
+   * range (e.g. no sign change in cash flows) — that renders the row with "—".
+   */
+  xirrPercent?: number | null;
 }
 
 /**
@@ -90,6 +98,7 @@ export function ChartRangeBadge({
   unit = 'currency',
   formatValue,
   valueLabel = 'Value',
+  xirrPercent,
 }: ChartRangeBadgeProps) {
   const { mask } = usePrivacy();
 
@@ -127,6 +136,21 @@ export function ChartRangeBadge({
       <p style={{ color: changeColor }} className="font-medium mt-0.5">
         {mask(changeLabel)}
       </p>
+      {xirrPercent !== undefined && (
+        <p
+          style={{
+            color:
+              xirrPercent === null
+                ? 'hsl(var(--muted-foreground))'
+                : xirrPercent >= 0
+                  ? 'hsl(142, 71%, 45%)'
+                  : 'hsl(0, 72%, 51%)',
+          }}
+          className="mt-0.5"
+        >
+          Annualized (XIRR): {mask(xirrPercent === null ? '—' : `${xirrPercent >= 0 ? '+' : ''}${xirrPercent.toFixed(2)}%`)}
+        </p>
+      )}
     </div>
   );
 }
