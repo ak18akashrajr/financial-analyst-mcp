@@ -4,7 +4,8 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
-import { computeRangeReturn } from '@/lib/chartRange';
+import { computeRangeReturn, computeRangeXIRR } from '@/lib/chartRange';
+import type { Transaction } from '@/types/portfolio';
 
 describe('useChartRangeSelection', () => {
   it('starts with no selection', () => {
@@ -96,5 +97,66 @@ describe('computeRangeReturn', () => {
   it('returns null for an out-of-range index', () => {
     expect(computeRangeReturn(data, -1, 1, 'value', 'label')).toBeNull();
     expect(computeRangeReturn(data, 0, 10, 'value', 'label')).toBeNull();
+  });
+});
+
+describe('computeRangeXIRR', () => {
+  const points = [
+    { date: '2025-01-01T00:00:00Z', label: 'Jan25', value: 100000 },
+    { date: '2025-07-01T00:00:00Z', label: 'Jul25', value: 104000 },
+    { date: '2026-01-01T00:00:00Z', label: 'Jan26', value: 110000 },
+  ];
+
+  it('annualizes pure appreciation between the two boundary points with no transactions', () => {
+    const rate = computeRangeXIRR(points, 0, 2, 'value', 'date', []);
+    expect(rate).not.toBeNull();
+    expect(rate!).toBeCloseTo(10, 0); // ~10% growth over ~1 year
+  });
+
+  it('folds in a BUY transaction inside the window, diluting the annualized reading', () => {
+    const transactions: Transaction[] = [
+      { id: '1', symbol: 'ACME', type: 'BUY', quantity: 10, price: 500, date: '2025-07-01T00:00:00Z' },
+    ];
+    const withoutTxn = computeRangeXIRR(points, 0, 2, 'value', 'date', []);
+    const withTxn = computeRangeXIRR(points, 0, 2, 'value', 'date', transactions);
+    expect(withTxn).not.toBeNull();
+    // Same start/end values, but extra principal went in mid-window — the money-weighted
+    // (annualized) return must be lower than treating the whole gain as pure appreciation.
+    expect(withTxn!).toBeLessThan(withoutTxn!);
+  });
+
+  it('ignores transactions dated outside the selected window', () => {
+    const transactions: Transaction[] = [
+      { id: '1', symbol: 'ACME', type: 'BUY', quantity: 10, price: 500, date: '2024-01-01T00:00:00Z' },
+      { id: '2', symbol: 'ACME', type: 'SELL', quantity: 10, price: 500, date: '2026-06-01T00:00:00Z' },
+    ];
+    const withoutTxn = computeRangeXIRR(points, 0, 2, 'value', 'date', []);
+    const withOutOfRangeTxn = computeRangeXIRR(points, 0, 2, 'value', 'date', transactions);
+    expect(withOutOfRangeTxn).toBeCloseTo(withoutTxn!, 5);
+  });
+
+  it('returns null when startIndex === endIndex', () => {
+    expect(computeRangeXIRR(points, 1, 1, 'value', 'date', [])).toBeNull();
+  });
+
+  it('returns null for out-of-range indices', () => {
+    expect(computeRangeXIRR(points, -1, 2, 'value', 'date', [])).toBeNull();
+    expect(computeRangeXIRR(points, 0, 10, 'value', 'date', [])).toBeNull();
+  });
+
+  it('returns null when the start value is zero or negative', () => {
+    const zeroStart = [
+      { date: '2025-01-01T00:00:00Z', value: 0 },
+      { date: '2026-01-01T00:00:00Z', value: 110000 },
+    ];
+    expect(computeRangeXIRR(zeroStart, 0, 1, 'value', 'date', [])).toBeNull();
+  });
+
+  it('returns null when a boundary value is missing/non-numeric', () => {
+    const withGap = [
+      { date: '2025-01-01T00:00:00Z', value: null as number | null },
+      { date: '2026-01-01T00:00:00Z', value: 110000 },
+    ];
+    expect(computeRangeXIRR(withGap, 0, 1, 'value', 'date', [])).toBeNull();
   });
 });

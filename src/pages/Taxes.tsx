@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { generateTaxReport, TaxReport } from '@/lib/taxCalculator';
+import { generateTaxReport, getHarvestableLots, hasSameDayReentry, TaxReport } from '@/lib/taxCalculator';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, TrendingDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Transaction, Category } from '@/types/portfolio';
 
@@ -15,6 +15,7 @@ const TaxesContent = () => {
   const fmtV = (n: number) => mask(fmt(n));
 
   const [report, setReport] = useState<TaxReport | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,7 +26,7 @@ const TaxesContent = () => {
         supabase.from('symbol_metadata').select('*'),
       ]);
 
-      const transactions: Transaction[] = (txnRes.data || []).map(t => ({
+      const txns: Transaction[] = (txnRes.data || []).map(t => ({
         id: t.id, symbol: t.symbol, type: t.type as 'BUY' | 'SELL',
         quantity: Number(t.quantity), price: Number(t.price), date: t.date,
       }));
@@ -36,11 +37,15 @@ const TaxesContent = () => {
       const meta: Record<string, { category?: Category }> = {};
       for (const m of metaRes.data || []) meta[m.symbol] = { category: m.sector as Category };
 
-      setReport(generateTaxReport(transactions, prices, meta));
+      setTransactions(txns);
+      setReport(generateTaxReport(txns, prices, meta));
       setLoading(false);
     }
     load();
   }, []);
+
+  const harvestableLots = report ? getHarvestableLots(report) : [];
+  const totalHarvestableLoss = harvestableLots.reduce((s, l) => s + l.gain, 0);
 
   if (loading) {
     return (
@@ -164,6 +169,74 @@ const TaxesContent = () => {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* Harvestable Losses (Tax-Loss Harvesting) */}
+        <div className="rounded-lg border border-border bg-card overflow-hidden">
+          <div className="p-4 border-b border-border">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+              <TrendingDown className="w-4 h-4 text-red-500" /> Harvestable Losses
+            </h2>
+            <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
+              Lots currently sitting below cost. Selling one before FY-end realizes the loss, which can offset other
+              capital gains this year. India has no formal wash-sale rule, but re-buying the same stock the same day
+              is worth flagging — it can look like a transaction with no real change in economic position if
+              scrutinized. ⚠ below means this symbol has had a same-day BUY + SELL before.
+            </p>
+          </div>
+          {harvestableLots.length === 0 ? (
+            <p className="p-4 text-xs text-muted-foreground">No lots are currently sitting at a loss. 🎯</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left p-3 font-medium text-muted-foreground">Symbol</th>
+                    <th className="text-left p-3 font-medium text-muted-foreground">Buy Date</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">Qty</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">Buy Price</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">CMP</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">Days Held</th>
+                    <th className="text-center p-3 font-medium text-muted-foreground">Type</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">Harvestable Loss</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {harvestableLots.map((lot, i) => (
+                    <tr key={`${lot.symbol}-${lot.buyDate}-${i}`} className="border-b border-border hover:bg-muted/20 transition-colors">
+                      <td className="p-3 font-semibold text-foreground">
+                        {lot.symbol}
+                        {hasSameDayReentry(lot.symbol, transactions) && (
+                          <span title="Same-day BUY + SELL activity detected for this symbol before — review the wash-sale-style caveat above.">
+                            {' '}⚠
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 text-foreground">{new Date(lot.buyDate).toLocaleDateString('en-IN')}</td>
+                      <td className="p-3 text-right text-foreground">{lot.quantity.toFixed(2)}</td>
+                      <td className="p-3 text-right text-foreground">{fmtV(lot.buyPrice)}</td>
+                      <td className="p-3 text-right text-foreground">{fmtV(lot.currentPrice)}</td>
+                      <td className="p-3 text-right text-foreground">{lot.holdingDays}</td>
+                      <td className="p-3 text-center">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          lot.isLongTerm ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'
+                        }`}>
+                          {lot.isLongTerm ? 'LTCG' : 'STCG'}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-medium text-red-500">{fmtV(lot.gain)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-red-500/5">
+                    <td colSpan={7} className="p-3 text-right font-semibold text-foreground">Total Harvestable Loss</td>
+                    <td className="p-3 text-right font-bold text-red-500">{fmtV(totalHarvestableLoss)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* FIFO Lot Details (expandable per symbol) */}

@@ -11,8 +11,9 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
-import { computeRangeReturn } from '@/lib/chartRange';
+import { computeRangeReturn, computeRangeXIRR } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
+import type { Transaction } from '@/types/portfolio';
 
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -30,9 +31,15 @@ interface Props {
   liquidCash: number;
   vaultCash: number;
   refreshKey: number; // bumped on transaction/cash changes
+  /**
+   * Transaction history, used only to compute the annualized (XIRR) return shown on the
+   * drag-select badge (feature-ideas.md #6). Optional — when omitted, the badge falls back to
+   * the plain point-to-point % change with no XIRR row.
+   */
+  transactions?: Transaction[];
 }
 
-export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vaultCash, refreshKey }: Props) {
+export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vaultCash, refreshKey, transactions }: Props) {
   const { hidden } = usePrivacy();
   const [data, setData] = useState<NetWorthPoint[]>([]);
   const { selection, handlers, clear } = useChartRangeSelection();
@@ -70,6 +77,10 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
     selection.startIndex !== null && selection.endIndex !== null
       ? computeRangeReturn(data, selection.startIndex, selection.endIndex, 'net_worth', 'label')
       : null;
+  const rangeXirr =
+    transactions && selection.startIndex !== null && selection.endIndex !== null
+      ? computeRangeXIRR(data, selection.startIndex, selection.endIndex, 'net_worth', 'recorded_at', transactions)
+      : undefined;
 
   const yAxisFormatter = (v: number) => hidden ? '•••' : `₹${(v / 100000).toFixed(1)}L`;
 
@@ -112,7 +123,7 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
             />
           </AreaChart>
         </ResponsiveContainer>
-        <ChartRangeBadge selection={selection} result={rangeResult} onClear={clear} unit="currency" valueLabel="AUM" />
+        <ChartRangeBadge selection={selection} result={rangeResult} onClear={clear} unit="currency" valueLabel="AUM" xirrPercent={rangeXirr} />
       </div>
     </div>
   );

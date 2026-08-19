@@ -238,3 +238,40 @@ export function generateTaxReport(
     totalTaxWithCess,
   };
 }
+
+/**
+ * Lots currently sitting below cost — candidates for tax-loss harvesting before FY-end. Sorted by
+ * loss size descending (biggest loss first) since that's the order you'd typically triage them in.
+ * See docs/feature-ideas.md #3.
+ */
+export function getHarvestableLots(report: TaxReport): TaxLot[] {
+  return report.holdings
+    .flatMap(h => h.lots)
+    .filter(lot => lot.gain < 0)
+    .sort((a, b) => a.gain - b.gain);
+}
+
+/**
+ * Whether `symbol` has ever had both a BUY and a SELL transaction land on the same calendar day.
+ * Used to flag the wash-sale-style caveat next to a harvestable lot: India has no formal wash-sale
+ * rule, but selling to realize a loss and re-buying the same stock the same day is the pattern
+ * that most invites scrutiny (no real change in economic position). This only detects that the
+ * pattern has happened *before* for this symbol — it can't predict a future re-buy, and since
+ * AddTransactionForm has no date picker (every transaction is stamped with insert time), "same
+ * day" here really means "same day the transactions were entered," which is the best signal
+ * available without a user-editable transaction date.
+ */
+export function hasSameDayReentry(symbol: string, transactions: Transaction[]): boolean {
+  const daysWithActivity = new Map<string, { buy: boolean; sell: boolean }>();
+  for (const t of transactions) {
+    if (t.symbol !== symbol) continue;
+    const day = t.date.slice(0, 10);
+    const entry = daysWithActivity.get(day) ?? { buy: false, sell: false };
+    if (t.type === 'BUY') entry.buy = true; else entry.sell = true;
+    daysWithActivity.set(day, entry);
+  }
+  for (const { buy, sell } of daysWithActivity.values()) {
+    if (buy && sell) return true;
+  }
+  return false;
+}

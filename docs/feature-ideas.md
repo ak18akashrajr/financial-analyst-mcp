@@ -11,7 +11,12 @@ PE-based deployment signal ([DeploymentPlan.tsx](../src/pages/DeploymentPlan.tsx
 FIRE / stress-replay / SIP optimizer ([FireModule.tsx](../src/components/projections/FireModule.tsx),
 [StressReplay.tsx](../src/components/projections/StressReplay.tsx)),
 PF + credit card debt tracking, rolling XIRR, dollar-adjusted returns, a changelog
-([Updates.tsx](../src/pages/Updates.tsx)), and drag-to-select point-to-point chart returns (just shipped).
+([Updates.tsx](../src/pages/Updates.tsx)), drag-to-select point-to-point chart returns, a benchmark
+comparison page plotting AUM against NIFTY 50/500/S&P 500 ([Benchmark.tsx](../src/pages/Benchmark.tsx)),
+annualized XIRR on the chart drag-select badge for the cash-flow-backed charts
+([ChartRangeBadge.tsx](../src/components/charts/ChartRangeBadge.tsx),
+[chartRange.ts](../src/lib/chartRange.ts)), and tax-loss harvesting flags on the Taxes page
+([taxCalculator.ts](../src/lib/taxCalculator.ts)).
 
 ---
 
@@ -55,15 +60,6 @@ data.
   - Screen-scraping via entered net-banking/UPI-app credentials is off the table outright —
     credential entry is a hard no under this app's operating rules.
 
-## 1. Benchmark comparison page
-**Why:** the `compare_to_benchmark` MCP tool already exists
-([mcp-tools.ts](../supabase/functions/_shared/mcp-tools.ts)) and benchmark price history is
-already being fetched and stored (`fetch-benchmark-prices` edge function, `benchmark_history`
-table) — but you can only see this by asking the AI chat. There's no chart.
-**What it'd look like:** a page (or a section on Reports/Charts) plotting your AUM/XIRR against
-NIFTY 50 (or another index) over the same period, using data that's already flowing in.
-**Effort:** small–medium — mostly UI; the query/comparison logic already exists.
-
 ## 2. Rebalancing suggestions
 **Why:** `get_exposure_drift` and `get_concentration_risk` MCP tools already compute how far your
 allocation has drifted and how concentrated you are, but only the AI chat can surface it — there's
@@ -73,14 +69,6 @@ over target; consider trimming ₹X" — reusing the same computations the MCP t
 `_shared/portfolio-data.ts`.
 **Effort:** medium — needs you to define target allocations somewhere (a new small settings
 table), then a diff view.
-
-## 3. Tax-loss harvesting flags
-**Why:** `taxCalculator.ts` already builds per-symbol `TaxLot`s with cost basis and current value.
-Nothing currently flags which lots are sitting at a loss and could be harvested before FY-end.
-**What it'd look like:** a section on the existing Taxes page listing lots below cost, with the
-harvestable loss amount and the wash-sale-style caveat (India doesn't have a formal wash-sale
-rule, but re-buying the same stock same-day is worth flagging).
-**Effort:** small — additive to an existing page and existing data structures.
 
 ## 4. Scheduled limit-breach alerts
 **Why:** `check_limit_breaches` is a pull-only MCP tool today — you only find out if you think to
@@ -96,15 +84,6 @@ for the Reports page — but it's only viewable in-browser, not something you ca
 **What it'd look like:** an "Export" button on Reports.tsx producing a PDF or XLSX of the current
 period's numbers, reusing data already computed for the page.
 **Effort:** small–medium — presentation layer over data that already exists.
-
-## 6. Annualized XIRR on the chart drag-select badge
-**Why:** the point-to-point return feature just shipped uses a simple % change by design (works on
-every chart uniformly). For the three cash-flow-backed charts (NetWorthChart, PortfolioCharts,
-DebtChart) specifically, a toggle to show real annualized XIRR for the dragged window would be
-more financially precise — this was explicitly deferred as a v2 in that feature's plan.
-**What it'd look like:** an optional second line in `ChartRangeBadge` using `buildSnapshot()` +
-`calculateXIRR()` for the selected date range, shown only where cash-flow data exists.
-**Effort:** small — additive to code that already exists ([ChartRangeBadge.tsx](../src/components/charts/ChartRangeBadge.tsx)).
 
 ## 7. CSV import / export of transactions
 **Why:** every transaction currently has to be entered one at a time through the UI
@@ -137,6 +116,9 @@ no-dynamic-arg MCP tools) was already scoped in this conversation.
 ---
 
 ### Suggested order, if you want a recommendation
-Start with **#1 (benchmark comparison)** and **#6 (annualized XIRR badge)** — both are the
-smallest, most directly reuse code that already exists, and neither needs a new table or external
-account. **#3 (tax-loss flags)** is a close third for the same reason.
+With the benchmark comparison page, the annualized XIRR badge, and tax-loss harvesting flags all
+shipped, the smallest remaining items are **#8 (watchlist)** and **#5 (downloadable period
+reports)** — both are additive to existing pages/fetch functions and need no new external account.
+**#7 (CSV import/export)** is a reasonable next step after that: it's the data-entry unlock that
+backlog item #0's Phase 1 (bank statement upload) explicitly reuses the parsing/validation shape
+of.

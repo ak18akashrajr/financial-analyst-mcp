@@ -63,6 +63,7 @@ const ChartsContent = () => {
           liquidCash={cash.liquidCash}
           vaultCash={cash.vaultCash}
           refreshKey={netWorthRefreshKey}
+          transactions={transactions}
         />
 
         {/* Debt % vs Net Worth */}

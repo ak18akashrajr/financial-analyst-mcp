@@ -13,7 +13,7 @@ import {
 import type { Transaction } from '@/types/portfolio';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
-import { computeRangeReturn } from '@/lib/chartRange';
+import { computeRangeReturn, computeRangeXIRR } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 function fmt(n: number): string {
@@ -137,6 +137,13 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
     investedVsCurrent.selection.startIndex !== null && investedVsCurrent.selection.endIndex !== null
       ? computeRangeReturn(timelineData, investedVsCurrent.selection.startIndex, investedVsCurrent.selection.endIndex, 'currentValue', 'dateLabel')
       : null;
+  // XIRR only makes sense for the Current Value series (a real position value backed by BUY/SELL
+  // cash flows) — not for the P&L chart below, whose "value" is a derived difference, not
+  // something you could annualize a return on.
+  const investedVsCurrentXirr =
+    investedVsCurrent.selection.startIndex !== null && investedVsCurrent.selection.endIndex !== null
+      ? computeRangeXIRR(timelineData, investedVsCurrent.selection.startIndex, investedVsCurrent.selection.endIndex, 'currentValue', 'date', transactions)
+      : undefined;
   const pnlRange =
     pnlOverTime.selection.startIndex !== null && pnlOverTime.selection.endIndex !== null
       ? computeRangeReturn(timelineData, pnlOverTime.selection.startIndex, pnlOverTime.selection.endIndex, 'pnl', 'dateLabel')
@@ -222,6 +229,7 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
             onClear={investedVsCurrent.clear}
             unit="currency"
             valueLabel="Current Value"
+            xirrPercent={investedVsCurrentXirr}
           />
         </div>
       </div>

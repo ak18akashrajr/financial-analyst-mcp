@@ -78,4 +78,15 @@ describe('PortfolioCharts range selection', () => {
     render(<PortfolioCharts transactions={transactions} currentPrices={{ ACME: 150 }} />);
     expect(screen.getAllByLabelText('Clear range selection').length).toBeGreaterThan(0);
   });
+
+  it('shows an annualized (XIRR) row on the Current Value badge but not the P&L badge', () => {
+    mockedUseChartRangeSelection.mockReturnValue(activeSelection());
+    render(<PortfolioCharts transactions={transactions} currentPrices={{ ACME: 150 }} />);
+
+    // Both BUYs are ₹100/share and the range spans exactly the 2024-01-01 -> 2024-06-01 window
+    // used to build these two chart points, so this reduces to plain point-to-point appreciation
+    // — asserting "a real number, not em-dash" is what matters here (the exact math is covered by
+    // src/test/chart-range-selection.test.ts's computeRangeXIRR unit tests).
+    expect(screen.getAllByText(/Annualized \(XIRR\):/).length).toBe(1);
+  });
 });

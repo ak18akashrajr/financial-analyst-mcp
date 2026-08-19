@@ -3,7 +3,7 @@
 // calendar dates, since the module reads `new Date()` internally for "today" — a fixed date
 // would eventually drift into the wrong long-term/short-term bucket.
 import { describe, expect, it } from 'vitest';
-import { generateTaxReport } from '@/lib/taxCalculator';
+import { generateTaxReport, getHarvestableLots, hasSameDayReentry } from '@/lib/taxCalculator';
 import type { Transaction, Category } from '@/types/portfolio';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -99,5 +99,57 @@ describe('generateTaxReport', () => {
     expect(h.category).toBe('Equity');
     expect(h.totalCurrentValue).toBe(0); // missing price defaults to 0
     expect(h.totalGain).toBe(-1000);     // a full loss since current value is 0
+  });
+});
+
+describe('getHarvestableLots', () => {
+  it('returns only lots with a negative gain, sorted biggest loss first', () => {
+    const transactions: Transaction[] = [
+      txn({ symbol: 'WIN', type: 'BUY', quantity: 10, price: 100, date: daysAgo(400) }),   // gain, excluded
+      txn({ symbol: 'SMALL_LOSS', type: 'BUY', quantity: 10, price: 120, date: daysAgo(400) }), // -200 @ CMP 100
+      txn({ symbol: 'BIG_LOSS', type: 'BUY', quantity: 10, price: 200, date: daysAgo(400) }),   // -1000 @ CMP 100
+    ];
+    const report = generateTaxReport(transactions, { WIN: 150, SMALL_LOSS: 100, BIG_LOSS: 100 }, {
+      WIN: { category: 'Equity' }, SMALL_LOSS: { category: 'Equity' }, BIG_LOSS: { category: 'Equity' },
+    });
+
+    const harvestable = getHarvestableLots(report);
+    expect(harvestable).toHaveLength(2);
+    expect(harvestable.every(l => l.gain < 0)).toBe(true);
+    expect(harvestable[0].symbol).toBe('BIG_LOSS');   // -1000, biggest loss first
+    expect(harvestable[1].symbol).toBe('SMALL_LOSS'); // -200
+  });
+
+  it('returns an empty array when nothing is sitting at a loss', () => {
+    const transactions: Transaction[] = [txn({ type: 'BUY', quantity: 10, price: 100, date: daysAgo(400) })];
+    const report = generateTaxReport(transactions, { TCS: 150 }, { TCS: { category: 'Equity' } });
+    expect(getHarvestableLots(report)).toEqual([]);
+  });
+});
+
+describe('hasSameDayReentry', () => {
+  it('flags a symbol with a BUY and SELL on the same calendar day', () => {
+    const transactions: Transaction[] = [
+      txn({ symbol: 'TCS', type: 'SELL', quantity: 5, price: 100, date: '2026-03-01T09:00:00Z' }),
+      txn({ symbol: 'TCS', type: 'BUY', quantity: 5, price: 101, date: '2026-03-01T15:00:00Z' }),
+    ];
+    expect(hasSameDayReentry('TCS', transactions)).toBe(true);
+  });
+
+  it('does not flag a BUY and SELL on different days', () => {
+    const transactions: Transaction[] = [
+      txn({ symbol: 'TCS', type: 'SELL', quantity: 5, price: 100, date: '2026-03-01T09:00:00Z' }),
+      txn({ symbol: 'TCS', type: 'BUY', quantity: 5, price: 101, date: '2026-03-02T09:00:00Z' }),
+    ];
+    expect(hasSameDayReentry('TCS', transactions)).toBe(false);
+  });
+
+  it('ignores other symbols and a BUY-only or SELL-only day', () => {
+    const transactions: Transaction[] = [
+      txn({ symbol: 'TCS', type: 'BUY', quantity: 5, price: 100, date: '2026-03-01T09:00:00Z' }),
+      txn({ symbol: 'INFY', type: 'SELL', quantity: 5, price: 100, date: '2026-03-01T10:00:00Z' }), // different symbol, same day
+    ];
+    expect(hasSameDayReentry('TCS', transactions)).toBe(false);
+    expect(hasSameDayReentry('INFY', transactions)).toBe(false);
   });
 });
