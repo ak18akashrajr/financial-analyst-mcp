@@ -1,1 +1,18 @@
 project_id = "vswrkxfjrvcujmsuhucc"
+
+# Explicit `verify_jwt` declarations, as documentation of intent — see
+# docs/security-review.md finding #8. This is Supabase's platform-level
+# check that the bearer token is *some* validly-signed JWT for the project;
+# it does NOT distinguish a real user session from the public anon key
+# (which is a valid JWT by design). portfolio-ai and portfolio-mcp-server
+# both read the full portfolio via the service-role key, so they enforce
+# the actual per-user/per-caller check in code (see
+# supabase/functions/_shared/auth.ts's requireUser, and
+# portfolio-mcp-server's requestHasServiceRole) rather than relying on this
+# alone. Leaving verify_jwt = true here anyway (the default) keeps the
+# platform-level baseline explicit rather than implicit.
+[functions.portfolio-ai]
+verify_jwt = true
+
+[functions.portfolio-mcp-server]
+verify_jwt = true

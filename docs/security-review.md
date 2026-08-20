@@ -1,6 +1,6 @@
 # Security Review
 
-**Date:** 2026-08-20 (findings) / 2026-08-20 (critical fix landed)
+**Date:** 2026-08-20 (findings) / 2026-08-20 (all actionable findings fixed)
 **Scope:** Full application — frontend (React/Vite), Supabase Postgres/RLS, Supabase Edge
 Functions (`portfolio-ai`, `portfolio-mcp-server`, `fetch-*`), CI/CD, dependencies.
 **Method:** Manual code review across auth flow, RLS policies, edge function auth/CORS/error
@@ -11,12 +11,18 @@ no live requests were sent against the deployed Supabase project.
 
 | # | Issue | Severity | Status |
 |---|-------|----------|--------|
-| 1 | AI chat + MCP server callable by anyone with the public anon key | **Critical** | ✅ **Fixed** — see [Remediation log](#remediation-log) |
-| 2 | No rate limiting on the LLM-backed `portfolio-ai` endpoint | High | Open |
-| 3 | No security headers configured | High | Open |
-| 4 | Wildcard CORS on every edge function | Medium | Open |
-| 5 | Raw upstream/provider error text relayed to the client | Medium | Open |
-| 6–9 | See below | Watch/Info | Open (no action needed yet) |
+| 1 | AI chat + MCP server callable by anyone with the public anon key | **Critical** | ✅ **Fixed** |
+| 2 | No rate limiting on the LLM-backed `portfolio-ai` endpoint | High | ✅ **Fixed** |
+| 3 | No security headers configured | High | ✅ **Fixed** |
+| 4 | Wildcard CORS on every edge function | Medium | ✅ **Fixed** |
+| 5 | Raw upstream/provider error text relayed to the client | Medium | ✅ **Fixed** |
+| 6 | `react-markdown` renders LLM/DB content — safe today, one dependency away from XSS | Medium | Watch (no action needed) |
+| 7 | `dangerouslySetInnerHTML` in chart theming — safe today, static inputs only | Low | Watch (no action needed) |
+| 8 | `verify_jwt` posture is implicit | Low | ✅ **Fixed** (documented explicitly) |
+| 9 | 17 `npm audit` findings (3 moderate, 14 high) | Info | ⚠️ **Partially fixed** — 2 remain, need a major-version bump (see log) |
+
+See [Remediation log](#remediation-log) at the bottom for what changed, in which PR, and any
+deploy steps that come with it (in particular: setting the `ALLOWED_ORIGIN` secret).
 
 ## TL;DR
 
@@ -27,20 +33,10 @@ edge functions running with the **service-role key**, which bypasses RLS by desi
 edge functions never independently checked that the caller was a logged-in user. The frontend even
 sent the **public anon key** as the bearer token for those calls, not the user's session token.
 Net effect: the login screen protected every page in the app *except* the one that reads the
-entire portfolio and costs money per call. **This gap is now fixed** (see the remediation log at
-the bottom); everything else documented below is hardening, prioritized in the order to tackle it.
-
-| # | Issue | Severity | Status |
-|---|-------|----------|--------|
-| 1 | AI chat + MCP server callable by anyone with the public anon key — no real user-session check | **Critical** | Open |
-| 2 | No rate limiting on the LLM-backed `portfolio-ai` endpoint | High | Open |
-| 3 | No security headers configured (CSP, X-Frame-Options, HSTS, etc.) | High | Open |
-| 4 | Wildcard CORS (`Access-Control-Allow-Origin: *`) on every edge function | Medium | Open |
-| 5 | Raw upstream/provider error text relayed to the client | Medium | Open |
-| 6 | `react-markdown` renders LLM/DB content — safe today, one dependency away from XSS | Medium | Watch |
-| 7 | `dangerouslySetInnerHTML` in chart theming — safe today, static inputs only | Low | Watch |
-| 8 | `verify_jwt` posture is implicit (relies on Supabase defaults, not declared) | Low | Open |
-| 9 | 17 `npm audit` findings (3 moderate, 14 high) — all in build tooling, not runtime deps | Info | Track |
+entire portfolio and costs money per call. **All findings below with an action attached to them
+have since been fixed** — the sections that follow describe the original findings as written
+during the review, each annotated with its fix status; the [Remediation log](#remediation-log)
+at the bottom has the actual diff-level detail.
 
 ---
 
@@ -112,7 +108,11 @@ tools expose) and can be repeated indefinitely, also running up LLM API cost (se
 
 ## High
 
-### 2. No rate limiting on `portfolio-ai`
+### 2. No rate limiting on `portfolio-ai` — ✅ FIXED
+
+> **Status: fixed.** A fixed-window rate limit (10 requests/user/minute) now runs via
+> [`_shared/rate-limit.ts`](../supabase/functions/_shared/rate-limit.ts), backed by a new
+> `ai_rate_limits` table. See the [Remediation log](#remediation-log).
 
 **File:** [supabase/functions/portfolio-ai/index.ts](../supabase/functions/portfolio-ai/index.ts)
 
@@ -127,7 +127,10 @@ exposure independent of whether the data itself is sensitive.
 the handler — a simple `rate_limits` table keyed by `auth.uid()`/IP with a timestamp column is
 enough for a single-user app; reject with `429` before calling the LLM provider.
 
-### 3. No security headers configured
+### 3. No security headers configured — ✅ FIXED
+
+> **Status: fixed.** `vercel.json` now sets the headers below on every route. See the
+> [Remediation log](#remediation-log).
 
 **Files:** [vercel.json](../vercel.json) (only `buildCommand`/`outputDirectory`/`rewrites`),
 `index.html` (no CSP meta tag).
@@ -162,7 +165,12 @@ sometimes need `'unsafe-inline'` for injected styles.
 
 ## Medium
 
-### 4. Wildcard CORS on every edge function
+### 4. Wildcard CORS on every edge function — ✅ FIXED
+
+> **Status: fixed.** Every function now builds its CORS headers via
+> [`_shared/cors.ts`](../supabase/functions/_shared/cors.ts), which reads the allowed origin from
+> an `ALLOWED_ORIGIN` secret (falls back to `*` only if unset). **Deploy step:** set this secret to
+> your actual frontend origin — see the [Remediation log](#remediation-log) and README.
 
 **Files:** every `corsHeaders` object under `supabase/functions/*` sets
 `"Access-Control-Allow-Origin": "*"`.
@@ -176,7 +184,11 @@ visitor's browser without the visitor even opening your site directly.
 **Fix:** restrict `Access-Control-Allow-Origin` to the real production origin, read from an env
 var so it's not hardcoded per environment.
 
-### 5. Raw upstream error text relayed to the client
+### 5. Raw upstream error text relayed to the client — ✅ FIXED
+
+> **Status: fixed.** [`_shared/sse.ts`](../supabase/functions/_shared/sse.ts) now always sends a
+> fixed, generic message on error; the real detail still reaches the server-side logger via a new
+> `onError` callback. See the [Remediation log](#remediation-log).
 
 **Files:** [supabase/functions/_shared/sse.ts](../supabase/functions/_shared/sse.ts),
 [_shared/providers/anthropic.ts](../supabase/functions/_shared/providers/anthropic.ts),
@@ -224,7 +236,10 @@ based exfiltration) if a future feature let users pick custom colors that flow i
 **Action:** if a dynamic/user-editable color feature is added, validate against a strict
 hex/CSS-color regex before it reaches `ChartStyle`.
 
-### 8. `verify_jwt` posture is implicit
+### 8. `verify_jwt` posture is implicit — ✅ FIXED
+
+> **Status: fixed.** [`supabase/config.toml`](../supabase/config.toml) now explicitly declares
+> `verify_jwt = true` for both functions, with a comment explaining what it does and doesn't cover.
 
 **File:** [supabase/config.toml](../supabase/config.toml) — contains only `project_id`, no
 `[functions.*]` blocks declaring `verify_jwt` explicitly.
@@ -238,14 +253,21 @@ not substitute for the code-level per-user check in #1.
 
 ---
 
-## Dependency vulnerabilities (`npm audit`)
+## Dependency vulnerabilities (`npm audit`) — ⚠️ PARTIALLY FIXED
 
-17 findings (3 moderate, 14 high) as of this review — `nanoid`, `picomatch`, `postcss`, `rollup`,
-`yaml`, `@remix-run/router`, `ajv`, `brace-expansion`, all transitive, mostly build-tooling
-(Vite/Rollup/postcss toolchain) rather than runtime app code. The one user-facing one worth
-calling out: **`@remix-run/router` (via `react-router`/`react-router-dom`) has a high-severity XSS
-via open redirect** (GHSA-2w69-qvjg-hvjx). Fix available via `npm audit fix` (bumps `react-router`
-to a patched range).
+> **Status: partially fixed.** `npm audit fix` (non-force) resolved 13 of the 17 original
+> findings, including the high-severity `@remix-run/router` XSS-via-open-redirect flagged below.
+> 4 remain and now report as 2 distinct advisories (`esbuild`, a *different* `react-router`
+> issue) — both need a major-version bump (Vite 5→8, react-router 6→7) to fully clear, which was
+> deliberately left out of this fix as its own migration. See the
+> [Remediation log](#remediation-log).
+
+17 findings (3 moderate, 14 high) as of the original review — `nanoid`, `picomatch`, `postcss`,
+`rollup`, `yaml`, `@remix-run/router`, `ajv`, `brace-expansion`, all transitive, mostly
+build-tooling (Vite/Rollup/postcss toolchain) rather than runtime app code. The one user-facing one
+worth calling out: **`@remix-run/router` (via `react-router`/`react-router-dom`) has a
+high-severity XSS via open redirect** (GHSA-2w69-qvjg-hvjx). Fix available via `npm audit fix`
+(bumps `react-router` to a patched range).
 
 **Action:** run `npm audit fix` in a dedicated branch, re-run the full test suite + typecheck +
 build, and confirm nothing breaks before merging — this repo pins `react-router-dom` and the
@@ -297,19 +319,20 @@ patch should be within the existing major version.
 
 ---
 
-## Priority remediation order
+## Priority remediation order (historical — all items now closed or explicitly deferred)
 
-1. **#1 — AI chat/MCP auth bypass.** Fixes the one finding that actually exposes live data today.
-2. **#2 — rate limiting.** Cheap, bounds cost exposure while/after #1 is fixed.
-3. **#3 — security headers.** Cheap, broad defense-in-depth.
-4. **#5 — error leakage**, then **#4 — CORS**. Both quick, low-risk changes.
-5. **`npm audit fix`** for the `react-router`/XSS-via-redirect fix, on its own branch with full
-   test/typecheck/build verification.
-6. **#8** as documentation hygiene once #1 lands.
-7. **#6 / #7** — no action now; leave as guardrail notes for future feature work.
+1. **#1 — AI chat/MCP auth bypass.** Fixed first — the one finding that actually exposed live
+   data. See `fix/ai-endpoint-auth-bypass`.
+2. **#2 — rate limiting**, **#3 — security headers**, **#5 — error leakage**, **#4 — CORS**, and
+   **#8 — verify_jwt documentation** were fixed together in `fix/security-hardening-followups`,
+   along with a non-force `npm audit fix` for #9.
+3. **#9's remaining 2 findings** (esbuild, react-router) need major-version bumps and are
+   deliberately deferred to a dedicated migration — see the remediation log.
+4. **#6 / #7** — no action needed; left as guardrail notes for future feature work (adding raw
+   HTML rendering or dynamic chart colors, respectively).
 
-Per this repo's [workflow](../CLAUDE.md), each fix should land on its own feature branch with
-tests added/updated, merged only after the Vitest suite, typecheck, and Gitleaks scan pass.
+Per this repo's [workflow](../CLAUDE.md), each fix landed on its own feature branch with tests
+added/updated, merged only after the Vitest suite, typecheck, and Gitleaks scan passed.
 
 ---
 
@@ -360,3 +383,80 @@ hand-rolled `fetch()` calls in `PortfolioAI.tsx`/`Reports.tsx` this PR fixed) �
 exposure is "anyone with the anon key can trigger a market-data refresh," not "anyone can read your
 portfolio." Worth adding the same `requireUser` gate to these as a follow-up, tracked as part of
 finding #2 (rate limiting) since both are about bounding who can trigger paid/external calls.
+
+### 2026-08-20 — Fixed #2, #3, #4, #5, #8; partially fixed #9
+
+**Branch:** `fix/security-hardening-followups`.
+
+**#2 — rate limiting:**
+- New [`_shared/rate-limit.ts`](../supabase/functions/_shared/rate-limit.ts): `checkRateLimit(sb,
+  userId)` implements a fixed-window counter — 10 requests per user per 60-second window — backed
+  by a new `ai_rate_limits` table
+  ([migration](../supabase/migrations/20260820120000_add_ai_rate_limits.sql)).
+- `portfolio-ai/index.ts` checks this right after `requireUser` and returns 429 before any
+  LLM/MCP work if the caller is over budget.
+- This is a read-then-write against the table, not a single atomic SQL increment — a benign race
+  for this single-user app (see the code comment); good enough for bounding runaway cost, not
+  meant as a hard security boundary.
+
+**#3 — security headers:**
+- [`vercel.json`](../vercel.json) now sets `X-Frame-Options: DENY`, `X-Content-Type-Options:
+  nosniff`, `Strict-Transport-Security` (HSTS, 2 years + preload), `Referrer-Policy:
+  strict-origin-when-cross-origin`, and a `Content-Security-Policy` scoped to `'self'` plus
+  `https://*.supabase.co` for `connect-src`.
+
+**#4 — wildcard CORS:**
+- New [`_shared/cors.ts`](../supabase/functions/_shared/cors.ts): `buildCorsHeaders()` reads the
+  allowed origin from an `ALLOWED_ORIGIN` secret, falling back to `*` only when that secret isn't
+  set (so a fresh clone/local dev isn't blocked on configuring it immediately).
+- Every edge function (`portfolio-ai`, `portfolio-mcp-server`, and all four `fetch-*` functions
+  that touch the DB, plus `fetch-pe-ratio`/`fetch-ticker-cape`) now builds its CORS headers through
+  this helper instead of a hardcoded `"*"`.
+- **Deploy step required:** set the `ALLOWED_ORIGIN` secret to your actual deployed frontend
+  origin (e.g. `https://your-app.vercel.app`) — see [README.md](../README.md)'s deployment section.
+  Until set, CORS stays wide open (`*`), same as before this fix — so this is a hardening step to
+  apply, not something blocking a first-time setup.
+
+**#5 — raw error leakage:**
+- [`_shared/sse.ts`](../supabase/functions/_shared/sse.ts)'s `createSseStream` now always sends a
+  fixed, generic `GENERIC_CLIENT_ERROR` message on failure instead of the caught error's own
+  message — the real error is still passed to a new optional `onError` callback for server-side
+  logging.
+- `portfolio-ai/index.ts`'s top-level catch now distinguishes a new `ValidationError` (safe,
+  specific request-validation problems like a missing `messages` array — returned as-is with a
+  400) from any other unexpected/internal error (generic 500 message; real detail still logged via
+  `_shared/logger.ts`).
+
+**#8 — `verify_jwt` posture:**
+- [`supabase/config.toml`](../supabase/config.toml) now explicitly declares `[functions.portfolio-ai]`
+  and `[functions.portfolio-mcp-server]` with `verify_jwt = true`, with a comment clarifying this
+  platform-level check is not a substitute for the code-level `requireUser`/service-role checks
+  from finding #1.
+
+**#9 — `npm audit` — partially fixed:**
+- Ran `npm audit fix` (non-force): resolved 13 of 17 findings, including the high-severity
+  `@remix-run/router` XSS-via-open-redirect originally flagged. 4 findings remain, now surfaced as
+  2 distinct advisories — `esbuild` (dev-server request forgery, moderate) and a *different*
+  `react-router` advisory (open redirect via backslash + a deserialization issue, both moderate).
+  Both require `npm audit fix --force`, which would bump Vite 5→8 and react-router 6→7 — major
+  version changes deliberately **not** bundled into this fix. Tracked as a follow-up: needs its
+  own branch with a full manual regression pass (Vite 8 and React Router 7 both carry breaking
+  changes), not something to force through a security-hardening PR.
+
+**Follow-up from #1's remediation log — extended the same auth gate to `fetch-*` functions:**
+- `fetch-prices`, `fetch-historical-prices`, `fetch-fx-rates`, and `fetch-benchmark-prices` (the
+  four that write via the service-role key) now also call `requireUser` and 401 without a real
+  session, closing the same class of gap finding #1 fixed for `portfolio-ai`.
+- `fetch-pe-ratio` and `fetch-ticker-cape` don't touch the service-role key or any user-specific
+  data (pure external API proxies), so only their CORS headers changed.
+- No frontend change was needed for these four: they're already called via
+  `supabase.functions.invoke(...)` (in `usePortfolio.ts`, `useDollarReturns.ts`, `Benchmark.tsx`,
+  `Reports.tsx`, `RollingReturns.tsx`), which auto-attaches the real session token — unlike the
+  hand-rolled `fetch()` calls in `PortfolioAI.tsx`/`Reports.tsx`'s AI-report path that finding #1
+  had to fix explicitly.
+
+**Tests added:** `_shared/rate-limit.test.ts`, `_shared/sse.test.ts`, `portfolio-ai`'s
+`rate-limit-gate.test.ts`, and an `auth-gate.test.ts` per newly-gated `fetch-*` function.
+`vitest.config.ts` gained a second Supabase-client import alias (the unpinned `@2` specifier the
+`fetch-*` functions use, vs. `@2.100.1` elsewhere) so those new tests can import `index.ts`. Full
+suite (211 tests), typecheck, and production build all verified green before opening the PR.

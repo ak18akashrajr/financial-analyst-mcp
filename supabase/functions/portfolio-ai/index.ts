@@ -8,7 +8,10 @@
 // Tools: no more prose-pretend tools or single mega context-dump. Every
 // portfolio fact is fetched on demand through a real MCP tools/call request
 // to portfolio-mcp-server (see docs/llm-mcp-agent-plan.md).
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 import { requireUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { buildCorsHeaders } from "../_shared/cors.ts";
+import { checkRateLimit } from "../_shared/rate-limit.ts";
 import { McpClient } from "../_shared/mcp-client.ts";
 import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, isComplexQuery, shouldEscalate } from "../_shared/router.ts";
 import { findTool } from "../_shared/mcp-tools.ts";
@@ -20,14 +23,18 @@ import { createLogger } from "../_shared/logger.ts";
 
 const logger = createLogger("portfolio-ai");
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+const corsHeaders = buildCorsHeaders(
+  "x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+);
 
 const CLAUDE_MODEL = "claude-sonnet-5";
 const MAX_TOOL_TURNS = 5;
+
+/** Thrown for expected, safe-to-show request validation problems (e.g. a
+ * malformed body) — distinct from unexpected/internal errors (provider
+ * outages, misconfiguration), whose real message must never reach the
+ * client (see the top-level catch below and _shared/sse.ts). */
+class ValidationError extends Error {}
 
 export const SYSTEM_PROMPT = `You are Portfolio Intelligence AI, an analytics assistant with real tool access to the user's own live portfolio data via the Model Context Protocol (MCP). You are not a registered investment adviser, and nothing you say is investment advice.
 
@@ -121,10 +128,23 @@ Deno.serve(async (req: Request) => {
     return unauthorizedResponse(corsHeaders);
   }
 
+  // Bounds LLM API cost from a scripted/looping caller — this is a paid
+  // endpoint per call (up to MAX_TOOL_TURNS round trips), so even a single
+  // authenticated user should be capped at a sane per-minute rate.
+  const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  const withinLimit = await checkRateLimit(serviceClient, user.id);
+  if (!withinLimit) {
+    logger.warn("Rate limit exceeded", { userId: user.id });
+    return new Response(JSON.stringify({ error: "Rate limited — please wait a moment and try again." }), {
+      status: 429,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const { messages } = (await req.json()) as { messages: ChatRequestMessage[] };
     if (!Array.isArray(messages) || messages.length === 0) {
-      throw new Error("Request must include a non-empty `messages` array");
+      throw new ValidationError("Request must include a non-empty `messages` array");
     }
 
     const history = messages.slice(0, -1);
@@ -228,9 +248,20 @@ Deno.serve(async (req: Request) => {
     return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
   } catch (e) {
     logger.error("portfolio-ai error", { error: e });
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Validation errors are safe (and useful) to show verbatim; anything
+    // else is an internal/provider failure and must not leak details like
+    // "No LLM API keys configured" or an upstream provider's error body —
+    // see _shared/sse.ts's GENERIC_CLIENT_ERROR for the same rule applied
+    // to errors raised mid-stream.
+    if (e instanceof ValidationError) {
+      return new Response(JSON.stringify({ error: e.message }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    return new Response(
+      JSON.stringify({ error: "Something went wrong while starting the chat. Please try again." }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 });

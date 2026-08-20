@@ -7,8 +7,20 @@
 //   event: delta        data: { text }                     — a chunk of the final answer
 //   event: done          data: { attribution }             — stream finished successfully
 //   event: error          data: { message }                — stream finished with an error
+//
+// The client-facing error message is always a fixed, generic string — never
+// the caught error's own message. Provider errors (e.g. "Anthropic request
+// failed: 401 ...") embed upstream response bodies/status codes, and
+// forwarding those to the browser both contradicts the AI system prompt's
+// "never reveal infrastructure/provider details" instruction and hands an
+// attacker a way to fingerprint or probe the backend. The real error is
+// still fully available server-side via `onError` (wired to the caller's
+// structured logger), just never sent over the wire.
+const GENERIC_CLIENT_ERROR = "Something went wrong while generating a response. Please try again.";
+
 export function createSseStream(
   run: (send: (event: string, data: unknown) => void) => Promise<void>,
+  onError?: (err: unknown) => void,
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream({
@@ -19,7 +31,8 @@ export function createSseStream(
       try {
         await run(send);
       } catch (err) {
-        send("error", { message: err instanceof Error ? err.message : "Unknown error" });
+        onError?.(err);
+        send("error", { message: GENERIC_CLIENT_ERROR });
       } finally {
         controller.close();
       }

@@ -1,9 +1,7 @@
 import { createLogger } from "../_shared/logger.ts";
+import { buildCorsHeaders } from "../_shared/cors.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const corsHeaders = buildCorsHeaders();
 
 const logger = createLogger("fetch-pe-ratio");
 
