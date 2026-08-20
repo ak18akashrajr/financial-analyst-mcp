@@ -19,7 +19,7 @@ no live requests were sent against the deployed Supabase project.
 | 6 | `react-markdown` renders LLM/DB content — safe today, one dependency away from XSS | Medium | Watch (no action needed) |
 | 7 | `dangerouslySetInnerHTML` in chart theming — safe today, static inputs only | Low | Watch (no action needed) |
 | 8 | `verify_jwt` posture is implicit | Low | ✅ **Fixed** (documented explicitly) |
-| 9 | 17 `npm audit` findings (3 moderate, 14 high) | Info | ⚠️ **Partially fixed** — 2 remain, need a major-version bump (see log) |
+| 9 | 17 `npm audit` findings (3 moderate, 14 high) | Info | ✅ **Fixed** — 0 findings remain (see log) |
 
 See [Remediation log](#remediation-log) at the bottom for what changed, in which PR, and any
 deploy steps that come with it (in particular: setting the `ALLOWED_ORIGIN` secret).
@@ -253,14 +253,13 @@ not substitute for the code-level per-user check in #1.
 
 ---
 
-## Dependency vulnerabilities (`npm audit`) — ⚠️ PARTIALLY FIXED
+## Dependency vulnerabilities (`npm audit`) — ✅ FIXED
 
-> **Status: partially fixed.** `npm audit fix` (non-force) resolved 13 of the 17 original
-> findings, including the high-severity `@remix-run/router` XSS-via-open-redirect flagged below.
-> 4 remain and now report as 2 distinct advisories (`esbuild`, a *different* `react-router`
-> issue) — both need a major-version bump (Vite 5→8, react-router 6→7) to fully clear, which was
-> deliberately left out of this fix as its own migration. See the
-> [Remediation log](#remediation-log).
+> **Status: fixed.** `npm audit fix` (non-force) resolved 13 of the 17 original findings,
+> including the high-severity `@remix-run/router` XSS-via-open-redirect flagged below. The
+> remaining 4 (2 advisories — `esbuild`, a *different* `react-router` issue) needed a
+> major-version bump (Vite 5→8, react-router 6→7), done as its own follow-up once manually
+> regression-tested. `npm audit` now reports 0 findings. See the [Remediation log](#remediation-log).
 
 17 findings (3 moderate, 14 high) as of the original review — `nanoid`, `picomatch`, `postcss`,
 `rollup`, `yaml`, `@remix-run/router`, `ajv`, `brace-expansion`, all transitive, mostly
@@ -326,8 +325,10 @@ patch should be within the existing major version.
 2. **#2 — rate limiting**, **#3 — security headers**, **#5 — error leakage**, **#4 — CORS**, and
    **#8 — verify_jwt documentation** were fixed together in `fix/security-hardening-followups`,
    along with a non-force `npm audit fix` for #9.
-3. **#9's remaining 2 findings** (esbuild, react-router) need major-version bumps and are
-   deliberately deferred to a dedicated migration — see the remediation log.
+3. **#9's remaining 2 findings** (esbuild, react-router) needed a major-version bump (Vite 5→8,
+   react-router 6→7) — done in `fix/npm-audit-major-bump` once the codebase's actual
+   React Router usage was confirmed low-risk (declarative-mode APIs only, no data-router
+   features). `npm audit` now reports 0 findings.
 4. **#6 / #7** — no action needed; left as guardrail notes for future feature work (adding raw
    HTML rendering or dynamic chart colors, respectively).
 
@@ -460,3 +461,37 @@ finding #2 (rate limiting) since both are about bounding who can trigger paid/ex
 `vitest.config.ts` gained a second Supabase-client import alias (the unpinned `@2` specifier the
 `fetch-*` functions use, vs. `@2.100.1` elsewhere) so those new tests can import `index.ts`. Full
 suite (211 tests), typecheck, and production build all verified green before opening the PR.
+
+### 2026-08-20 — Fixed #9's remaining findings: Vite 5→8, react-router 6→7
+
+**Branch:** `fix/npm-audit-major-bump`.
+
+**Why this was safe to do:** before forcing the bump, checked every `react-router-dom` import
+across `src/` — only declarative-mode APIs are used (`BrowserRouter`, `Routes`, `Route`, `Link`,
+`NavLink`, `Outlet`, `useLocation`, plus `MemoryRouter` in tests). No `createBrowserRouter` or
+other data-router API (loaders/actions) anywhere, which is the part of the v6→v7 upgrade with
+actual breaking changes — the declarative API v7 ships is designed to be a compatible superset of
+v6's. This made the upgrade low-risk enough to do directly rather than deferring further.
+
+**Changes:**
+- `npm audit fix --force`: `vite` 5.4.19 → 8.2.2, `react-router-dom` 6.30.1 → 7.18.2.
+- `@vitejs/plugin-react-swc` bumped 3.11.0 → 4.3.3 in the same pass — the audit-fixed Vite 8 isn't
+  in that plugin version's peer range (`^4 || ^5 || ^6 || ^7`); 4.x adds `^8` support. Without this,
+  npm would have force-installed an incompatible peer pairing.
+- No application code changes were needed — no router API usage had to change, no Vite config
+  option was removed/renamed for this project's usage.
+- `npm audit` now reports **0 vulnerabilities** (down from the original 17).
+
+**Verification:** full suite (211 tests), typecheck, and production build all green. Additionally
+ran the actual dev server and drove it in a real browser: confirmed the login gate renders,
+navigating to a protected route while logged out redirects correctly, and the `*` 404 route still
+renders for an unknown path — the three behaviors most likely to break from a React Router major
+bump. Also confirms the v6 "future flag" warnings previously seen in test output
+(`v7_startTransition`, `v7_relativeSplatPath`) are gone, since those were v6-only notices asking to
+opt into v7's now-default behavior early.
+
+**Not changed:** `vite.config.ts` still uses `__dirname` (not `import.meta.dirname`) for the `@`
+path alias — Vite 8's build now warns this is deprecated for its newer native config loader, but
+`import.meta.dirname` needs Node ≥20.11/21.2, and this repo's stated minimum is Node 18. Left
+as-is rather than silently raising the Node requirement as a side effect of a security fix; revisit
+if the README's Node minimum is ever bumped for other reasons.
