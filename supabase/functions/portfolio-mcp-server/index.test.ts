@@ -65,6 +65,77 @@ describe("portfolio-mcp-server", () => {
     expect(body.error.code).toBe(-32602);
   });
 
+  it("advertises readOnlyHint annotations for every tool", async () => {
+    const res = await handler(rpcRequest({ jsonrpc: "2.0", id: 20, method: "tools/list" }));
+    const body = await res.json();
+    for (const tool of body.result.tools) {
+      expect(tool.annotations.readOnlyHint).toBe(true);
+      expect(tool.annotations.destructiveHint).toBe(false);
+    }
+  });
+
+  it("rejects tools/call with a value below the schema's declared minimum, without silently substituting a default", async () => {
+    const res = await handler(
+      rpcRequest({
+        jsonrpc: "2.0",
+        id: 21,
+        method: "tools/call",
+        params: { name: "get_concentration_risk", arguments: { topN: -3 } },
+      }),
+    );
+    const body = await res.json();
+    // Rejected as a tool-level error (isError), not a JSON-RPC protocol
+    // error — same shape as any other tool failure.
+    expect(body.result.isError).toBe(true);
+    const content = JSON.parse(body.result.content[0].text);
+    expect(content.error).toMatch(/topN.*>= 1/);
+  });
+
+  it("rejects tools/call missing a required argument", async () => {
+    const res = await handler(
+      rpcRequest({
+        jsonrpc: "2.0",
+        id: 22,
+        method: "tools/call",
+        params: { name: "run_stress_test", arguments: {} },
+      }),
+    );
+    const body = await res.json();
+    expect(body.result.isError).toBe(true);
+    const content = JSON.parse(body.result.content[0].text);
+    expect(content.error).toMatch(/Missing required argument: shockPercent/);
+  });
+
+  it("rejects tools/call with a wrong-typed argument", async () => {
+    const res = await handler(
+      rpcRequest({
+        jsonrpc: "2.0",
+        id: 23,
+        method: "tools/call",
+        params: { name: "run_stress_test", arguments: { shockPercent: "twenty percent" } },
+      }),
+    );
+    const body = await res.json();
+    expect(body.result.isError).toBe(true);
+    const content = JSON.parse(body.result.content[0].text);
+    expect(content.error).toMatch(/shockPercent.*must be a number/);
+  });
+
+  it("rejects tools/call with an unexpected extra argument", async () => {
+    const res = await handler(
+      rpcRequest({
+        jsonrpc: "2.0",
+        id: 24,
+        method: "tools/call",
+        params: { name: "get_portfolio_summary", arguments: { unexpectedField: true } },
+      }),
+    );
+    const body = await res.json();
+    expect(body.result.isError).toBe(true);
+    const content = JSON.parse(body.result.content[0].text);
+    expect(content.error).toMatch(/Unexpected argument\(s\): unexpectedField/);
+  });
+
   it("returns a JSON-RPC error for an unknown method", async () => {
     const res = await handler(rpcRequest({ jsonrpc: "2.0", id: 4, method: "bogus/method" }));
     const body = await res.json();

@@ -51,11 +51,29 @@ function missingPriceFields(missingPriceSymbols: string[], omittedFrom: string) 
 
 export type ToolComplexity = "simple" | "complex";
 
+/** MCP tool annotation hints (spec 2025-06-18) telling any client — ours or a
+ * third party's — what a tool call can do without needing to inspect its
+ * implementation. Every tool in this registry is a read-only DB query, so
+ * every entry sets the same three hints; this is metadata about the
+ * registry's actual behavior, not a per-tool decision. */
+export interface ToolAnnotations {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+}
+
+const READ_ONLY_ANNOTATIONS: ToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+};
+
 export interface ToolDefinition {
   name: string;
   description: string;
   complexity: ToolComplexity;
   inputSchema: Record<string, unknown>;
+  annotations: ToolAnnotations;
   handler: (args: Record<string, unknown>, sb: SupabaseClient) => Promise<unknown>;
 }
 
@@ -69,6 +87,7 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       "symbol missing a current price is excluded here (see missingPriceSymbols) rather than priced at ₹0.",
     complexity: "simple",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (_args, sb) => {
       const p = await getCurrentPortfolio(sb);
       return {
@@ -93,6 +112,7 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       "from get_portfolio_summary's totals by at most ₹1 due to independent rounding).",
     complexity: "simple",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (_args, sb) => {
       const p = await getCurrentPortfolio(sb);
       return {
@@ -106,6 +126,7 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     description: "Portfolio exposure breakdown by geography (e.g. India vs. US), value and percent.",
     complexity: "simple",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (_args, sb) => {
       const p = await getCurrentPortfolio(sb);
       return { exposure: exposureBy(p.holdings, "geography") };
@@ -116,6 +137,7 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     description: "Portfolio exposure breakdown by sector/category, value and percent.",
     complexity: "simple",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (_args, sb) => {
       const p = await getCurrentPortfolio(sb);
       return { exposure: exposureBy(p.holdings, "category") };
@@ -127,12 +149,18 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     complexity: "simple",
     inputSchema: {
       type: "object",
-      properties: { topN: { type: "number", description: "Number of top holdings to return (default 5)" } },
+      properties: {
+        topN: { type: "number", minimum: 1, description: "Number of top holdings to return (default 5)" },
+      },
       additionalProperties: false,
     },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (args, sb) => {
       const p = await getCurrentPortfolio(sb);
-      const topN = typeof args.topN === "number" && args.topN > 0 ? args.topN : 5;
+      // args.topN, if present, is already a validated number >= 1 by the time
+      // it reaches here — see validateArgs in mcp-schema-validate.ts, invoked
+      // by portfolio-mcp-server before any handler runs.
+      const topN = typeof args.topN === "number" ? args.topN : 5;
       return concentrationRisk(p.holdings, topN);
     },
   },
@@ -143,12 +171,15 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     complexity: "complex",
     inputSchema: {
       type: "object",
-      properties: { lookbackDays: { type: "number", description: "History window in days (default 90)" } },
+      properties: {
+        lookbackDays: { type: "number", minimum: 1, description: "History window in days (default 90)" },
+      },
       additionalProperties: false,
     },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (args, sb) => {
       const p = await getCurrentPortfolio(sb);
-      const lookbackDays = typeof args.lookbackDays === "number" && args.lookbackDays > 0 ? args.lookbackDays : 90;
+      const lookbackDays = typeof args.lookbackDays === "number" ? args.lookbackDays : 90;
       return getRiskMetrics(sb, p.holdings, lookbackDays);
     },
   },
@@ -167,10 +198,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       required: ["shockPercent"],
       additionalProperties: false,
     },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (args, sb) => {
       const p = await getCurrentPortfolio(sb);
-      const shockPercent = Number(args.shockPercent);
-      if (!Number.isFinite(shockPercent)) throw new Error("shockPercent must be a number");
+      const shockPercent = args.shockPercent as number;
       return runStressTest(p.holdings, p.cash, shockPercent);
     },
   },
@@ -180,6 +211,7 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       "Flags any single holding over 15%, top-5 combined over 50%, or any sector/geography over 40% of the portfolio.",
     complexity: "complex",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (_args, sb) => {
       const p = await getCurrentPortfolio(sb);
       return { breaches: checkLimitBreaches(p.holdings) };
@@ -192,15 +224,20 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        benchmarkSymbol: { type: "string", description: "Benchmark symbol, e.g. NIFTY50, NIFTY500, SPX (default NIFTY50)" },
-        days: { type: "number", description: "Comparison window in days (default 90)" },
+        benchmarkSymbol: {
+          type: "string",
+          minLength: 1,
+          description: "Benchmark symbol, e.g. NIFTY50, NIFTY500, SPX (default NIFTY50)",
+        },
+        days: { type: "number", minimum: 1, description: "Comparison window in days (default 90)" },
       },
       additionalProperties: false,
     },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (args, sb) => {
       const p = await getCurrentPortfolio(sb);
-      const benchmarkSymbol = typeof args.benchmarkSymbol === "string" && args.benchmarkSymbol ? args.benchmarkSymbol : "NIFTY50";
-      const days = typeof args.days === "number" && args.days > 0 ? args.days : 90;
+      const benchmarkSymbol = typeof args.benchmarkSymbol === "string" ? args.benchmarkSymbol : "NIFTY50";
+      const days = typeof args.days === "number" ? args.days : 90;
       return compareToBenchmark(sb, p.holdings, benchmarkSymbol, days);
     },
   },
@@ -210,13 +247,21 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     complexity: "complex",
     inputSchema: {
       type: "object",
-      properties: { asOfDate: { type: "string", description: "Past date to compare against, format YYYY-MM-DD" } },
+      properties: {
+        asOfDate: {
+          type: "string",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+          description: "Past date to compare against, format YYYY-MM-DD",
+        },
+      },
       required: ["asOfDate"],
       additionalProperties: false,
     },
+    annotations: READ_ONLY_ANNOTATIONS,
     handler: async (args, sb) => {
-      const asOfDate = String(args.asOfDate || "");
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) throw new Error("asOfDate must be in YYYY-MM-DD format");
+      // asOfDate is already validated against the pattern above by the time
+      // it reaches here — see validateArgs in mcp-schema-validate.ts.
+      const asOfDate = args.asOfDate as string;
       return getExposureDrift(sb, asOfDate);
     },
   },
