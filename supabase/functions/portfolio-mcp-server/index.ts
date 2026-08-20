@@ -19,6 +19,7 @@
 // enforced by the platform). No additional OAuth layer is implemented here.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 import { findTool, TOOL_REGISTRY } from "../_shared/mcp-tools.ts";
+import { validateArgs } from "../_shared/mcp-schema-validate.ts";
 import { createLogger } from "../_shared/logger.ts";
 
 const logger = createLogger("portfolio-mcp-server");
@@ -74,6 +75,7 @@ async function handleRpc(req: JsonRpcRequest): Promise<Record<string, unknown> |
           name: t.name,
           description: t.description,
           inputSchema: t.inputSchema,
+          annotations: t.annotations,
         })),
       });
 
@@ -84,6 +86,18 @@ async function handleRpc(req: JsonRpcRequest): Promise<Record<string, unknown> |
       if (!tool) {
         logger.warn("Unknown tool requested", { name });
         return rpcError(req.id, -32602, `Unknown tool: ${name}`);
+      }
+      // Enforce the tool's declared inputSchema before the handler runs, so
+      // it's a real contract rather than advertising in tools/list — a
+      // client passing a bad value (e.g. a negative topN) gets rejected
+      // instead of a silently-substituted default and a misleading success.
+      const validationError = validateArgs(tool.inputSchema, args);
+      if (validationError) {
+        logger.warn("Invalid tool arguments", { tool: name, error: validationError });
+        return rpcResult(req.id, {
+          content: [{ type: "text", text: JSON.stringify({ error: validationError }) }],
+          isError: true,
+        });
       }
       const startedAt = Date.now();
       try {
