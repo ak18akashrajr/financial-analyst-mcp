@@ -7,15 +7,25 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
-const PRESET_QUESTIONS = [
+// Each preset maps 1:1 (or a small combination) onto a real MCP tool in
+// _shared/mcp-tools.ts, so every one of these gets a real, data-grounded
+// answer rather than the model reasoning in a vacuum. Two prior entries got
+// dropped for that reason instead of just reworded: "What would happen if I
+// need to liquidate right now?" has no backing tool (no liquidation/tax-impact
+// calc exists), and "Suggest a rebalancing strategy" directly invites the
+// recommendation-style answer portfolio-ai's SYSTEM_PROMPT is instructed to
+// decline ("Never recommend a trade") — a preset shouldn't set the user up
+// for a guardrail refusal. Replaced with get_risk_metrics and
+// compare_to_benchmark, both real tools that had no preset pointing at them.
+export const PRESET_QUESTIONS = [
   { icon: '⚠️', text: 'What is my biggest risk right now?', cat: 'Risk Overview' },
   { icon: '🏦', text: 'How bad would a 20% market crash hit me?', cat: 'Stress Testing' },
   { icon: '📊', text: 'Give me a full portfolio summary with exposure breakdown.', cat: 'Portfolio Summary' },
-  { icon: '🎯', text: 'Am I too concentrated in any one stock?', cat: 'Concentration Risk' },
-  { icon: '📈', text: 'Which are my top gainers and losers?', cat: 'Performance' },
-  { icon: '🌍', text: 'What is my geographic and category exposure?', cat: 'Exposure Analysis' },
-  { icon: '💰', text: 'What would happen if I need to liquidate right now?', cat: 'Liquidity' },
-  { icon: '🔄', text: 'Suggest a rebalancing strategy for my portfolio.', cat: 'Strategy' },
+  { icon: '🎯', text: 'Am I too concentrated in any one stock or sector?', cat: 'Concentration Risk' },
+  { icon: '📈', text: 'Which holdings are contributing the most to my P&L?', cat: 'Performance' },
+  { icon: '📉', text: "How volatile is my portfolio, and what's my beta versus NIFTY 50?", cat: 'Risk Metrics' },
+  { icon: '🏆', text: 'How has my portfolio performed against NIFTY 50 over the last 90 days?', cat: 'Benchmark' },
+  { icon: '🚨', text: 'Have I breached any of my concentration or exposure limits?', cat: 'Limit Breaches' },
 ];
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portfolio-ai`;
