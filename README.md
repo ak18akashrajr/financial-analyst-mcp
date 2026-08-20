@@ -24,6 +24,7 @@ hosted product for others to sign up to.
 - [Database & Edge Function Deployment](#database--edge-function-deployment)
 - [Frontend Deployment (Vercel)](#frontend-deployment-vercel)
 - [Testing & Continuous Integration](#testing--continuous-integration)
+- [Security](#security)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -158,7 +159,8 @@ line per call (timestamp, level, function name, message, context) — rather tha
 ├── docs/
 │   ├── auth-rls-plan.md        # Auth + Row Level Security design record
 │   ├── llm-mcp-agent-plan.md   # Portfolio AI architecture: real MCP server + multi-provider agent
-│   └── logging-monitoring.md   # Structured logging across edge functions
+│   ├── logging-monitoring.md   # Structured logging across edge functions
+│   └── security-review.md     # Security review + remediation log (auth, RLS, CORS, rate limits)
 ├── supabase/
 │   ├── migrations/             # SQL database schema and RLS policies
 │   └── functions/
@@ -307,6 +309,19 @@ piece is hosting the built static frontend.
 4. Deploy. Vercel provides a `https://<project>.vercel.app` URL over HTTPS, redeploying
    automatically on every push to `main`. A custom domain can be attached under Project Settings →
    Domains.
+5. **Lock down edge function CORS to this origin.** Every edge function defaults to
+   `Access-Control-Allow-Origin: *` until you set an `ALLOWED_ORIGIN` secret, so the app works
+   immediately after step 4 above with no extra step required — but a fresh deploy should still
+   restrict it once the real frontend URL is known:
+
+   ```bash
+   npx supabase secrets set ALLOWED_ORIGIN="https://<project>.vercel.app"
+   ```
+
+   Use the exact origin (scheme + host, no trailing slash, no path) — a mismatch here breaks every
+   edge function call from the browser with a CORS error, not an auth error, which is easy to
+   misdiagnose. If you attach a custom domain later, update this secret to match. See
+   [`docs/security-review.md`](docs/security-review.md) finding #4 for why this exists.
 
 ## Testing & Continuous Integration
 
@@ -330,6 +345,28 @@ To run a single test file or a single test by name:
 npx vitest run src/test/exposure-section.test.tsx
 npx vitest run -t "shows empty-state copy"
 ```
+
+## Security
+
+[`docs/security-review.md`](docs/security-review.md) is a full security review of the
+application — auth flow, RLS policies, edge function CORS/rate-limiting/error handling, LLM
+tool-call safety, and dependency vulnerabilities — plus a remediation log of what's been fixed and
+when. Relevant to a first-time setup:
+
+- **`ALLOWED_ORIGIN`** (edge function secret) restricts CORS to your actual frontend origin; see
+  step 5 of [Frontend Deployment](#frontend-deployment-vercel) above. The app works without it
+  (defaults to `*`), so this isn't a blocking step, just one worth doing once your Vercel URL
+  exists.
+- **`portfolio-ai` is rate-limited** to 10 requests per user per minute, backed by the
+  `ai_rate_limits` table (created automatically by the `db push` step above — nothing extra to
+  configure).
+- **`SUPABASE_ANON_KEY`** is read by edge functions to verify real user sessions
+  (`supabase/functions/_shared/auth.ts`); it's one of the secrets Supabase injects into every edge
+  function by default, so — like `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` — nothing needs to be
+  set for it manually.
+
+See also [`docs/auth-rls-plan.md`](docs/auth-rls-plan.md) for the auth/RLS design this review
+builds on.
 
 ## Contributing
 
