@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { PortfolioCharts } from '@/components/PortfolioCharts';
 import { NetWorthChart } from '@/components/NetWorthChart';
 import { DebtChart } from '@/components/DebtChart';
+import { PerformanceAttribution } from '@/components/PerformanceAttribution';
 import { SeasonalityHeatmap } from '@/components/SeasonalityHeatmap';
 import { CorrelationHeatmap } from '@/components/CorrelationHeatmap';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -16,6 +17,7 @@ const ChartsContent = () => {
 
   const {
     transactions,
+    holdings,
     summary,
     cash,
     currentPrices,
@@ -71,6 +73,9 @@ const ChartsContent = () => {
 
         {/* Performance Charts */}
         <PortfolioCharts transactions={transactions} currentPrices={currentPrices} />
+
+        {/* Performance Attribution */}
+        <PerformanceAttribution holdings={holdings} />
 
         {/* Seasonality + Correlation */}
         <SeasonalityHeatmap />
