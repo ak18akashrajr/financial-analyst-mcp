@@ -1,11 +1,20 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Send, Bot, User, Zap, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Send, Bot, User, Zap, MessageSquare, Check, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
-type Msg = { role: 'user' | 'assistant'; content: string };
+// `toolTrace` records every real MCP tool this specific answer was grounded
+// in, in call order — attached once the answer finishes streaming so it's
+// visible after the fact too, not just as a transient "thinking" indicator.
+type Msg = { role: 'user' | 'assistant'; content: string; toolTrace?: string[] };
+
+/** "get_portfolio_summary" -> "Get Portfolio Summary" — for display only, the
+ * real tool name is what's actually sent to/from MCP. */
+function humanizeToolName(name: string): string {
+  return name.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
 
 // Each preset maps 1:1 (or a small combination) onto a real MCP tool in
 // _shared/mcp-tools.ts, so every one of these gets a real, data-grounded
@@ -109,7 +118,11 @@ const PortfolioAI = () => {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [toolStatus, setToolStatus] = useState<string | null>(null);
+  // Every real MCP tool call for the in-flight turn, in order — accumulates
+  // rather than overwrites, so the live indicator shows the whole trace
+  // building up (earlier calls checked off, the newest one still spinning)
+  // instead of hiding everything but whatever tool happens to be running now.
+  const [liveToolCalls, setLiveToolCalls] = useState<string[]>([]);
   const chatBodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -125,18 +138,24 @@ const PortfolioAI = () => {
     setMessages(allMsgs);
     setInput('');
     setIsLoading(true);
-    setToolStatus(null);
+    setLiveToolCalls([]);
 
+    // Plain array (not state) as the source of truth for which tools were
+    // called this turn — every tool_call event fires before the answer's
+    // first delta (see index.ts's per-turn loop: tool calls happen inside
+    // the loop, text streaming only starts after it breaks), so by the time
+    // `upsert` creates the assistant message, this is already complete and
+    // stable. Reading it here avoids a stale-closure read of React state.
+    const collectedTools: string[] = [];
     let assistantSoFar = '';
     const upsert = (chunk: string) => {
-      setToolStatus(null); // first text chunk means tool resolution is done
       assistantSoFar += chunk;
       setMessages(prev => {
         const last = prev[prev.length - 1];
         if (last?.role === 'assistant') {
           return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
         }
-        return [...prev, { role: 'assistant', content: assistantSoFar }];
+        return [...prev, { role: 'assistant', content: assistantSoFar, toolTrace: [...collectedTools] }];
       });
     };
 
@@ -146,25 +165,28 @@ const PortfolioAI = () => {
         setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
       }
       setIsLoading(false);
-      setToolStatus(null);
+      setLiveToolCalls([]);
     };
 
     try {
       await streamChat({
         messages: allMsgs,
         onDelta: upsert,
-        onToolCall: (name) => setToolStatus(name.replace(/_/g, ' ')),
+        onToolCall: (name) => {
+          collectedTools.push(name);
+          setLiveToolCalls([...collectedTools]);
+        },
         onDone: finish,
         onError: (msg) => {
           setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }]);
           setIsLoading(false);
-          setToolStatus(null);
+          setLiveToolCalls([]);
         },
       });
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error. Please try again.' }]);
       setIsLoading(false);
-      setToolStatus(null);
+      setLiveToolCalls([]);
     }
   }, [messages, isLoading]);
 
@@ -268,6 +290,13 @@ const PortfolioAI = () => {
                   <p className="text-[10px] tracking-[0.12em] uppercase text-muted-foreground font-semibold mb-1">
                     {msg.role === 'user' ? 'You' : 'Portfolio AI'}
                   </p>
+                  {msg.role === 'assistant' && msg.toolTrace && msg.toolTrace.length > 0 && (
+                    <p className="text-[10px] text-muted-foreground mb-1.5 flex items-center gap-1 flex-wrap">
+                      <Zap className="w-3 h-3 flex-shrink-0" />
+                      Used {msg.toolTrace.length} MCP tool{msg.toolTrace.length > 1 ? 's' : ''}:{' '}
+                      {msg.toolTrace.map(humanizeToolName).join(' → ')}
+                    </p>
+                  )}
                   <div className={`rounded-md px-3.5 py-2.5 text-sm leading-relaxed ${
                     msg.role === 'user'
                       ? 'bg-primary/8 border border-primary/20 text-foreground italic'
@@ -292,21 +321,43 @@ const PortfolioAI = () => {
                 <div className="w-7 h-7 rounded flex-shrink-0 flex items-center justify-center bg-emerald-500/10 border border-emerald-500/30 text-emerald-500">
                   <Bot className="w-3.5 h-3.5" />
                 </div>
-                <div className="flex items-center gap-1 py-2">
-                  <div className="flex gap-1">
-                    {[0, 1, 2].map(i => (
-                      <div
-                        key={i}
-                        className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-pulse"
-                        style={{ animationDelay: `${i * 0.18}s` }}
-                      />
-                    ))}
+                {liveToolCalls.length === 0 ? (
+                  <div className="flex items-center gap-1 py-2">
+                    <div className="flex gap-1">
+                      {[0, 1, 2].map(i => (
+                        <div
+                          key={i}
+                          className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-pulse"
+                          style={{ animationDelay: `${i * 0.18}s` }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground ml-2 flex items-center gap-1">
+                      <Zap className="w-3 h-3" />
+                      Understanding your question...
+                    </span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground ml-2 flex items-center gap-1">
-                    <Zap className="w-3 h-3" />
-                    {toolStatus ? `Calling ${toolStatus} via MCP...` : 'Thinking...'}
-                  </span>
-                </div>
+                ) : (
+                  // Every real MCP tool call so far this turn, in order — the
+                  // running one still spinning, earlier ones checked off, so
+                  // the trace visibly builds up rather than replacing itself
+                  // and hiding what already happened.
+                  <div className="flex flex-col gap-1 py-2">
+                    {liveToolCalls.map((name, idx) => {
+                      const isRunning = idx === liveToolCalls.length - 1;
+                      return (
+                        <span key={idx} className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                          {isRunning ? (
+                            <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+                          ) : (
+                            <Check className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                          )}
+                          {isRunning ? 'Calling' : 'Called'} <span className="font-medium">{humanizeToolName(name)}</span> via MCP{isRunning ? '...' : ''}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
