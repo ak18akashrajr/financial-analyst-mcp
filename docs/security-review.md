@@ -374,16 +374,16 @@ secret needs to be configured in the Supabase dashboard for this to work, but wo
 once deployed (test a real chat message end-to-end; a 401 on a real login means that secret is
 missing in this project for some reason).
 
-**Explicitly not covered by this fix (follow-up, lower severity):** `fetch-prices`,
-`fetch-historical-prices`, `fetch-fx-rates`, and `fetch-benchmark-prices` still use the
-service-role key with no per-caller check, and technically have the same class of gap (the
-platform's `verify_jwt` alone would accept a direct anon-key call). They're lower priority than #1
-was because the frontend already reaches them via `supabase.functions.invoke(...)`, which
-auto-attaches the logged-in user's real session token rather than the anon key (unlike the old
-hand-rolled `fetch()` calls in `PortfolioAI.tsx`/`Reports.tsx` this PR fixed) — so the practical
-exposure is "anyone with the anon key can trigger a market-data refresh," not "anyone can read your
-portfolio." Worth adding the same `requireUser` gate to these as a follow-up, tracked as part of
-finding #2 (rate limiting) since both are about bounding who can trigger paid/external calls.
+**Explicitly not covered by this fix at the time (follow-up, lower severity):** `fetch-prices`,
+`fetch-historical-prices`, `fetch-fx-rates`, and `fetch-benchmark-prices` still used the
+service-role key with no per-caller check, technically the same class of gap (the platform's
+`verify_jwt` alone would accept a direct anon-key call). Lower priority than #1 was, since the
+frontend already reached them via `supabase.functions.invoke(...)`, which auto-attaches the
+logged-in user's real session token rather than the anon key (unlike the old hand-rolled
+`fetch()` calls in `PortfolioAI.tsx`/`Reports.tsx` this PR fixed) — so the practical exposure was
+"anyone with the anon key can trigger a market-data refresh," not "anyone can read your
+portfolio." **This follow-up has since been done** — see the `fix/security-hardening-followups`
+entry below, which added the same `requireUser` gate to all four.
 
 ### 2026-08-20 — Fixed #2, #3, #4, #5, #8; partially fixed #9
 
