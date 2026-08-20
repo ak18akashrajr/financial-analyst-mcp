@@ -12,6 +12,16 @@ export default defineConfig({
       "src/**/*.{test,spec}.{ts,tsx}",
       "supabase/functions/**/*.{test,spec}.ts",
     ],
+    // A few edge-function test files dynamically `import("./index.ts")` inside
+    // beforeAll to exercise the real Deno.serve handler, and those modules'
+    // import chains (LLM provider clients, MCP client, router) are heavy
+    // enough that under the full suite — every test file transforming/
+    // collecting concurrently — the default 10s hook timeout occasionally
+    // trips on a loaded machine, even though each resolves in well under a
+    // second running alone. Raised once, globally, rather than patched
+    // per-file, since the cause (suite-wide contention) isn't specific to
+    // any one file and a future file with the same shape would hit it too.
+    hookTimeout: 30000,
   },
   resolve: {
     alias: {

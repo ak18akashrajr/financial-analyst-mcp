@@ -12,6 +12,11 @@ beforeAll(async () => {
     env: { get: (_key: string) => undefined },
     serve: () => {},
   });
+  // Under the full suite, this dynamic import can occasionally miss
+  // Vitest's default 10s hook timeout on a loaded machine (every test file
+  // transforming/collecting concurrently), even though it resolves in well
+  // under a second running alone — see vitest.config.ts's hookTimeout,
+  // raised globally for exactly this contention, not this file's own work.
   ({ SYSTEM_PROMPT } = await import("./index.ts"));
 });
 
