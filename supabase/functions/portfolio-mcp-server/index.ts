@@ -13,10 +13,16 @@
 // (initialize, tools/list, tools/call, JSON-RPC error shape) follows the MCP
 // spec directly, so any standard MCP client can talk to this endpoint.
 //
-// Access control: this function is only meant to be called by our own
-// portfolio-ai edge function, authenticated the same way as any other
-// Supabase Edge Function call (Authorization: Bearer <anon-or-service key>,
-// enforced by the platform). No additional OAuth layer is implemented here.
+// Access control: this function is internal-only — meant to be called by
+// our own portfolio-ai edge function, never directly by the frontend. It
+// reads the full portfolio via the service-role key (bypassing RLS), so
+// admission is not left to the platform's `verify_jwt` alone (that check
+// accepts the public anon key too, which anyone can read out of the client
+// bundle). Instead this function requires the caller's bearer token to be
+// the actual service-role key, which never leaves the server — see
+// requireServiceRole() below. portfolio-ai is the only holder of that key
+// and is itself responsible for verifying the real end user before it
+// forwards a call here (see _shared/auth.ts).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 import { findTool, TOOL_REGISTRY } from "../_shared/mcp-tools.ts";
 import { validateArgs } from "../_shared/mcp-schema-validate.ts";
@@ -51,6 +57,20 @@ function getSupabaseClient() {
   const url = Deno.env.get("SUPABASE_URL")!;
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   return createClient(url, key);
+}
+
+/** True only if `req`'s bearer token is the actual service-role secret —
+ * i.e. the caller is portfolio-ai itself, not a client holding just the
+ * public anon key. Constant-time comparison to avoid a timing side channel
+ * on the secret. */
+function requestHasServiceRole(req: Request): boolean {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!token || !serviceRoleKey || token.length !== serviceRoleKey.length) return false;
+  let diff = 0;
+  for (let i = 0; i < token.length; i++) diff |= token.charCodeAt(i) ^ serviceRoleKey.charCodeAt(i);
+  return diff === 0;
 }
 
 async function handleRpc(req: JsonRpcRequest): Promise<Record<string, unknown> | null> {
@@ -138,6 +158,14 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (!requestHasServiceRole(req)) {
+    logger.warn("Rejected non-service-role request to portfolio-mcp-server");
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

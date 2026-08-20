@@ -4,7 +4,17 @@
 // buy/sell" framing portfolio-ai's SYSTEM_PROMPT is instructed to decline
 // (see supabase/functions/portfolio-ai/index.ts's "Never recommend a trade"
 // section) — a preset shouldn't set the user up for a guardrail refusal.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// PortfolioAI.tsx imports the real Supabase client at module scope (for
+// session-token lookup), which throws immediately without VITE_SUPABASE_URL
+// set — true in CI, where no .env exists. This test only needs the
+// PRESET_QUESTIONS constant, so mock the client per the repo convention
+// (CLAUDE.md) rather than requiring real env vars just to import the module.
+vi.mock("@/integrations/supabase/client", () => ({
+  supabase: { auth: { getSession: () => Promise.resolve({ data: { session: null } }) } },
+}));
+
 import { PRESET_QUESTIONS } from "@/pages/PortfolioAI";
 
 // Mirrors the recommendation-inviting phrasing SYSTEM_PROMPT is guarded

@@ -8,6 +8,7 @@
 // Tools: no more prose-pretend tools or single mega context-dump. Every
 // portfolio fact is fetched on demand through a real MCP tools/call request
 // to portfolio-mcp-server (see docs/llm-mcp-agent-plan.md).
+import { requireUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { McpClient } from "../_shared/mcp-client.ts";
 import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, isComplexQuery, shouldEscalate } from "../_shared/router.ts";
 import { findTool } from "../_shared/mcp-tools.ts";
@@ -108,6 +109,17 @@ function buildProvider(): { provider: LlmProvider; model: string; attribution: s
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // This function reads the user's entire portfolio via the service-role
+  // key below, which bypasses RLS by design — so it must independently
+  // verify a real logged-in user made this call. The platform's own
+  // `verify_jwt` isn't enough here: it accepts the public anon key too,
+  // which isn't a user session.
+  const user = await requireUser(req);
+  if (!user) {
+    logger.warn("Rejected unauthenticated portfolio-ai request");
+    return unauthorizedResponse(corsHeaders);
+  }
 
   try {
     const { messages } = (await req.json()) as { messages: ChatRequestMessage[] };

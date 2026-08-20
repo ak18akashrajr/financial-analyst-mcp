@@ -6,11 +6,13 @@
 // project's DB credentials, not something safe to fake here.
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
+const FAKE_SERVICE_ROLE_KEY = "test-service-role-key";
+
 let handler: (req: Request) => Promise<Response> | Response;
 
 beforeAll(async () => {
   vi.stubGlobal("Deno", {
-    env: { get: (_key: string) => undefined },
+    env: { get: (key: string) => (key === "SUPABASE_SERVICE_ROLE_KEY" ? FAKE_SERVICE_ROLE_KEY : undefined) },
     serve: (h: (req: Request) => Promise<Response> | Response) => {
       handler = h;
     },
@@ -18,10 +20,13 @@ beforeAll(async () => {
   await import("./index.ts");
 });
 
+// Every functional test authenticates as the service role (i.e. as
+// portfolio-ai itself) — access-control behavior is covered separately
+// below under "access control".
 function rpcRequest(body: Record<string, unknown>): Request {
   return new Request("https://example.com/portfolio-mcp-server", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${FAKE_SERVICE_ROLE_KEY}` },
     body: JSON.stringify(body),
   });
 }
@@ -150,5 +155,38 @@ describe("portfolio-mcp-server", () => {
   it("rejects GET requests since no server-push stream is offered", async () => {
     const res = await handler(new Request("https://example.com/portfolio-mcp-server", { method: "GET" }));
     expect(res.status).toBe(405);
+  });
+
+  describe("access control", () => {
+    // This function reads the full portfolio via the service-role key
+    // (bypassing RLS), so it must reject anyone who isn't holding that
+    // exact secret — including a caller presenting a merely-valid-looking
+    // bearer token, like the public anon key.
+    it("rejects a request with no Authorization header", async () => {
+      const res = await handler(
+        new Request("https://example.com/portfolio-mcp-server", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+        }),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it("rejects a request bearing some other token (e.g. the public anon key), not the service-role secret", async () => {
+      const res = await handler(
+        new Request("https://example.com/portfolio-mcp-server", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer some-anon-key" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+        }),
+      );
+      expect(res.status).toBe(401);
+    });
+
+    it("accepts a request bearing the real service-role key", async () => {
+      const res = await handler(rpcRequest({ jsonrpc: "2.0", id: 1, method: "initialize" }));
+      expect(res.status).not.toBe(401);
+    });
   });
 });
