@@ -1,15 +1,23 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger } from "../_shared/logger.ts";
+import { buildCorsHeaders } from "../_shared/cors.ts";
+import { requireUser, unauthorizedResponse } from "../_shared/auth.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+const corsHeaders = buildCorsHeaders();
 
 const logger = createLogger("fetch-historical-prices");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  // Writes to historical_prices via the service-role key below (bypasses
+  // RLS by design) — must independently verify a real logged-in user, same
+  // as portfolio-ai (see docs/security-review.md finding #1 and its follow-up).
+  const user = await requireUser(req);
+  if (!user) {
+    logger.warn("Rejected unauthenticated fetch-historical-prices request");
+    return unauthorizedResponse(corsHeaders);
+  }
 
   try {
     const body = await req.json().catch(() => ({}));

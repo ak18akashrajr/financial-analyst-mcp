@@ -27,14 +27,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 import { findTool, TOOL_REGISTRY } from "../_shared/mcp-tools.ts";
 import { validateArgs } from "../_shared/mcp-schema-validate.ts";
 import { createLogger } from "../_shared/logger.ts";
+import { buildCorsHeaders } from "../_shared/cors.ts";
 
 const logger = createLogger("portfolio-mcp-server");
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, mcp-session-id, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+const corsHeaders = buildCorsHeaders(
+  "mcp-session-id, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+);
 
 const PROTOCOL_VERSION = "2025-06-18";
 

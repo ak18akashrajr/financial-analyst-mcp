@@ -28,8 +28,12 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
       // Deno edge functions import the Supabase client by URL; map that
       // exact specifier to the npm package already in node_modules so the
-      // same source files can be unit-tested under Vitest/Node.
+      // same source files can be unit-tested under Vitest/Node. Two
+      // specifiers exist in the wild here: newer functions pin
+      // @2.100.1, the older fetch-* functions just use @2 — both need
+      // aliasing since Vite/Vitest only matches the exact string.
       "https://esm.sh/@supabase/supabase-js@2.100.1": "@supabase/supabase-js",
+      "https://esm.sh/@supabase/supabase-js@2": "@supabase/supabase-js",
     },
   },
 });
