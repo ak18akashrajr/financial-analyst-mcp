@@ -298,9 +298,14 @@ One concise paragraph (3-4 sentences) summarising the period.
 2-4 sentences on allocation plan, SIP changes, or deployment targets for next period.`;
 
       const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portfolio-ai`;
+      // Send the logged-in user's own session token, not the public anon
+      // key — portfolio-ai verifies this server-side and rejects
+      // unauthenticated callers (see supabase/functions/_shared/auth.ts).
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Your session has expired — please sign in again.');
       const resp = await fetch(CHAT_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
       });
       if (resp.status === 429) throw new Error('Rate limited — try again shortly.');

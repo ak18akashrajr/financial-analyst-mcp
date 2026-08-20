@@ -9,6 +9,18 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PortfolioAI from '@/pages/PortfolioAI';
 
+// PortfolioAI now sends the real logged-in session token to portfolio-ai
+// (not the public anon key — see supabase/functions/_shared/auth.ts), so it
+// needs a session to exist before it'll even call fetch. Mocked per the repo
+// convention (CLAUDE.md) rather than driving a real Supabase client.
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    auth: {
+      getSession: () => Promise.resolve({ data: { session: { access_token: 'fake-session-token' } } }),
+    },
+  },
+}));
+
 function sseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }

@@ -4,6 +4,7 @@ import { ArrowLeft, Send, Bot, User, Zap, MessageSquare, Check, Loader2 } from '
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { supabase } from '@/integrations/supabase/client';
 
 // `toolTrace` records every real MCP tool this specific answer was grounded
 // in, in call order — attached once the answer finishes streaming so it's
@@ -61,11 +62,20 @@ async function streamChat({
   onDone: (attribution?: string) => void;
   onError: (msg: string) => void;
 }) {
+  // Send the logged-in user's own session token, not the public anon key —
+  // portfolio-ai verifies this server-side and rejects unauthenticated
+  // callers (see supabase/functions/_shared/auth.ts). The anon key would
+  // "work" (it's a valid signed JWT for the project) but doesn't identify a
+  // real user, which is exactly the gap that let anyone with the key read
+  // the whole portfolio without ever logging in.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) { onError('Your session has expired — please sign in again.'); return; }
+
   const resp = await fetch(CHAT_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      Authorization: `Bearer ${session.access_token}`,
     },
     body: JSON.stringify({ messages }),
   });
