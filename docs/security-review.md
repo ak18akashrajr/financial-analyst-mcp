@@ -517,16 +517,15 @@ above) rather than accepted at face value.
 | 6 | AI logs contain raw PII/financial data | **False** | The LLM receives the user's own portfolio data by design (that's the feature, not a leak); logs get metadata only, never message content or tool results |
 | 7 | Context poisoning via bulk transaction upload | **False** | No bulk-upload feature exists anywhere in `src/` — the only insert path is a single-row `usePortfolio.ts` call, and the `transactions` table already has `CHECK` constraints on `type`/`quantity`/`price` |
 | 8 | SSE streaming leaks raw stack traces | **False** | Already fixed above (finding #5): generic client-facing error, real detail server-side only |
-| 9 | No key rotation strategy for Groq/Anthropic keys | **True — real gap** | No rotation runbook exists anywhere in `docs/`. Not addressed in this branch — tracked as a follow-up (low severity for a single-user hobby app) |
+| 9 | No key rotation strategy for Groq/Anthropic keys | **True — real gap** | No rotation runbook existed. **Fixed in this branch** — see [docs/key-rotation.md](key-rotation.md) |
 | 10 | Sensitive state stored in `localStorage` | **False** | The Supabase auth session explicitly uses `sessionStorage` ([client.ts](../src/integrations/supabase/client.ts)); `localStorage` is only used for non-sensitive UI prefs (theme, nav-collapsed state, SIP target) |
 | 11 | MCP tool schema exposure lets an attacker see internal DB structure | **False today** | `tools/list` exposes plain-language tool names/args (e.g. `topN`, `shockPercent`), not DB column names — and isn't reachable without the service-role secret in the first place (this *was* the original critical bug in finding #1, now fixed) |
 | 12 | Cold-start exposure from uninitialized global state | **False** | No mutable module-level state in either edge function — Supabase clients and MCP clients are constructed fresh per-request |
 
 **Net result:** 2 of 12 claims were real, net-new gaps; the rest either describe the 2026-08-20
 findings already fixed above, a threat model that doesn't apply to a single-user app, or a feature
-(bulk upload) that doesn't exist. Of the 2 real gaps, #4 (audit trail) is fixed in this branch;
-#9 (key rotation) is deliberately deferred — no rotation runbook exists yet, tracked as a
-follow-up.
+(bulk upload) that doesn't exist. Both real gaps — #4 (audit trail) and #9 (key rotation) — are
+fixed in this branch.
 
 ### 2026-08-22 — Added #4: persistent audit trail for MCP tool calls
 
@@ -553,3 +552,18 @@ follow-up.
   `_shared/mcp-client.test.ts` (actor forwarded as a JSON-RPC sibling of arguments), and a new case
   in `portfolio-mcp-server/index.test.ts` confirming `actor` doesn't get validated as an unexpected
   tool argument. Full suite (243 tests) and typecheck verified green.
+
+### 2026-08-22 — Added #9: key rotation runbook
+
+**Branch:** `feature/mcp-audit-log` (same branch as #4, above).
+
+- New [docs/key-rotation.md](key-rotation.md): process documentation only, no code change. Covers
+  when to rotate (suspected exposure, provider incident, handoff, routine hygiene), and the actual
+  steps for each secret this app uses — `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, `ALLOWED_ORIGIN`, and
+  the Supabase service-role key (the most sensitive one, rotated from the dashboard rather than
+  `supabase secrets set`).
+- Deliberately does **not** add automated/scheduled rotation — for a single-user app, the
+  operational risk of a botched automated rotation (locking yourself out of your own deployment)
+  outweighs the benefit over the few-minutes manual process documented there.
+- No tests apply (docs-only change); typecheck and full suite re-verified green regardless since
+  they share this branch with #4's code change.
