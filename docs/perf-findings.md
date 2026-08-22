@@ -1,6 +1,7 @@
 # Performance Findings
 
-**Status:** findings only — nothing here is implemented. Written 2026-08-22, as a follow-up sweep
+**Status:** #1 implemented 2026-08-22 (see below); #2-#5 still open, findings only. Written
+2026-08-22, as a follow-up sweep
 after fixing the `current_prices` write-amplification bug (see
 [scaling-and-archival-plan.md's addendum](scaling-and-archival-plan.md#2026-08-22--implemented-skip-no-op-writes-to-current_prices)):
 once one instance of "writes unconditionally when nothing changed" turned up, it was worth checking
@@ -8,7 +9,7 @@ whether the same shape existed anywhere else. This is a report to pick from, not
 work through in order — see each finding's severity, picked against this app's actual scale (a
 single user, not a high-traffic service).
 
-## 1. `net_worth_history` inserts a new row on every edit, even a no-op one — Medium
+## 1. `net_worth_history` inserts a new row on every edit, even a no-op one — Medium — ✅ Implemented 2026-08-22
 
 **File:** [`src/hooks/usePortfolio.ts:109-125`](../src/hooks/usePortfolio.ts) (`recordNetWorthSnapshot`),
 called unconditionally from `addTransaction`, `updateTransaction`, `deleteTransaction`, and
@@ -26,6 +27,18 @@ meaningful change-over-time events, written unconditionally instead of on an act
 **Fix idea:** before inserting, compare the computed `netWorth` (and/or its component fields) to
 the most recent `net_worth_history` row for the current day and skip the insert if unchanged —
 same pattern as `_shared/price-diff.ts`'s `selectPricesToWrite`.
+
+**Implemented:** `recordNetWorthSnapshot` in
+[`src/hooks/usePortfolio.ts`](../src/hooks/usePortfolio.ts) now queries the most recent
+`net_worth_history` row before inserting. If that row is from today (IST calendar day) and all six
+fields (`net_worth`, `portfolio_value`, `liquid_cash`, `vault_cash`, `pf_balance`,
+`credit_card_debt`) match within a small epsilon, the insert is skipped — a stale row from an
+earlier day never blocks today's first snapshot. The diff/day-comparison logic is a pure helper,
+[`src/lib/netWorthSnapshot.ts`](../src/lib/netWorthSnapshot.ts) (`shouldSkipNetWorthSnapshot`,
+`isSameIstCalendarDay`), mirroring `price-diff.ts`'s shape. Covered by
+[`src/test/net-worth-snapshot.test.ts`](../src/test/net-worth-snapshot.test.ts) (pure logic) and
+[`src/test/use-portfolio-net-worth-snapshot.test.tsx`](../src/test/use-portfolio-net-worth-snapshot.test.tsx)
+(hook-level: insert vs. skip vs. a genuinely-changed value even with today's snapshot present).
 
 ## 2. `Charts` page fetches the whole portfolio twice — Low
 
@@ -109,3 +122,13 @@ Purely a suggestion, not a decision made here: **#1 (`net_worth_history`)** is t
 to the bug just fixed and the only one flagged above Low severity — reasonable to pair with it if
 more of this category gets tackled. The rest are independent and can be picked in any order or
 skipped entirely; none are urgent at this app's current scale.
+
+## Next action
+
+#1 is done; #2-#5 are all still open and independent — pick any or skip entirely, none are urgent
+at this app's scale. If continuing down the list, **#2 (`Charts` double-fetch)** is the next
+lowest-effort pick: it's a one-line change (pass `transactions` as a prop into
+`CorrelationHeatmap` instead of having it call `usePortfolio()` itself) with no schema or query
+changes involved. #3 and #4 are similarly small, isolated fixes. #5 (route-based code splitting)
+touches every route in `App.tsx` and is the most likely of the five to want a visual smoke-test
+after the change, so it's a reasonable one to leave for last if picking these off one at a time.
