@@ -81,7 +81,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   {
     name: "get_portfolio_summary",
     description:
-      "High-level snapshot: total invested, current value, P&L, cash, and total portfolio value. " +
+      "High-level snapshot: total invested, current value, P&L, cash, PF balance, credit card debt, " +
+      "and total portfolio value (net worth — holdings + liquid + vault + PF, minus credit card debt). " +
       "All monetary figures are rounded to the nearest rupee, percentages to 2 decimals — these are " +
       "the authoritative totals; do not re-derive them by summing list_holdings yourself, since a " +
       "symbol missing a current price is excluded here (see missingPriceSymbols) rather than priced at ₹0.",
@@ -97,6 +98,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
         totalPnlPercent: p.totalInvested !== 0 ? Number(((p.totalPnl / p.totalInvested) * 100).toFixed(2)) : 0,
         liquidCash: Math.round(p.cash.liquid),
         vaultCash: Math.round(p.cash.vault),
+        pfBalance: Math.round(p.cash.pf),
+        creditCardDebt: Math.round(p.cash.creditCardDebt),
         totalPortfolioValue: Math.round(p.totalPortfolioValue),
         holdingsCount: p.holdings.length,
         ...missingPriceFields(p.missingPriceSymbols, "excluded from every total above"),
@@ -185,7 +188,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   },
   {
     name: "run_stress_test",
-    description: "Simulate a uniform market shock (e.g. -20%, -35%, -50%) across all current holdings.",
+    description:
+      "Simulate a uniform market shock (e.g. -20%, -35%, -50%) across all current holdings. " +
+      "Cash, PF balance, and credit card debt are carried through unchanged in the before/after " +
+      "totalPortfolio figures — only equity holdings move.",
     complexity: "complex",
     inputSchema: {
       type: "object",

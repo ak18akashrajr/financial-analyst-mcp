@@ -147,11 +147,21 @@ describe("checkLimitBreaches", () => {
 describe("runStressTest", () => {
   it("applies a uniform shock to equity but leaves cash untouched", () => {
     const holdings = [makeHolding({ symbol: "A", currentValue: 1000 })];
-    const result = runStressTest(holdings, { liquid: 500, vault: 0 }, -20);
+    const result = runStressTest(holdings, { liquid: 500, vault: 0, pf: 0, creditCardDebt: 0 }, -20);
     expect(result.totalEquityAfter).toBe(800);
     expect(result.totalPortfolioBefore).toBe(1500);
     expect(result.totalPortfolioAfter).toBe(1300); // 800 equity + 500 cash
     expect(result.totalLoss).toBe(200);
+  });
+
+  it("carries PF balance and credit card debt through unchanged, same as liquid/vault cash", () => {
+    const holdings = [makeHolding({ symbol: "A", currentValue: 1000 })];
+    const result = runStressTest(holdings, { liquid: 500, vault: 0, pf: 300, creditCardDebt: 200 }, -20);
+    // Before: 1000 equity + 500 liquid + 300 PF - 200 debt = 1600
+    expect(result.totalPortfolioBefore).toBe(1600);
+    // After: 800 equity + 500 liquid + 300 PF - 200 debt = 1400
+    expect(result.totalPortfolioAfter).toBe(1400);
+    expect(result.totalLoss).toBe(200); // the equity loss only — PF/debt didn't move
   });
 });
 
@@ -319,6 +329,23 @@ describe("getCurrentPortfolio", () => {
     expect(p.totalInvested).toBe(1000); // TCS only: 10 * 100
     expect(p.totalCurrentValue).toBe(1500); // TCS only: 10 * 150
     expect(p.totalPortfolioValue).toBe(2500); // 1500 + 1000 cash
+  });
+
+  it("includes PF balance and subtracts credit card debt from totalPortfolioValue, matching the frontend's net-worth formula", async () => {
+    const sb = makeFakeSb({
+      transactions: {
+        rows: [{ symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-01-01" }],
+      },
+      current_prices: { rows: [{ symbol: "TCS", price: 150 }] },
+      symbol_metadata: { rows: [{ symbol: "TCS", geography: "India", sector: "Tech" }] },
+      cash_settings: {
+        rows: [{ liquid_cash: 1000, vault_cash: 0, pf_balance: 5000, credit_card_debt: 2000 }],
+      },
+    });
+    const p = await getCurrentPortfolio(sb);
+    expect(p.cash).toEqual({ liquid: 1000, vault: 0, pf: 5000, creditCardDebt: 2000 });
+    // 1500 (TCS) + 1000 liquid + 0 vault + 5000 PF - 2000 debt = 5500
+    expect(p.totalPortfolioValue).toBe(5500);
   });
 });
 

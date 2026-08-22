@@ -127,9 +127,23 @@ export async function fetchMetaMap(
   return map;
 }
 
-export async function fetchCash(sb: SupabaseClient): Promise<{ liquid: number; vault: number }> {
+export interface CashSettings {
+  liquid: number;
+  vault: number;
+  /** Provident/EPF balance — counts toward net worth like cash, unaffected by an equity shock. */
+  pf: number;
+  /** Outstanding credit card liability — subtracted from net worth, unaffected by an equity shock. */
+  creditCardDebt: number;
+}
+
+export async function fetchCash(sb: SupabaseClient): Promise<CashSettings> {
   const { data } = await sb.from("cash_settings").select("*").limit(1).single();
-  return { liquid: Number(data?.liquid_cash || 0), vault: Number(data?.vault_cash || 0) };
+  return {
+    liquid: Number(data?.liquid_cash || 0),
+    vault: Number(data?.vault_cash || 0),
+    pf: Number(data?.pf_balance || 0),
+    creditCardDebt: Number(data?.credit_card_debt || 0),
+  };
 }
 
 /** Current holdings + cash, computed fresh from live tables. */
@@ -146,7 +160,10 @@ export async function getCurrentPortfolio(sb: SupabaseClient) {
   const totalInvested = holdings.reduce((s, h) => s + h.invested, 0);
   const totalCurrentValue = holdings.reduce((s, h) => s + h.currentValue, 0);
   const totalPnl = totalCurrentValue - totalInvested;
-  const totalPortfolioValue = totalCurrentValue + cash.liquid + cash.vault;
+  // Matches the frontend's net-worth formula (usePortfolio.ts's PortfolioSummary.totalPortfolioValue /
+  // recordNetWorthSnapshot) — PF balance counts toward it, credit card debt is subtracted. Previously
+  // this only summed liquid + vault cash, silently understating net worth for anyone carrying either.
+  const totalPortfolioValue = totalCurrentValue + cash.liquid + cash.vault + cash.pf - cash.creditCardDebt;
   return { holdings, txns, totalInvested, totalCurrentValue, totalPnl, cash, totalPortfolioValue, missingPriceSymbols };
 }
 
@@ -283,8 +300,8 @@ export async function getRiskMetrics(
   };
 }
 
-/** Simulates a uniform market shock across all holdings (cash is unaffected). */
-export function runStressTest(holdings: Holding[], cash: { liquid: number; vault: number }, shockPercent: number) {
+/** Simulates a uniform market shock across all holdings (cash, PF, and credit card debt are unaffected). */
+export function runStressTest(holdings: Holding[], cash: CashSettings, shockPercent: number) {
   const factor = 1 + shockPercent / 100;
   const shocked = holdings.map((h) => ({
     symbol: h.symbol,
@@ -294,8 +311,9 @@ export function runStressTest(holdings: Holding[], cash: { liquid: number; vault
   }));
   const totalCurrentValue = holdings.reduce((s, h) => s + h.currentValue, 0);
   const totalShockedValue = shocked.reduce((s, h) => s + h.shockedValue, 0);
-  const totalPortfolioBefore = totalCurrentValue + cash.liquid + cash.vault;
-  const totalPortfolioAfter = totalShockedValue + cash.liquid + cash.vault; // cash unaffected by equity shock
+  const cashNet = cash.liquid + cash.vault + cash.pf - cash.creditCardDebt;
+  const totalPortfolioBefore = totalCurrentValue + cashNet;
+  const totalPortfolioAfter = totalShockedValue + cashNet; // cash/PF/debt unaffected by an equity shock
   return {
     shockPercent,
     holdings: shocked,
