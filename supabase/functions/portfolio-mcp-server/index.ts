@@ -28,6 +28,7 @@ import { findTool, TOOL_REGISTRY } from "../_shared/mcp-tools.ts";
 import { validateArgs } from "../_shared/mcp-schema-validate.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { recordToolCall } from "../_shared/audit-log.ts";
 
 const logger = createLogger("portfolio-mcp-server");
 
@@ -101,6 +102,13 @@ async function handleRpc(req: JsonRpcRequest): Promise<Record<string, unknown> |
     case "tools/call": {
       const name = String(req.params?.name || "");
       const args = (req.params?.arguments as Record<string, unknown>) || {};
+      // Optional caller identity, forwarded by portfolio-ai from the real
+      // end user's session (see McpClient.callTool) — separate from
+      // `arguments` so it never has to pass the tool's own strict
+      // inputSchema validation below. Purely for the audit trail; not used
+      // for any access-control decision (this endpoint's admission check is
+      // requestHasServiceRole, above).
+      const actor = typeof req.params?.actor === "string" ? req.params.actor : undefined;
       const tool = findTool(name);
       if (!tool) {
         logger.warn("Unknown tool requested", { name });
@@ -119,17 +127,28 @@ async function handleRpc(req: JsonRpcRequest): Promise<Record<string, unknown> |
         });
       }
       const startedAt = Date.now();
+      const sb = getSupabaseClient();
       try {
-        const sb = getSupabaseClient();
         const result = await tool.handler(args, sb);
-        logger.info("Tool call succeeded", { tool: name, duration_ms: Date.now() - startedAt });
+        const duration_ms = Date.now() - startedAt;
+        logger.info("Tool call succeeded", { tool: name, duration_ms });
+        await recordToolCall(sb, logger, { tool: name, actor, args, durationMs: duration_ms, success: true });
         return rpcResult(req.id, {
           content: [{ type: "text", text: JSON.stringify(result) }],
           isError: false,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Tool execution failed";
-        logger.error("Tool call failed", { tool: name, duration_ms: Date.now() - startedAt, error: err });
+        const duration_ms = Date.now() - startedAt;
+        logger.error("Tool call failed", { tool: name, duration_ms, error: err });
+        await recordToolCall(sb, logger, {
+          tool: name,
+          actor,
+          args,
+          durationMs: duration_ms,
+          success: false,
+          error: message,
+        });
         return rpcResult(req.id, {
           content: [{ type: "text", text: JSON.stringify({ error: message }) }],
           isError: true,

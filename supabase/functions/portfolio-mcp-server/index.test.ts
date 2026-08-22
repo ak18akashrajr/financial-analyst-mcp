@@ -126,6 +126,30 @@ describe("portfolio-mcp-server", () => {
     expect(content.error).toMatch(/shockPercent.*must be a number/);
   });
 
+  it("accepts an optional top-level actor param without it counting as an extra tool argument", async () => {
+    // `actor` (security-review.md addendum: audit trail) rides as a sibling
+    // of `arguments` in the JSON-RPC params, not inside `arguments` itself.
+    // Reuses the existing missing-required-argument case so this stays a
+    // pure dispatch/validation test — no live DB needed (see file header);
+    // the audit-row write itself is unit-tested in isolation in
+    // _shared/audit-log.test.ts.
+    const res = await handler(
+      rpcRequest({
+        jsonrpc: "2.0",
+        id: 25,
+        method: "tools/call",
+        params: { name: "run_stress_test", arguments: {}, actor: "user-123" },
+      }),
+    );
+    const body = await res.json();
+    expect(body.result.isError).toBe(true);
+    const content = JSON.parse(body.result.content[0].text);
+    // Still complains about the real missing argument, not a bogus
+    // "Unexpected argument(s): actor" — proving actor never reached the
+    // tool's own inputSchema validation.
+    expect(content.error).toMatch(/Missing required argument: shockPercent/);
+  });
+
   it("rejects tools/call with an unexpected extra argument", async () => {
     const res = await handler(
       rpcRequest({

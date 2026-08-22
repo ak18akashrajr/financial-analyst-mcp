@@ -52,9 +52,12 @@ export class McpClient {
     return result.tools;
   }
 
-  /** Calls a tool and returns its parsed JSON result (or throws if the tool reported isError). */
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    const result = (await this.rpc("tools/call", { name, arguments: args })) as {
+  /** Calls a tool and returns its parsed JSON result (or throws if the tool reported isError).
+   * `actor` (the calling end user's id) is optional and purely for the
+   * server's audit trail — it's a sibling of `arguments`, not part of it, so
+   * it never has to pass the tool's own inputSchema validation. */
+  async callTool(name: string, args: Record<string, unknown>, actor?: string): Promise<unknown> {
+    const result = (await this.rpc("tools/call", { name, arguments: args, actor })) as {
       content: { type: string; text: string }[];
       isError?: boolean;
     };

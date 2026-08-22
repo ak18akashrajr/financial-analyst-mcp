@@ -495,3 +495,75 @@ path alias — Vite 8's build now warns this is deprecated for its newer native 
 `import.meta.dirname` needs Node ≥20.11/21.2, and this repo's stated minimum is Node 18. Left
 as-is rather than silently raising the Node requirement as a side effect of a security fix; revisit
 if the README's Node minimum is ever bumped for other reasons.
+
+---
+
+## Addendum: second audit (2026-08-22) — claim-by-claim triage
+
+An external AI-agent audit raised 12 additional claims, framed largely around a multi-tenant
+zero-trust threat model. That model doesn't map onto this app — see
+[auth-rls-plan.md](auth-rls-plan.md): there is exactly one Supabase Auth account, RLS gates on
+`auth.role() = 'authenticated'` only, and there's no `auth.uid()` partitioning to scope tools or
+tokens against. Each claim was checked against the current code (post the 2026-08-20 remediation
+above) rather than accepted at face value.
+
+| # | Claim | Verdict | Basis |
+|---|---|---|---|
+| 1 | `portfolio-mcp-server` uses `service_role` | **True, by design** | Gated by `requestHasServiceRole()` (constant-time secret comparison), not caller identity — see finding #1's fix above |
+| 2 | LLM jailbreak → drop tables / leak data via MCP tools | **False** | Every tool in [`_shared/mcp-tools.ts`](../supabase/functions/_shared/mcp-tools.ts) is `readOnlyHint: true` / `destructiveHint: false` and only issues `.select()` queries — no INSERT/UPDATE/DELETE/DDL path exists for a jailbroken model to reach |
+| 3 | Secrets leak via function logging | **False** | [`_shared/logger.ts`](../supabase/functions/_shared/logger.ts) call sites log only metadata (tool name, duration, error) — never headers, keys, or request bodies |
+| 4 | No audit log of MCP tool calls (who/what/when) | **True — real gap** | Only transient stdout logging existed; no persistent, queryable table. **Fixed in this branch** — see below |
+| 5 | No rate limiting on `portfolio-ai` | **False** | Already fixed above (finding #2): 10 req/user/60s via `ai_rate_limits` |
+| 6 | AI logs contain raw PII/financial data | **False** | The LLM receives the user's own portfolio data by design (that's the feature, not a leak); logs get metadata only, never message content or tool results |
+| 7 | Context poisoning via bulk transaction upload | **False** | No bulk-upload feature exists anywhere in `src/` — the only insert path is a single-row `usePortfolio.ts` call, and the `transactions` table already has `CHECK` constraints on `type`/`quantity`/`price` |
+| 8 | SSE streaming leaks raw stack traces | **False** | Already fixed above (finding #5): generic client-facing error, real detail server-side only |
+| 9 | No key rotation strategy for Groq/Anthropic keys | **True — real gap** | No rotation runbook existed. **Fixed in this branch** — see [docs/key-rotation.md](key-rotation.md) |
+| 10 | Sensitive state stored in `localStorage` | **False** | The Supabase auth session explicitly uses `sessionStorage` ([client.ts](../src/integrations/supabase/client.ts)); `localStorage` is only used for non-sensitive UI prefs (theme, nav-collapsed state, SIP target) |
+| 11 | MCP tool schema exposure lets an attacker see internal DB structure | **False today** | `tools/list` exposes plain-language tool names/args (e.g. `topN`, `shockPercent`), not DB column names — and isn't reachable without the service-role secret in the first place (this *was* the original critical bug in finding #1, now fixed) |
+| 12 | Cold-start exposure from uninitialized global state | **False** | No mutable module-level state in either edge function — Supabase clients and MCP clients are constructed fresh per-request |
+
+**Net result:** 2 of 12 claims were real, net-new gaps; the rest either describe the 2026-08-20
+findings already fixed above, a threat model that doesn't apply to a single-user app, or a feature
+(bulk upload) that doesn't exist. Both real gaps — #4 (audit trail) and #9 (key rotation) — are
+fixed in this branch.
+
+### 2026-08-22 — Added #4: persistent audit trail for MCP tool calls
+
+**Branch:** `feature/mcp-audit-log`.
+
+- New `audit_logs` table ([migration](../supabase/migrations/20260822090000_add_audit_logs.sql)):
+  `id`, `called_at`, `actor` (nullable end-user id), `tool_name`, `arguments`, `duration_ms`,
+  `success`, `error`. Same `authenticated_only` RLS posture as `ai_rate_limits` — accessed only by
+  `portfolio-mcp-server` via the service-role key.
+- New [`_shared/audit-log.ts`](../supabase/functions/_shared/audit-log.ts): `recordToolCall()`
+  writes one row per tool call, alongside (not instead of) the existing stdout logging. Best-effort
+  by design — an insert failure is warn-logged, never thrown, so audit logging can't break a real
+  tool response.
+- `portfolio-mcp-server/index.ts`'s `tools/call` handler now calls `recordToolCall()` after every
+  tool execution, success or failure.
+- The caller's real end-user id now rides along as an `actor` field, a sibling of `arguments` in
+  the JSON-RPC params — not folded into `arguments` itself, so it can't trip a tool's own
+  `inputSchema` validation. [`_shared/mcp-client.ts`](../supabase/functions/_shared/mcp-client.ts)'s
+  `callTool()` gained an optional third `actor` parameter; `portfolio-ai/index.ts` passes
+  `user.id` (already available post-`requireUser`).
+- **Not an access-control mechanism** — `actor` is unverified metadata for the audit trail only;
+  admission to `portfolio-mcp-server` is still decided solely by `requestHasServiceRole()`.
+- Tests added: `_shared/audit-log.test.ts` (insert shape, defaults, never-throws-on-failure),
+  `_shared/mcp-client.test.ts` (actor forwarded as a JSON-RPC sibling of arguments), and a new case
+  in `portfolio-mcp-server/index.test.ts` confirming `actor` doesn't get validated as an unexpected
+  tool argument. Full suite (243 tests) and typecheck verified green.
+
+### 2026-08-22 — Added #9: key rotation runbook
+
+**Branch:** `feature/mcp-audit-log` (same branch as #4, above).
+
+- New [docs/key-rotation.md](key-rotation.md): process documentation only, no code change. Covers
+  when to rotate (suspected exposure, provider incident, handoff, routine hygiene), and the actual
+  steps for each secret this app uses — `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, `ALLOWED_ORIGIN`, and
+  the Supabase service-role key (the most sensitive one, rotated from the dashboard rather than
+  `supabase secrets set`).
+- Deliberately does **not** add automated/scheduled rotation — for a single-user app, the
+  operational risk of a botched automated rotation (locking yourself out of your own deployment)
+  outweighs the benefit over the few-minutes manual process documented there.
+- No tests apply (docs-only change); typecheck and full suite re-verified green regardless since
+  they share this branch with #4's code change.
