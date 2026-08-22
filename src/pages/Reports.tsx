@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, FileSpreadsheet, Save, Printer, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Sparkles, AlertTriangle, Compass, Activity, Wand2 } from 'lucide-react';
+import { ArrowLeft, FileSpreadsheet, Save, Printer, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Sparkles, AlertTriangle, Compass, Activity, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
 import {
-  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths,
+  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor,
   type PeriodDef, type PeriodType, type NetWorthHistoryRow, type HistoricalPriceMap,
 } from '@/lib/periodReports';
 import {
@@ -20,7 +20,6 @@ import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/Ch
 import type { ReactNode } from 'react';
 import type { PeriodSnapshot, PeriodActivity } from '@/lib/periodReports';
 
-const FY_START_YEAR = 2026;
 const COLORS = ['#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#ec4899', '#64748b'];
 
 function fmt(n: number, hidden = false) {
@@ -46,6 +45,7 @@ const ReportsContent = () => {
   const { transactions, currentPrices, symbolMetadata, cash, summary, loading } = usePortfolio();
 
   const [type, setType] = useState<PeriodType>('quarter');
+  const [fyStartYear, setFyStartYear] = useState<number>(() => fyStartYearFor(new Date()));
   const [history, setHistory] = useState<NetWorthHistoryRow[]>([]);
   const [historicalPrices, setHistoricalPrices] = useState<HistoricalPriceMap>({});
   const [reports, setReports] = useState<Record<string, PeriodReportRow>>({});
@@ -92,9 +92,10 @@ const ReportsContent = () => {
     const symbols = Array.from(new Set(transactions.map(t => t.symbol)));
     if (symbols.length === 0) { toast.error('No symbols to backfill'); return; }
     setBackfilling(true);
-    const t = toast.loading(`Backfilling ${symbols.length} symbols for FY26-27…`);
+    const t = toast.loading(`Backfilling ${symbols.length} symbols for ${active?.fy ?? 'this FY'}…`);
     try {
-      // Daily interval, 2y range covers FY26-27 fully
+      // Daily interval, 2y range covers the active FY fully (and usually the
+      // prior one too, but browsing further back may need repeated backfills).
       const { error } = await supabase.functions.invoke('fetch-historical-prices', {
         body: { symbols, range: '2y', interval: '1d' },
       });
@@ -152,7 +153,17 @@ const ReportsContent = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const periods = useMemo(() => buildPeriods(FY_START_YEAR, type), [type]);
+  const periods = useMemo(() => buildPeriods(fyStartYear, type), [fyStartYear, type]);
+
+  // FY browsing bounds: can't go earlier than the first transaction's FY, or
+  // later than the current FY (later years have no data to project against anyway).
+  const currentFYStartYear = useMemo(() => fyStartYearFor(new Date()), []);
+  const earliestFYStartYear = useMemo(() => {
+    if (transactions.length === 0) return currentFYStartYear;
+    return Math.min(...transactions.map(t => fyStartYearFor(new Date(t.date))));
+  }, [transactions, currentFYStartYear]);
+  const canGoPrevFY = fyStartYear > earliestFYStartYear;
+  const canGoNextFY = fyStartYear < currentFYStartYear;
   const symbolMetaLite = useMemo(() => {
     const m: Record<string, { geography?: string; category?: string }> = {};
     for (const [s, v] of Object.entries(symbolMetadata)) m[s] = { geography: (v as any).geography, category: (v as any).category };
@@ -208,6 +219,25 @@ const ReportsContent = () => {
     const pct = prevSnap.netWorth > 0 ? (delta / prevSnap.netWorth) * 100 : 0;
     return { prevLabel: prev.shortLabel, prevValue: prevSnap.netWorth, delta, pct };
   }, [periods, active, transactions, currentPrices, symbolMetaLite, history, cash, endSnap, historicalPrices]);
+
+  // YoY — same calendar day one year before this period's as-of point, so it stays
+  // apples-to-apples whether the active period is completed, in-progress (QTD-style),
+  // or upcoming. Always marked historically (useLive=false), since it's always a past date.
+  const yoy = useMemo(() => {
+    if (!active || transactions.length === 0) return null;
+    const priorAsOf = new Date(endAsOf);
+    priorAsOf.setFullYear(priorAsOf.getFullYear() - 1);
+    const earliestTxnDate = transactions.reduce(
+      (min, t) => { const d = new Date(t.date); return d < min ? d : min; },
+      new Date(transactions[0].date),
+    );
+    if (earliestTxnDate > priorAsOf) return null; // no portfolio existed that far back
+    const priorSnap = buildSnapshot(priorAsOf, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
+    if (priorSnap.netWorth <= 0) return null;
+    const delta = endSnap.netWorth - priorSnap.netWorth;
+    const pct = (delta / priorSnap.netWorth) * 100;
+    return { asOf: priorAsOf, prevValue: priorSnap.netWorth, delta, pct };
+  }, [active, endAsOf, transactions, currentPrices, symbolMetaLite, history, cash, historicalPrices, endSnap]);
 
   // Net worth trend across this FY. Each period uses historical mark unless that period is in-progress.
   const trend = useMemo(() => {
@@ -273,7 +303,7 @@ const ReportsContent = () => {
       const prompt = `Generate a board-style earnings narrative for **${active.label}** (${active.fy}, status: ${status}).
 
 PERIOD-END DATA:
-- AUM: ₹${Math.round(endSnap.netWorth).toLocaleString('en-IN')} (${periodOverPeriod ? `${periodOverPeriod.pct >= 0 ? '+' : ''}${periodOverPeriod.pct.toFixed(2)}% vs ${periodOverPeriod.prevLabel}` : 'first period'})
+- AUM: ₹${Math.round(endSnap.netWorth).toLocaleString('en-IN')} (${periodOverPeriod ? `${periodOverPeriod.pct >= 0 ? '+' : ''}${periodOverPeriod.pct.toFixed(2)}% vs ${periodOverPeriod.prevLabel}` : 'first period'}${yoy ? `, ${yoy.pct >= 0 ? '+' : ''}${yoy.pct.toFixed(2)}% YoY` : ''})
 - Principal Capital Allocated: ₹${Math.round(endSnap.invested).toLocaleString('en-IN')}
 - Current Value: ₹${Math.round(endSnap.currentValue).toLocaleString('en-IN')}
 - Unrealized P&L: ₹${Math.round(endSnap.pnl).toLocaleString('en-IN')} (${endSnap.pnlPercent.toFixed(2)}%)
@@ -375,6 +405,7 @@ One concise paragraph (3-4 sentences) summarising the period.
     projection,
     monthlySIPTarget,
     periodOverPeriod,
+    yoy,
     transactions,
     hidden,
     xirr: summary.xirr,
@@ -399,7 +430,7 @@ One concise paragraph (3-4 sentences) summarising the period.
               {hidden ? 'Show' : 'Hide'} numbers
             </button>
             <button onClick={backfillFY} disabled={backfilling} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-50 flex items-center gap-1.5">
-              <Activity className="w-3.5 h-3.5" /> {backfilling ? 'Backfilling…' : 'Backfill FY26-27 prices'}
+              <Activity className="w-3.5 h-3.5" /> {backfilling ? 'Backfilling…' : `Backfill ${active.fy} prices`}
             </button>
             <button onClick={backfillBenchmark} disabled={backfillingBenchmark} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground disabled:opacity-50 flex items-center gap-1.5">
               <Activity className="w-3.5 h-3.5" /> {backfillingBenchmark ? 'Backfilling…' : 'Backfill benchmark data'}
@@ -414,13 +445,26 @@ One concise paragraph (3-4 sentences) summarising the period.
         </div>
 
         {/* Type toggle */}
-        <div className="flex items-center gap-2 print:hidden">
+        <div className="flex items-center gap-2 flex-wrap print:hidden">
           <div className="inline-flex rounded-lg border border-border bg-card p-1">
             {(['quarter', 'half', 'year'] as PeriodType[]).map(t => (
               <button key={t} onClick={() => setType(t)} className={`px-3.5 py-1.5 text-xs font-medium rounded-md transition ${type === t ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'}`}>
                 {t === 'quarter' ? 'Quarterly' : t === 'half' ? 'Half-Yearly' : 'Yearly'}
               </button>
             ))}
+          </div>
+          <div className="inline-flex items-center rounded-lg border border-border bg-card p-1">
+            <button onClick={() => canGoPrevFY && setFyStartYear(y => y - 1)} disabled={!canGoPrevFY}
+              className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
+              aria-label="Previous fiscal year">
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <span className="px-2 text-xs font-medium text-foreground font-mono">{active.fy}</span>
+            <button onClick={() => canGoNextFY && setFyStartYear(y => y + 1)} disabled={!canGoNextFY}
+              className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
+              aria-label="Next fiscal year">
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
           <div className="flex flex-wrap gap-1.5 ml-2">
             {periods.map(p => {
@@ -448,6 +492,27 @@ One concise paragraph (3-4 sentences) summarising the period.
               <p className="text-xs text-muted-foreground mt-1">
                 Period: {active.start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} → {new Date(active.end.getTime() - 1).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
               </p>
+              {/* Headline growth strip — the "up N% year-over-year" framing every earnings
+                  release leads with, not buried in a KPI tile's small-print sub-label. */}
+              <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-2">
+                <AuditPopover title="AUM" trigger={
+                  <span className="text-sm font-mono font-semibold text-foreground cursor-help hover:underline decoration-dotted underline-offset-2">{fmt(endSnap.netWorth, hidden)}</span>
+                }>{audits.aum}</AuditPopover>
+                {periodOverPeriod && (
+                  <AuditPopover title="Period-over-period (QoQ)" trigger={
+                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${periodOverPeriod.pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {fmtPct(periodOverPeriod.pct)} QoQ
+                    </span>
+                  }>{audits.aum}</AuditPopover>
+                )}
+                {yoy && (
+                  <AuditPopover title="Year-over-year (YoY)" trigger={
+                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${yoy.pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {fmtPct(yoy.pct)} YoY
+                    </span>
+                  }>{audits.yoy}</AuditPopover>
+                )}
+              </div>
             </div>
             <span className={`px-2.5 py-1 rounded-full text-[11px] font-medium border ${
               status === 'completed' ? 'border-green-500/30 text-green-600 bg-green-500/10'
@@ -793,13 +858,14 @@ interface BuildAuditsArgs {
   projection: { baseEndValue: number; conservativeEndValue: number; baseRate: number; conservativeRate: number; monthsAhead: number } | null;
   monthlySIPTarget: number;
   periodOverPeriod: { prevLabel: string; prevValue: number; delta: number; pct: number } | null;
+  yoy: { asOf: Date; prevValue: number; delta: number; pct: number } | null;
   transactions: Transaction[];
   hidden: boolean;
   xirr: number | null;
 }
 
 function buildAudits(a: BuildAuditsArgs) {
-  const { endSnap, startSnap, activity, active, status, projection, monthlySIPTarget, periodOverPeriod, transactions, hidden } = a;
+  const { endSnap, startSnap, activity, active, status, projection, monthlySIPTarget, periodOverPeriod, yoy, transactions, hidden } = a;
   const periodTxns = transactions.filter(t => {
     const d = new Date(t.date);
     return d >= active.start && d < active.end;
@@ -878,7 +944,7 @@ function buildAudits(a: BuildAuditsArgs) {
           />
         </AuditSection>
         {periodOverPeriod && (
-          <AuditSection label="Period-over-period Δ">
+          <AuditSection label="Period-over-period (QoQ) Δ">
             <Formula>
               Δ = AUM<sub>current</sub> − AUM<sub>{periodOverPeriod.prevLabel}</sub><br />
               % = Δ ÷ AUM<sub>{periodOverPeriod.prevLabel}</sub> × 100
@@ -896,6 +962,25 @@ function buildAudits(a: BuildAuditsArgs) {
             </div>
           </AuditSection>
         )}
+        {yoy && (
+          <AuditSection label="Year-over-year (YoY) Δ">
+            <Formula>
+              Δ = AUM<sub>today</sub> − AUM<sub>same date, 1yr ago</sub><br />
+              % = Δ ÷ AUM<sub>same date, 1yr ago</sub> × 100
+            </Formula>
+            <div className="mt-1.5">
+              <AuditTable
+                headers={['Field', 'Value']}
+                rows={[
+                  [`1yr ago (${asOfLabel(yoy.asOf)})`, fmt(yoy.prevValue, hidden)],
+                  ['Current', fmt(endSnap.netWorth, hidden)],
+                  ['Δ', fmt(yoy.delta, hidden)],
+                  ['%', `${yoy.pct >= 0 ? '+' : ''}${yoy.pct.toFixed(2)}%`],
+                ]}
+              />
+            </div>
+          </AuditSection>
+        )}
       </>
     ),
 
@@ -903,9 +988,34 @@ function buildAudits(a: BuildAuditsArgs) {
       <>
         <AuditSection label="Formula">
           <Formula>Principal Capital Allocated = Σ over each open holding (qty × avg cost)</Formula>
-          <p className="text-[10px] text-muted-foreground mt-1">Avg cost = Σ (BUY qty × price) − Σ (SELL qty × price), divided by net qty.</p>
+          <p className="text-[10px] text-muted-foreground mt-1">FIFO cost basis: each SELL consumes the oldest open BUY lot(s) first, so avg cost per remaining share never drifts based on what a sale happened to fetch.</p>
         </AuditSection>
         <AuditSection label={`Per-holding cost basis · txns ≤ ${asOf}`}>{investedTable}</AuditSection>
+      </>
+    ),
+
+    yoy: yoy && (
+      <>
+        <AuditSection label="Formula">
+          <Formula>
+            YoY Δ = AUM<sub>today</sub> − AUM<sub>same calendar date, 1 year ago</sub><br />
+            YoY % = Δ ÷ AUM<sub>1 year ago</sub> × 100
+          </Formula>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Compares to the same calendar day last year (not the prior FY's period-end), so it stays apples-to-apples whether this period is completed, in-progress, or upcoming.
+          </p>
+        </AuditSection>
+        <AuditSection label="Inputs">
+          <AuditTable
+            headers={['Field', 'Value']}
+            rows={[
+              [`1yr ago (${asOfLabel(yoy.asOf)})`, fmt(yoy.prevValue, hidden)],
+              [`Today (${asOf})`, fmt(endSnap.netWorth, hidden)],
+              ['Δ', fmt(yoy.delta, hidden)],
+              ['%', `${yoy.pct >= 0 ? '+' : ''}${yoy.pct.toFixed(2)}%`],
+            ]}
+          />
+        </AuditSection>
       </>
     ),
 

@@ -8,6 +8,7 @@ import {
   projectPeriod,
   buildSnapshot,
   buildActivity,
+  fyStartYearFor,
   type HistoricalPriceMap,
   type NetWorthHistoryRow,
 } from '@/lib/periodReports';
@@ -18,6 +19,25 @@ const ZERO_CASH: CashSettings = { liquidCash: 0, vaultCash: 0, pfBalance: 0, cre
 function txn(overrides: Partial<Transaction>): Transaction {
   return { id: Math.random().toString(), symbol: 'SYM', type: 'BUY', quantity: 1, price: 1, date: new Date().toISOString(), ...overrides };
 }
+
+describe('fyStartYearFor', () => {
+  it('assigns a date on or after April 1 to that calendar year\'s FY', () => {
+    expect(fyStartYearFor(new Date(2026, 3, 1))).toBe(2026);  // Apr 1
+    expect(fyStartYearFor(new Date(2026, 7, 22))).toBe(2026); // Aug 22
+    expect(fyStartYearFor(new Date(2027, 2, 31))).toBe(2026); // Mar 31 next calendar year, same FY
+  });
+
+  it('assigns a date before April 1 to the previous calendar year\'s FY', () => {
+    expect(fyStartYearFor(new Date(2026, 0, 1))).toBe(2025);  // Jan 1
+    expect(fyStartYearFor(new Date(2026, 2, 31))).toBe(2025); // Mar 31
+  });
+
+  it('round-trips with getFYStart', () => {
+    for (const y of [2024, 2025, 2026]) {
+      expect(fyStartYearFor(new Date(y, 3, 1))).toBe(y);
+    }
+  });
+});
 
 describe('buildPeriods', () => {
   it('builds 4 quarters spanning Apr(startYear) → Mar(startYear+1)', () => {
