@@ -5,6 +5,10 @@ import { toast } from 'sonner';
 import { calculateXIRR } from '@/lib/xirr';
 import { computeFifoPosition } from '@/lib/costBasis';
 
+function formatIstTimestamp(date: Date): string {
+  return date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
 export function usePortfolio() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cash, setCash] = useState<CashSettings>({ liquidCash: 0, vaultCash: 0, pfBalance: 0, creditCardDebt: 0 });
@@ -12,7 +16,13 @@ export function usePortfolio() {
   const [symbolMetadata, setSymbolMetadata] = useState<Record<string, SymbolMetadata>>({});
   const [loading, setLoading] = useState(true);
   const [fetchingPrices, setFetchingPrices] = useState(false);
-  const [lastPriceFetchTime, setLastPriceFetchTime] = useState<string | null>(null);
+  // "Checked" bumps on every fetch attempt, regardless of outcome. "Changed"
+  // only bumps when a price actually moved and something was written to
+  // current_prices — since fetch-prices now skips no-op writes (see
+  // docs/scaling-and-archival-plan.md's addendum), these are genuinely
+  // different moments, not just two labels for the same event.
+  const [lastPriceCheckTime, setLastPriceCheckTime] = useState<string | null>(null);
+  const [lastPriceChangeTime, setLastPriceChangeTime] = useState<string | null>(null);
 
   // Load all data from Supabase on mount
   useEffect(() => {
@@ -48,10 +58,20 @@ export function usePortfolio() {
 
         if (priceRes.data) {
           const prices: CurrentPrices = {};
-          for (const p of priceRes.data) {
+          let latestUpdate: Date | null = null;
+          for (const p of priceRes.data as { symbol: string; price: number; updated_at?: string }[]) {
             prices[p.symbol] = Number(p.price);
+            if (p.updated_at) {
+              const updatedAt = new Date(p.updated_at);
+              if (!latestUpdate || updatedAt > latestUpdate) latestUpdate = updatedAt;
+            }
           }
           setCurrentPrices(prices);
+          // current_prices.updated_at now only bumps on a real price change
+          // (fetch-prices skips no-op writes), so the newest value across all
+          // rows is genuinely "last time any price changed" — survives a
+          // page reload, unlike lastPriceCheckTime below which is per-session.
+          if (latestUpdate) setLastPriceChangeTime(formatIstTimestamp(latestUpdate));
         }
 
         if (metaRes.data) {
@@ -256,17 +276,28 @@ export function usePortfolio() {
       const prices = data?.prices as Record<string, number | null>;
       if (prices) {
         const updated = { ...currentPrices };
-        let count = 0;
         for (const [symbol, price] of Object.entries(prices)) {
-          if (price != null) {
-            updated[symbol] = price;
-            count++;
-          }
+          if (price != null) updated[symbol] = price;
         }
         setCurrentPrices(updated);
-        toast.success(`Updated ${count} price(s) from Yahoo Finance`);
-        const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
-        setLastPriceFetchTime(now);
+
+        // fetch-prices only writes to current_prices when a price actually
+        // moved (see docs/scaling-and-archival-plan.md's addendum) — reflect
+        // that honestly instead of implying every checked symbol got a
+        // fresh DB row.
+        const changed = (data?.changed as string[] | undefined) ?? Object.keys(prices).filter((s) => prices[s] != null);
+        const unchanged = (data?.unchanged as string[] | undefined) ?? [];
+        if (changed.length === 0) {
+          toast.success(unchanged.length > 0 ? `Checked ${unchanged.length} price(s) — no change, nothing written` : 'No prices to check');
+        } else if (unchanged.length > 0) {
+          toast.success(`Updated ${changed.length} price(s), ${unchanged.length} unchanged — no DB write needed for those`);
+        } else {
+          toast.success(`Updated ${changed.length} price(s) from Yahoo Finance`);
+        }
+
+        const now = new Date();
+        setLastPriceCheckTime(formatIstTimestamp(now));
+        if (changed.length > 0) setLastPriceChangeTime(formatIstTimestamp(now));
       }
     } catch (err) {
       console.error('Error fetching live prices:', err);
@@ -407,7 +438,8 @@ export function usePortfolio() {
     symbolMetadata,
     loading,
     fetchingPrices,
-    lastPriceFetchTime,
+    lastPriceCheckTime,
+    lastPriceChangeTime,
     addTransaction,
     updateTransaction,
     deleteTransaction,
