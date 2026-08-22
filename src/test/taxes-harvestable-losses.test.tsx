@@ -80,4 +80,46 @@ describe('Taxes page — Harvestable Losses section', () => {
     fireEvent.click(screen.getByRole('button', { name: /hide/i }));
     await waitFor(() => expect(screen.getAllByText('••••••').length).toBeGreaterThan(0));
   });
+
+  it('renders Harvestable Losses as a collapsible toggle, closed by default, like FIFO Lot Details', async () => {
+    txnRows.push({ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 200, date: daysAgo(400) });
+    priceRows.push({ symbol: 'TCS', price: 150 });
+    metaRows.push({ symbol: 'TCS', sector: 'Equity' });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Harvestable Losses')).toBeInTheDocument());
+
+    const heading = screen.getByText('Harvestable Losses');
+    const details = heading.closest('details');
+    expect(details).toBeTruthy();
+    expect(details).not.toHaveAttribute('open');
+
+    // The row is present in the DOM (native <details> renders its content regardless of `open`)
+    // and becomes visible once the summary is toggled open.
+    expect(screen.getByText('Total Harvestable Loss')).toBeInTheDocument();
+    fireEvent.click(heading.closest('summary')!);
+    await waitFor(() => expect(details).toHaveAttribute('open'));
+  });
+
+  it('places Exact Tax Payable right after Holdings Tax Breakdown, before Harvestable Losses and FIFO Lot Details', async () => {
+    txnRows.push({ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 200, date: daysAgo(400) });
+    priceRows.push({ symbol: 'TCS', price: 150 });
+    metaRows.push({ symbol: 'TCS', sector: 'Equity' });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Holdings Tax Breakdown (FIFO)')).toBeInTheDocument());
+
+    const order = [
+      'Holdings Tax Breakdown (FIFO)',
+      'Exact Tax Payable — If You Sell Everything Today',
+      'Harvestable Losses',
+      'FIFO Lot Details',
+    ];
+    for (let i = 0; i < order.length - 1; i++) {
+      const a = screen.getByText(new RegExp(order[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      const b = screen.getByText(new RegExp(order[i + 1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      // eslint-disable-next-line no-bitwise
+      expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
 });
