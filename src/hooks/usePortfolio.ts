@@ -4,6 +4,7 @@ import type { Transaction, DerivedHolding, PortfolioSummary, CashSettings, Curre
 import { toast } from 'sonner';
 import { calculateXIRR } from '@/lib/xirr';
 import { computeFifoPosition } from '@/lib/costBasis';
+import { isSameIstCalendarDay, shouldSkipNetWorthSnapshot, type NetWorthSnapshotFields } from '@/lib/netWorthSnapshot';
 
 function formatIstTimestamp(date: Date): string {
   return date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
@@ -113,6 +114,38 @@ export function usePortfolio() {
     const ccd = overrideCash?.creditCardDebt ?? cash.creditCardDebt;
     const portfolioVal = computePortfolioValue();
     const netWorth = portfolioVal + lc + vc + pf - ccd;
+    const candidate: NetWorthSnapshotFields = {
+      netWorth,
+      portfolioValue: portfolioVal,
+      liquidCash: lc,
+      vaultCash: vc,
+      pfBalance: pf,
+      creditCardDebt: ccd,
+    };
+
+    // Skip the insert if it'd be a no-op: same figures already recorded
+    // today. A stale snapshot from an earlier day never blocks today's
+    // first write — see docs/perf-findings.md#1.
+    const { data: latest } = await supabase
+      .from('net_worth_history')
+      .select('net_worth, portfolio_value, liquid_cash, vault_cash, pf_balance, credit_card_debt, recorded_at')
+      .order('recorded_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const mostRecentToday: NetWorthSnapshotFields | null =
+      latest && isSameIstCalendarDay(new Date((latest as any).recorded_at), new Date())
+        ? {
+            netWorth: Number((latest as any).net_worth),
+            portfolioValue: Number((latest as any).portfolio_value),
+            liquidCash: Number((latest as any).liquid_cash),
+            vaultCash: Number((latest as any).vault_cash),
+            pfBalance: Number((latest as any).pf_balance),
+            creditCardDebt: Number((latest as any).credit_card_debt),
+          }
+        : null;
+
+    if (shouldSkipNetWorthSnapshot(candidate, mostRecentToday)) return;
 
     await supabase.from('net_worth_history').insert({
       net_worth: netWorth,
