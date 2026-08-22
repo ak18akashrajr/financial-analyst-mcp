@@ -189,9 +189,14 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   {
     name: "run_stress_test",
     description:
-      "Simulate a uniform market shock (e.g. -20%, -35%, -50%) across all current holdings. " +
-      "Cash, PF balance, and credit card debt are carried through unchanged in the before/after " +
-      "totalPortfolio figures — only equity holdings move.",
+      "Simulate a market shock (e.g. -20%, -35%, -50%). By default it applies uniformly to every " +
+      "current holding; pass `symbols` to shock only those holdings instead (e.g. \"what if just " +
+      "NIFTYBEES.NS dropped 20%?\") while every other holding is carried through at its current " +
+      "value. Always use `symbols` for a single-holding or subset what-if question — do not call " +
+      "this with no `symbols` and then subtract a partial shock yourself; the returned " +
+      "totalPortfolioAfter/totalLoss/totalLossPercent are already computed correctly against the " +
+      "whole portfolio (including cash, PF balance, and credit card debt, all carried through " +
+      "unchanged) and must be copied as-is, per the numeric-fidelity rule.",
     complexity: "complex",
     inputSchema: {
       type: "object",
@@ -199,6 +204,14 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
         shockPercent: {
           type: "number",
           description: "Percent shock to apply, negative for a crash (e.g. -20 for a 20% drop).",
+        },
+        symbols: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          description:
+            "Optional: shock only these holding symbols instead of every current holding. " +
+            "Symbols not listed here are left unshocked, not excluded from the totals.",
         },
       },
       required: ["shockPercent"],
@@ -208,7 +221,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     handler: async (args, sb) => {
       const p = await getCurrentPortfolio(sb);
       const shockPercent = args.shockPercent as number;
-      return runStressTest(p.holdings, p.cash, shockPercent);
+      const symbols = Array.isArray(args.symbols) ? (args.symbols as string[]) : undefined;
+      return runStressTest(p.holdings, p.cash, shockPercent, symbols);
     },
   },
   {

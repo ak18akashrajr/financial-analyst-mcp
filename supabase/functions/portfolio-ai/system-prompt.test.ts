@@ -50,4 +50,9 @@ describe("SYSTEM_PROMPT guardrails", () => {
   it("still requires surfacing missing-price/data-quality notes", () => {
     expect(SYSTEM_PROMPT).toContain("missingPriceSymbols");
   });
+
+  it("directs single-holding what-if questions to run_stress_test's symbols filter instead of manual arithmetic", () => {
+    expect(SYSTEM_PROMPT).toContain("run_stress_test");
+    expect(SYSTEM_PROMPT).toMatch(/symbols:\s*\["X"\]/);
+  });
 });

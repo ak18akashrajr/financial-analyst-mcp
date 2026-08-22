@@ -300,28 +300,52 @@ export async function getRiskMetrics(
   };
 }
 
-/** Simulates a uniform market shock across all holdings (cash, PF, and credit card debt are unaffected). */
-export function runStressTest(holdings: Holding[], cash: CashSettings, shockPercent: number) {
+/**
+ * Simulates a market shock across holdings (cash, PF, and credit card debt are unaffected).
+ * By default the shock applies uniformly to every holding. Pass `symbols` to shock only those
+ * holdings instead — e.g. "what if just NIFTYBEES.NS dropped 20%?" — while every other holding
+ * (and cash/PF/debt) is carried through unchanged. This is what a single-holding what-if question
+ * should call rather than have the model derive the impact itself: see docs/perf-findings.md's
+ * portfolio-ai validation notes for why that matters (the model can't be trusted to subtract a
+ * partial shock from a total portfolio value correctly in free text).
+ */
+export function runStressTest(
+  holdings: Holding[],
+  cash: CashSettings,
+  shockPercent: number,
+  symbols?: string[],
+) {
   const factor = 1 + shockPercent / 100;
-  const shocked = holdings.map((h) => ({
-    symbol: h.symbol,
-    currentValue: Math.round(h.currentValue),
-    shockedValue: Math.round(h.currentValue * factor),
-    loss: Math.round(h.currentValue * (1 - factor)),
-  }));
+  const shockedSet = symbols ? new Set(symbols) : null;
+  const shocked = holdings.map((h) => {
+    const applies = !shockedSet || shockedSet.has(h.symbol);
+    const shockedValue = applies ? h.currentValue * factor : h.currentValue;
+    return {
+      symbol: h.symbol,
+      currentValue: Math.round(h.currentValue),
+      shockedValue: Math.round(shockedValue),
+      loss: Math.round(h.currentValue - shockedValue),
+    };
+  });
   const totalCurrentValue = holdings.reduce((s, h) => s + h.currentValue, 0);
   const totalShockedValue = shocked.reduce((s, h) => s + h.shockedValue, 0);
   const cashNet = cash.liquid + cash.vault + cash.pf - cash.creditCardDebt;
   const totalPortfolioBefore = totalCurrentValue + cashNet;
   const totalPortfolioAfter = totalShockedValue + cashNet; // cash/PF/debt unaffected by an equity shock
+  const totalPortfolioBeforeRounded = Math.round(totalPortfolioBefore);
+  const totalPortfolioAfterRounded = Math.round(totalPortfolioAfter);
   return {
     shockPercent,
+    ...(symbols ? { shockedSymbols: symbols } : {}),
     holdings: shocked,
     totalEquityBefore: Math.round(totalCurrentValue),
     totalEquityAfter: Math.round(totalShockedValue),
-    totalPortfolioBefore: Math.round(totalPortfolioBefore),
-    totalPortfolioAfter: Math.round(totalPortfolioAfter),
-    totalLoss: Math.round(totalPortfolioBefore - totalPortfolioAfter),
+    totalPortfolioBefore: totalPortfolioBeforeRounded,
+    totalPortfolioAfter: totalPortfolioAfterRounded,
+    totalLoss: totalPortfolioBeforeRounded - totalPortfolioAfterRounded,
+    totalLossPercent: totalPortfolioBeforeRounded !== 0
+      ? Number((((totalPortfolioBeforeRounded - totalPortfolioAfterRounded) / totalPortfolioBeforeRounded) * 100).toFixed(2))
+      : 0,
   };
 }
 

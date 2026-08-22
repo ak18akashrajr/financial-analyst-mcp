@@ -27,6 +27,12 @@ const SYMBOL_SCHEMA = {
   additionalProperties: false,
 };
 
+const SYMBOLS_ARRAY_SCHEMA = {
+  type: "object",
+  properties: { symbols: { type: "array", items: { type: "string" }, minItems: 1, description: "..." } },
+  additionalProperties: false,
+};
+
 describe("validateArgs", () => {
   it("accepts an empty object against a no-properties schema", () => {
     expect(validateArgs({ type: "object", properties: {}, additionalProperties: false }, {})).toBeNull();
@@ -81,5 +87,28 @@ describe("validateArgs", () => {
   it("rejects a string shorter than minLength", () => {
     const error = validateArgs(SYMBOL_SCHEMA, { benchmarkSymbol: "" });
     expect(error).toMatch(/benchmarkSymbol.*at least 1 character/);
+  });
+
+  it("accepts a valid array of strings", () => {
+    expect(validateArgs(SYMBOLS_ARRAY_SCHEMA, { symbols: ["TCS", "HDFC"] })).toBeNull();
+  });
+
+  it("accepts an absent optional array argument", () => {
+    expect(validateArgs(SYMBOLS_ARRAY_SCHEMA, {})).toBeNull();
+  });
+
+  it("rejects a non-array value for an array-typed argument", () => {
+    const error = validateArgs(SYMBOLS_ARRAY_SCHEMA, { symbols: "TCS" });
+    expect(error).toMatch(/symbols.*must be an array/);
+  });
+
+  it("rejects an array containing a non-string element", () => {
+    const error = validateArgs(SYMBOLS_ARRAY_SCHEMA, { symbols: ["TCS", 42] });
+    expect(error).toMatch(/symbols.*must be an array of strings/);
+  });
+
+  it("rejects an array shorter than minItems", () => {
+    const error = validateArgs(SYMBOLS_ARRAY_SCHEMA, { symbols: [] });
+    expect(error).toMatch(/symbols.*at least 1 item/);
   });
 });
