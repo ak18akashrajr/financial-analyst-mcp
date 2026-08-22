@@ -171,128 +171,6 @@ const TaxesContent = () => {
           </div>
         </div>
 
-        {/* Harvestable Losses (Tax-Loss Harvesting) */}
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="p-4 border-b border-border">
-            <h2 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-              <TrendingDown className="w-4 h-4 text-red-500" /> Harvestable Losses
-            </h2>
-            <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
-              Lots currently sitting below cost. Selling one before FY-end realizes the loss, which can offset other
-              capital gains this year. India has no formal wash-sale rule, but re-buying the same stock the same day
-              is worth flagging — it can look like a transaction with no real change in economic position if
-              scrutinized. ⚠ below means this symbol has had a same-day BUY + SELL before.
-            </p>
-          </div>
-          {harvestableLots.length === 0 ? (
-            <p className="p-4 text-xs text-muted-foreground">No lots are currently sitting at a loss. 🎯</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30">
-                    <th className="text-left p-3 font-medium text-muted-foreground">Symbol</th>
-                    <th className="text-left p-3 font-medium text-muted-foreground">Buy Date</th>
-                    <th className="text-right p-3 font-medium text-muted-foreground">Qty</th>
-                    <th className="text-right p-3 font-medium text-muted-foreground">Buy Price</th>
-                    <th className="text-right p-3 font-medium text-muted-foreground">CMP</th>
-                    <th className="text-right p-3 font-medium text-muted-foreground">Days Held</th>
-                    <th className="text-center p-3 font-medium text-muted-foreground">Type</th>
-                    <th className="text-right p-3 font-medium text-muted-foreground">Harvestable Loss</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {harvestableLots.map((lot, i) => (
-                    <tr key={`${lot.symbol}-${lot.buyDate}-${i}`} className="border-b border-border hover:bg-muted/20 transition-colors">
-                      <td className="p-3 font-semibold text-foreground">
-                        {lot.symbol}
-                        {hasSameDayReentry(lot.symbol, transactions) && (
-                          <span title="Same-day BUY + SELL activity detected for this symbol before — review the wash-sale-style caveat above.">
-                            {' '}⚠
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-3 text-foreground">{new Date(lot.buyDate).toLocaleDateString('en-IN')}</td>
-                      <td className="p-3 text-right text-foreground">{lot.quantity.toFixed(2)}</td>
-                      <td className="p-3 text-right text-foreground">{fmtV(lot.buyPrice)}</td>
-                      <td className="p-3 text-right text-foreground">{fmtV(lot.currentPrice)}</td>
-                      <td className="p-3 text-right text-foreground">{lot.holdingDays}</td>
-                      <td className="p-3 text-center">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                          lot.isLongTerm ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'
-                        }`}>
-                          {lot.isLongTerm ? 'LTCG' : 'STCG'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right font-medium text-red-500">{fmtV(lot.gain)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-red-500/5">
-                    <td colSpan={7} className="p-3 text-right font-semibold text-foreground">Total Harvestable Loss</td>
-                    <td className="p-3 text-right font-bold text-red-500">{fmtV(totalHarvestableLoss)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* FIFO Lot Details (expandable per symbol) */}
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-foreground">FIFO Lot Details</h2>
-          {report.holdings.map(h => (
-            <details key={h.symbol} className="rounded-lg border border-border bg-card overflow-hidden">
-              <summary className="p-3 cursor-pointer text-sm font-medium text-foreground hover:bg-muted/20 transition-colors">
-                {h.symbol} — {h.lots.length} lot{h.lots.length > 1 ? 's' : ''}
-              </summary>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-t border-b border-border bg-muted/20">
-                      <th className="text-left p-2 pl-3 font-medium text-muted-foreground">Buy Date</th>
-                      <th className="text-right p-2 font-medium text-muted-foreground">Qty</th>
-                      <th className="text-right p-2 font-medium text-muted-foreground">Buy Price</th>
-                      <th className="text-right p-2 font-medium text-muted-foreground">CMP</th>
-                      <th className="text-right p-2 font-medium text-muted-foreground">Days Held</th>
-                      <th className="text-center p-2 font-medium text-muted-foreground">Type</th>
-                      <th className="text-right p-2 font-medium text-muted-foreground">Gain</th>
-                      <th className="text-right p-2 font-medium text-muted-foreground">Tax Rate</th>
-                      <th className="text-right p-2 pr-3 font-medium text-muted-foreground">Tax</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {h.lots.map((lot, i) => (
-                      <tr key={i} className="border-b border-border/50">
-                        <td className="p-2 pl-3 text-foreground">{new Date(lot.buyDate).toLocaleDateString('en-IN')}</td>
-                        <td className="p-2 text-right text-foreground">{lot.quantity.toFixed(2)}</td>
-                        <td className="p-2 text-right text-foreground">{fmtV(lot.buyPrice)}</td>
-                        <td className="p-2 text-right text-foreground">{fmtV(lot.currentPrice)}</td>
-                        <td className="p-2 text-right text-foreground">{lot.holdingDays}</td>
-                        <td className="p-2 text-center">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            lot.isLongTerm
-                              ? 'bg-green-500/10 text-green-500'
-                              : 'bg-orange-500/10 text-orange-500'
-                          }`}>
-                            {lot.isLongTerm ? 'LTCG' : 'STCG'}
-                          </span>
-                        </td>
-                        <td className={`p-2 text-right font-medium ${lot.gain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                          {fmtV(lot.gain)}
-                        </td>
-                        <td className="p-2 text-right text-muted-foreground">{(lot.taxRate * 100).toFixed(1)}%</td>
-                        <td className="p-2 pr-3 text-right text-red-500">{fmtV(lot.taxAmount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </details>
-          ))}
-        </div>
-
         {/* Precise Tax Payable Summary */}
         <div className="rounded-lg border-2 border-red-500/30 bg-card p-5 space-y-4">
           <h2 className="text-sm font-semibold text-foreground">💰 Exact Tax Payable — If You Sell Everything Today</h2>
@@ -377,6 +255,133 @@ const TaxesContent = () => {
             Note: §87A rebate is NOT available on capital gains (STCG/LTCG) from FY 2025–26 onwards.
             Surcharge may apply based on total income bracket — not included above.
           </p>
+        </div>
+
+        {/* Harvestable Losses (Tax-Loss Harvesting) — collapsible toggle, same pattern as FIFO Lot Details */}
+        <details className="rounded-lg border border-border bg-card overflow-hidden">
+          <summary className="p-4 cursor-pointer list-none hover:bg-muted/20 transition-colors">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+              <TrendingDown className="w-4 h-4 text-red-500" /> Harvestable Losses
+              {harvestableLots.length > 0 && (
+                <span className="text-[10px] font-medium text-red-500">
+                  ({harvestableLots.length} lot{harvestableLots.length > 1 ? 's' : ''})
+                </span>
+              )}
+            </h2>
+            <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
+              Lots currently sitting below cost. Selling one before FY-end realizes the loss, which can offset other
+              capital gains this year. India has no formal wash-sale rule, but re-buying the same stock the same day
+              is worth flagging — it can look like a transaction with no real change in economic position if
+              scrutinized. ⚠ below means this symbol has had a same-day BUY + SELL before.
+            </p>
+          </summary>
+          {harvestableLots.length === 0 ? (
+            <p className="p-4 text-xs text-muted-foreground">No lots are currently sitting at a loss. 🎯</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left p-3 font-medium text-muted-foreground">Symbol</th>
+                    <th className="text-left p-3 font-medium text-muted-foreground">Buy Date</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">Qty</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">Buy Price</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">CMP</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">Days Held</th>
+                    <th className="text-center p-3 font-medium text-muted-foreground">Type</th>
+                    <th className="text-right p-3 font-medium text-muted-foreground">Harvestable Loss</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {harvestableLots.map((lot, i) => (
+                    <tr key={`${lot.symbol}-${lot.buyDate}-${i}`} className="border-b border-border hover:bg-muted/20 transition-colors">
+                      <td className="p-3 font-semibold text-foreground">
+                        {lot.symbol}
+                        {hasSameDayReentry(lot.symbol, transactions) && (
+                          <span title="Same-day BUY + SELL activity detected for this symbol before — review the wash-sale-style caveat above.">
+                            {' '}⚠
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 text-foreground">{new Date(lot.buyDate).toLocaleDateString('en-IN')}</td>
+                      <td className="p-3 text-right text-foreground">{lot.quantity.toFixed(2)}</td>
+                      <td className="p-3 text-right text-foreground">{fmtV(lot.buyPrice)}</td>
+                      <td className="p-3 text-right text-foreground">{fmtV(lot.currentPrice)}</td>
+                      <td className="p-3 text-right text-foreground">{lot.holdingDays}</td>
+                      <td className="p-3 text-center">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                          lot.isLongTerm ? 'bg-green-500/10 text-green-500' : 'bg-orange-500/10 text-orange-500'
+                        }`}>
+                          {lot.isLongTerm ? 'LTCG' : 'STCG'}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right font-medium text-red-500">{fmtV(lot.gain)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-red-500/5">
+                    <td colSpan={7} className="p-3 text-right font-semibold text-foreground">Total Harvestable Loss</td>
+                    <td className="p-3 text-right font-bold text-red-500">{fmtV(totalHarvestableLoss)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </details>
+
+        {/* FIFO Lot Details (expandable per symbol) */}
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold text-foreground">FIFO Lot Details</h2>
+          {report.holdings.map(h => (
+            <details key={h.symbol} className="rounded-lg border border-border bg-card overflow-hidden">
+              <summary className="p-3 cursor-pointer text-sm font-medium text-foreground hover:bg-muted/20 transition-colors">
+                {h.symbol} — {h.lots.length} lot{h.lots.length > 1 ? 's' : ''}
+              </summary>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-t border-b border-border bg-muted/20">
+                      <th className="text-left p-2 pl-3 font-medium text-muted-foreground">Buy Date</th>
+                      <th className="text-right p-2 font-medium text-muted-foreground">Qty</th>
+                      <th className="text-right p-2 font-medium text-muted-foreground">Buy Price</th>
+                      <th className="text-right p-2 font-medium text-muted-foreground">CMP</th>
+                      <th className="text-right p-2 font-medium text-muted-foreground">Days Held</th>
+                      <th className="text-center p-2 font-medium text-muted-foreground">Type</th>
+                      <th className="text-right p-2 font-medium text-muted-foreground">Gain</th>
+                      <th className="text-right p-2 font-medium text-muted-foreground">Tax Rate</th>
+                      <th className="text-right p-2 pr-3 font-medium text-muted-foreground">Tax</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {h.lots.map((lot, i) => (
+                      <tr key={i} className="border-b border-border/50">
+                        <td className="p-2 pl-3 text-foreground">{new Date(lot.buyDate).toLocaleDateString('en-IN')}</td>
+                        <td className="p-2 text-right text-foreground">{lot.quantity.toFixed(2)}</td>
+                        <td className="p-2 text-right text-foreground">{fmtV(lot.buyPrice)}</td>
+                        <td className="p-2 text-right text-foreground">{fmtV(lot.currentPrice)}</td>
+                        <td className="p-2 text-right text-foreground">{lot.holdingDays}</td>
+                        <td className="p-2 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            lot.isLongTerm
+                              ? 'bg-green-500/10 text-green-500'
+                              : 'bg-orange-500/10 text-orange-500'
+                          }`}>
+                            {lot.isLongTerm ? 'LTCG' : 'STCG'}
+                          </span>
+                        </td>
+                        <td className={`p-2 text-right font-medium ${lot.gain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {fmtV(lot.gain)}
+                        </td>
+                        <td className="p-2 text-right text-muted-foreground">{(lot.taxRate * 100).toFixed(1)}%</td>
+                        <td className="p-2 pr-3 text-right text-red-500">{fmtV(lot.taxAmount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          ))}
         </div>
 
         {/* Disclaimer */}
