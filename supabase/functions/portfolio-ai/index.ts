@@ -206,7 +206,7 @@ Deno.serve(async (req: Request) => {
           for (const call of result.calls) {
             send("tool_call", { name: call.name, args: call.arguments });
             try {
-              const toolResult = await mcpClient.callTool(call.name, call.arguments);
+              const toolResult = await mcpClient.callTool(call.name, call.arguments, user.id);
               toolResults.push({ id: call.id, name: call.name, result: toolResult });
             } catch (err) {
               logger.error("Tool call failed", { tool: call.name, error: err });
