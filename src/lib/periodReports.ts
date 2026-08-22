@@ -33,6 +33,11 @@ export function getFYStart(fyStartYear: number): Date {
   return new Date(fyStartYear, 3, 1); // April 1
 }
 
+/** Inverse of getFYStart: which FY (by its start year) a given date falls in. */
+export function fyStartYearFor(date: Date): number {
+  return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
+}
+
 export function buildPeriods(fyStartYear: number, type: PeriodType): PeriodDef[] {
   const fy = `FY${fyStartYear}-${String(fyStartYear + 1).slice(-2)}`;
   const apr = (y: number) => new Date(y, 3, 1);

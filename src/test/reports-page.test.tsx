@@ -137,4 +137,49 @@ describe('Reports page', () => {
     expect(startValueRow).not.toBeNull();
     expect(within(startValueRow!).getByText('₹12,345')).toBeInTheDocument();
   });
+
+  it('lets you browse to an earlier fiscal year and shows that FY\'s periods', async () => {
+    // A transaction from FY2024-25 pushes the earliest-browsable FY back from the
+    // default (current FY, 2026-27) far enough that "previous FY" is enabled twice.
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2024-05-01' }],
+      currentPrices: { TCS: 150 },
+    }));
+    renderReports();
+
+    await waitFor(() => expect(screen.getByText('FY2026-27')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Previous fiscal year/i }));
+    await waitFor(() => expect(screen.getByText('FY2025-26')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /Q1 2025-26/ })).toBeInTheDocument();
+
+    // Can't go past the earliest transaction's FY (2024-25).
+    fireEvent.click(screen.getByRole('button', { name: /Previous fiscal year/i }));
+    await waitFor(() => expect(screen.getByText('FY2024-25')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /Previous fiscal year/i })).toBeDisabled();
+  });
+
+  it('is disabled from browsing past the current fiscal year', async () => {
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-04-15' }],
+      currentPrices: { TCS: 150 },
+    }));
+    renderReports();
+
+    await waitFor(() => expect(screen.getByText('FY2026-27')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /Next fiscal year/i })).toBeDisabled();
+  });
+
+  it('shows a YoY growth chip comparing AUM to the same calendar date one year ago', async () => {
+    historicalPriceRows.push({ symbol: 'TCS', date: '2025-08-01', close: 120 });
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2025-04-15' }],
+      currentPrices: { TCS: 200 },
+    }));
+    renderReports();
+
+    // Default active period is in-progress Q2 FY2026-27 (asOf = "now" = 2026-08-22).
+    // Prior year (2025-08-22) marks TCS at its ₹120 historical close → netWorth ₹1,200.
+    // Today, live-marked at ₹200 → netWorth ₹2,000. Δ = 800, % = 800/1200*100 = 66.67%.
+    await waitFor(() => expect(screen.getByText(/\+66\.67% YoY/)).toBeInTheDocument());
+  });
 });
