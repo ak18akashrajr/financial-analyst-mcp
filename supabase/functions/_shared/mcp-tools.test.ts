@@ -60,6 +60,20 @@ describe("get_portfolio_summary", () => {
     expect(result.missingPriceSymbols).toEqual(["HDFC"]);
     expect(String(result.note)).toContain("HDFC");
   });
+
+  it("surfaces PF balance and credit card debt, and folds both into totalPortfolioValue", async () => {
+    const sb = makeFakeSb({
+      ...BASE_TABLES,
+      current_prices: { rows: [{ symbol: "TCS", price: 150 }, { symbol: "HDFC", price: 200 }] },
+      cash_settings: { rows: [{ liquid_cash: 1000, vault_cash: 0, pf_balance: 5000, credit_card_debt: 2000 }] },
+    });
+    const result = (await findTool("get_portfolio_summary")!.handler({}, sb)) as Record<string, unknown>;
+    expect(result.pfBalance).toBe(5000);
+    expect(result.creditCardDebt).toBe(2000);
+    // totalCurrentValue = 3*150 + 5*200 = 1450; + 1000 liquid + 5000 PF - 2000 debt = 5450
+    expect(result.totalCurrentValue).toBe(1450);
+    expect(result.totalPortfolioValue).toBe(5450);
+  });
 });
 
 describe("list_holdings", () => {
