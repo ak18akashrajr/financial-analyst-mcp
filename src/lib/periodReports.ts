@@ -15,6 +15,7 @@
  *    period may use live cash as fallback.
  */
 import type { Transaction, DerivedHolding, CashSettings, CurrentPrices } from '@/types/portfolio';
+import { computeFifoPosition } from './costBasis';
 
 export type PeriodType = 'quarter' | 'half' | 'year';
 
@@ -162,12 +163,10 @@ function computeHoldingsAt(
   const priceSources: PeriodSnapshot['priceSources'] = {};
   const priceDates: PeriodSnapshot['priceDates'] = {};
   const holdings = Object.entries(bySymbol).map(([symbol, txns]) => {
-    let qty = 0, invested = 0;
-    for (const t of txns) {
-      if (t.type === 'BUY') { qty += t.quantity; invested += t.quantity * t.price; }
-      else                  { qty -= t.quantity; invested -= t.quantity * t.price; }
-    }
-    const avgPrice = qty > 0 ? invested / qty : 0;
+    // FIFO cost basis, same convention as usePortfolio.ts — see src/lib/costBasis.ts.
+    // `txns` here is already filtered to date <= asOf, so this reflects the position
+    // as it stood at that point in time.
+    const { totalQuantity: qty, totalInvested: invested, avgPrice } = computeFifoPosition(txns);
     const resolved = resolvePrice(symbol, asOf, avgPrice, currentPrices, historical, useLive);
     if (qty > 0) {
       priceSources[symbol] = resolved.source;
