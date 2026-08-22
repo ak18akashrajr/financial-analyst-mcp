@@ -167,6 +167,34 @@ These are genuinely the user's call, not something to default silently:
 None of these block anything today; they're the actual first questions to answer once this work
 starts.
 
+## 2026-08-22 — Implemented: skip no-op writes to `current_prices`
+
+**Branch:** `perf/skip-unchanged-price-writes`. Not part of the original plan above (that was about
+row-count growth); this is the write-amplification sibling problem, caught while discussing it:
+`current_prices` never grows in row count, but `fetch-prices` was rewriting every symbol's row on
+every homepage load (see `useAutoRefreshPricesOnLoad`) regardless of whether the price moved — and
+the table's `updated_at` trigger bumps on every `UPDATE`, so that's real MVCC churn (new tuple +
+dead tuple to vacuum + a WAL entry) for a fixed-size table, forever, on every visit.
+
+- New [`_shared/price-diff.ts`](../supabase/functions/_shared/price-diff.ts): pure
+  `selectPricesToWrite(fetched, existing)`, comparing against a small epsilon (float noise from
+  Yahoo's JSON, not a real price move). A symbol missing from `existing` (first time it's ever been
+  priced) always writes.
+- `fetch-prices/index.ts` now reads existing prices for the requested symbols once, diffs, and only
+  upserts the rows that changed — skipping the DB write entirely when nothing did.
+- The response now includes `changed`/`unchanged` symbol lists so the frontend can be honest about
+  what happened, instead of implying every checked symbol got a fresh write.
+- Frontend: `usePortfolio.ts`'s single `lastPriceFetchTime` became two states —
+  `lastPriceCheckTime` (bumps on every fetch attempt) and `lastPriceChangeTime` (bumps only when a
+  price actually changed and something was written; derived from `current_prices.updated_at` on
+  initial load, so it survives a page reload instead of resetting every session).
+  `PriceRefreshButton` now shows both lines, and the post-fetch toast reflects the real outcome
+  ("Updated 1 price(s), 3 unchanged — no DB write needed for those" instead of a blanket "Updated
+  4 price(s)").
+- Tests: `_shared/price-diff.test.ts` (diff logic), `use-portfolio-live-prices.test.ts` (hook
+  bookkeeping + toast wording), updated `price-refresh-button.test.tsx`. Full suite (256 tests) and
+  typecheck verified green.
+
 ## Explicitly out of scope for now
 
 - Partitioning any table before it's actually large enough to need it — premature for every table

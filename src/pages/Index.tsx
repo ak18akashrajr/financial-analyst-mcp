@@ -31,7 +31,8 @@ const IndexContent = () => {
     cash,
     loading,
     fetchingPrices,
-    lastPriceFetchTime,
+    lastPriceCheckTime,
+    lastPriceChangeTime,
     addTransaction,
     updateTransaction,
     deleteTransaction,
@@ -80,7 +81,8 @@ const IndexContent = () => {
           <PriceRefreshButton
             fetchingPrices={fetchingPrices}
             disabled={holdings.length === 0}
-            lastPriceFetchTime={lastPriceFetchTime}
+            lastPriceCheckTime={lastPriceCheckTime}
+            lastPriceChangeTime={lastPriceChangeTime}
             onClick={fetchLivePrices}
           />
           <button
