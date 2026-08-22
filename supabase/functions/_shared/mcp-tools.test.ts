@@ -109,3 +109,33 @@ describe("list_holdings", () => {
     expect(result.missingPriceSymbols).toEqual(["HDFC"]);
   });
 });
+
+describe("run_stress_test", () => {
+  it("shocks only the requested symbol when `symbols` is passed, not the whole portfolio", async () => {
+    const sb = makeFakeSb({
+      ...BASE_TABLES,
+      current_prices: { rows: [{ symbol: "TCS", price: 100 }, { symbol: "HDFC", price: 200 }] },
+    });
+    const result = (await findTool("run_stress_test")!.handler(
+      { shockPercent: -20, symbols: ["TCS"] },
+      sb,
+    )) as {
+      holdings: Array<{ symbol: string; currentValue: number; shockedValue: number; loss: number }>;
+      shockedSymbols: string[];
+      totalLossPercent: number;
+    };
+    const tcs = result.holdings.find((h) => h.symbol === "TCS")!;
+    const hdfc = result.holdings.find((h) => h.symbol === "HDFC")!;
+    // TCS: 3 * 100 = 300 currentValue, shocked -20% -> 240.
+    expect(tcs.currentValue).toBe(300);
+    expect(tcs.shockedValue).toBe(240);
+    expect(tcs.loss).toBe(60);
+    // HDFC: 5 * 200 = 1000, untouched since it's not in `symbols`.
+    expect(hdfc.currentValue).toBe(1000);
+    expect(hdfc.shockedValue).toBe(1000);
+    expect(hdfc.loss).toBe(0);
+    expect(result.shockedSymbols).toEqual(["TCS"]);
+    // Total portfolio before = 1300 (300+1000, no cash in BASE_TABLES); loss is just TCS's ₹60.
+    expect(result.totalLossPercent).toBeCloseTo((60 / 1300) * 100, 2);
+  });
+});

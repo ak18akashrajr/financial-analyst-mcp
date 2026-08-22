@@ -163,6 +163,38 @@ describe("runStressTest", () => {
     expect(result.totalPortfolioAfter).toBe(1400);
     expect(result.totalLoss).toBe(200); // the equity loss only — PF/debt didn't move
   });
+
+  it("reports totalLossPercent — the net-worth decline, not the shocked holding's own drop", () => {
+    const holdings = [makeHolding({ symbol: "A", currentValue: 1000 })];
+    const result = runStressTest(holdings, { liquid: 500, vault: 0, pf: 0, creditCardDebt: 0 }, -20);
+    // 200 loss / 1500 total portfolio before = 13.33%, diluted well below the holding's own 20%.
+    expect(result.totalLossPercent).toBe(13.33);
+  });
+
+  it("shocks only the given symbols, leaving every other holding untouched", () => {
+    const holdings = [
+      makeHolding({ symbol: "A", currentValue: 1000 }),
+      makeHolding({ symbol: "B", currentValue: 500 }),
+    ];
+    const result = runStressTest(holdings, { liquid: 0, vault: 0, pf: 0, creditCardDebt: 0 }, -20, ["A"]);
+    const a = result.holdings.find((h) => h.symbol === "A")!;
+    const b = result.holdings.find((h) => h.symbol === "B")!;
+    expect(a.shockedValue).toBe(800); // 1000 * 0.8
+    expect(a.loss).toBe(200);
+    expect(b.shockedValue).toBe(500); // untouched
+    expect(b.loss).toBe(0);
+    // Before: 1500. After: 800 (shocked A) + 500 (untouched B) = 1300.
+    expect(result.totalPortfolioBefore).toBe(1500);
+    expect(result.totalPortfolioAfter).toBe(1300);
+    expect(result.totalLoss).toBe(200);
+    expect(result.shockedSymbols).toEqual(["A"]);
+  });
+
+  it("omits shockedSymbols entirely for a uniform (no-filter) shock", () => {
+    const holdings = [makeHolding({ symbol: "A", currentValue: 1000 })];
+    const result = runStressTest(holdings, { liquid: 0, vault: 0, pf: 0, creditCardDebt: 0 }, -20);
+    expect(result).not.toHaveProperty("shockedSymbols");
+  });
 });
 
 // --- Fake SupabaseClient for testing compareToBenchmark/getRiskMetrics -----

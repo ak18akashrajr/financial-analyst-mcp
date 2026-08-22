@@ -8,9 +8,10 @@
 // rejecting, so a client passing an invalid value got a *successful* result
 // computed from a different input than it asked for, with no signal that
 // happened. This covers the narrow subset of JSON Schema our tools actually
-// use (flat "object" schemas, primitive-typed properties, required,
-// additionalProperties, minimum, pattern, minLength, enum) — not a
-// general-purpose validator, and not meant to become one.
+// use (flat "object" schemas, primitive-typed properties plus a
+// string-array property, required, additionalProperties, minimum, pattern,
+// minLength, enum, minItems) — not a general-purpose validator, and not
+// meant to become one.
 export type JsonSchema = Record<string, unknown>;
 
 function typeOf(value: unknown): string {
@@ -71,6 +72,18 @@ export function validateArgs(schema: JsonSchema, args: Record<string, unknown>):
     } else if (expectedType === "boolean") {
       if (typeOf(value) !== "boolean") {
         return `Argument "${key}" must be a boolean`;
+      }
+    } else if (expectedType === "array") {
+      if (typeOf(value) !== "array") {
+        return `Argument "${key}" must be an array`;
+      }
+      const items = propSchema.items as JsonSchema | undefined;
+      if (items?.type === "string" && (value as unknown[]).some((v) => typeOf(v) !== "string")) {
+        return `Argument "${key}" must be an array of strings`;
+      }
+      const minItems = propSchema.minItems as number | undefined;
+      if (typeof minItems === "number" && (value as unknown[]).length < minItems) {
+        return `Argument "${key}" must have at least ${minItems} item(s)`;
       }
     }
   }
