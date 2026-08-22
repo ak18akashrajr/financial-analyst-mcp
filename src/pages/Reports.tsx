@@ -368,6 +368,7 @@ One concise paragraph (3-4 sentences) summarising the period.
   // ── Audits: pre-built explanation nodes for every KPI on the page ──
   const audits = buildAudits({
     endSnap,
+    startSnap,
     activity,
     active,
     status,
@@ -468,6 +469,39 @@ One concise paragraph (3-4 sentences) summarising the period.
             <AuditChip label="Txns ≤ period end" value={`${endSnap.holdings.reduce((s, h) => s + h.transactions.length, 0)}`} />
           </div>
         </div>
+
+        {/* Data-staleness warning — surfaced prominently, not just the small chip above,
+            because a holding marked at cost silently shows 0% return everywhere below
+            (KPIs, trend, Top Movers) with no other visual cue. */}
+        {(endSnap.priceSourceCounts.costFallback > 0 || endSnap.priceSourceCounts.none > 0) && (
+          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3 print:hidden">
+            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                {endSnap.priceSourceCounts.costFallback + endSnap.priceSourceCounts.none} of {endSnap.holdings.length} holding{endSnap.holdings.length === 1 ? '' : 's'} {status === 'in-progress' ? '' : 'as of this period-end '}
+                {(endSnap.priceSourceCounts.costFallback + endSnap.priceSourceCounts.none) === 1 ? 'is' : 'are'} marked at cost, not a real price
+              </p>
+              <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1">
+                No historical close was found for {(endSnap.priceSourceCounts.costFallback + endSnap.priceSourceCounts.none) === 1 ? 'it' : 'them'} at or before this date, so unrealized P&amp;L on {(endSnap.priceSourceCounts.costFallback + endSnap.priceSourceCounts.none) === 1 ? 'it shows' : 'them show'} as flat 0% below instead of the real return — this can understate AUM, P&amp;L, and Top Movers for the whole period. Run a price backfill to fix it.
+              </p>
+            </div>
+            <button onClick={backfillFY} disabled={backfilling} className="text-xs px-3 py-1.5 rounded-md border border-amber-500/50 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 disabled:opacity-50 whitespace-nowrap flex-shrink-0">
+              {backfilling ? 'Backfilling…' : 'Backfill now'}
+            </button>
+          </div>
+        )}
+
+        {endSnap.cashSource === 'none' && (
+          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3 print:hidden">
+            <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-700 dark:text-amber-400">No net-worth snapshot exists at or before this date</p>
+              <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1">
+                Operating Cash, Cash Reserve, PF, and Liabilities are all shown as ₹0 for this period by design — the app never blends today's cash into a past period. AUM below is therefore holdings-only until a snapshot exists.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Executive KPI grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -752,6 +786,7 @@ function holdingAudit(h: DerivedHolding, endSnap: PeriodSnapshot, hidden: boolea
 
 interface BuildAuditsArgs {
   endSnap: PeriodSnapshot;
+  startSnap: PeriodSnapshot;
   activity: PeriodActivity;
   active: PeriodDef;
   status: 'completed' | 'in-progress' | 'upcoming';
@@ -764,7 +799,7 @@ interface BuildAuditsArgs {
 }
 
 function buildAudits(a: BuildAuditsArgs) {
-  const { endSnap, activity, active, status, projection, monthlySIPTarget, periodOverPeriod, transactions, hidden } = a;
+  const { endSnap, startSnap, activity, active, status, projection, monthlySIPTarget, periodOverPeriod, transactions, hidden } = a;
   const periodTxns = transactions.filter(t => {
     const d = new Date(t.date);
     return d >= active.start && d < active.end;
@@ -924,7 +959,7 @@ function buildAudits(a: BuildAuditsArgs) {
           <AuditTable
             headers={['Field', 'Value']}
             rows={[
-              ['Start value (V₀)', fmt(status === 'in-progress' ? endSnap.netWorth : 0, hidden)],
+              ['Start value (V₀)', fmt(status === 'in-progress' ? endSnap.netWorth : startSnap.netWorth, hidden)],
               ['Annual rate r_y', `${(projection.baseRate * 100).toFixed(2)}%`],
               ['Monthly rate r_m', `${((Math.pow(1 + projection.baseRate, 1 / 12) - 1) * 100).toFixed(3)}%`],
               ['SIP / month', fmt(monthlySIPTarget, hidden)],
