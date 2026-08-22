@@ -4,6 +4,7 @@
 
 import { createLogger } from "../_shared/logger.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { requireUser, unauthorizedResponse } from "../_shared/auth.ts";
 
 const corsHeaders = buildCorsHeaders();
 
@@ -67,6 +68,16 @@ async function fetchPrice(symbol: string): Promise<number | null> {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Proxies to Yahoo Finance under the project's own crumb/cookie session —
+  // the platform's verify_jwt accepts the public anon key as-is, so without
+  // this gate anyone holding that key (i.e. anyone) could ride it as a free,
+  // unauthenticated scraping proxy. Same requireUser gate as fetch-prices.
+  const user = await requireUser(req);
+  if (!user) {
+    logger.warn("Rejected unauthenticated fetch-ticker-cape request");
+    return unauthorizedResponse(corsHeaders);
   }
 
   try {
