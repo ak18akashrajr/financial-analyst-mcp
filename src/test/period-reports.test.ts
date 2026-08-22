@@ -110,6 +110,21 @@ describe('buildSnapshot — price resolution', () => {
     const snap = buildSnapshot(new Date(2024, 5, 1), transactions, { SYM: 150 }, symbolMeta, [], ZERO_CASH, { useLive: true });
     expect(snap.holdings[0].totalQuantity).toBe(10); // only the Jan-2024 buy counts
   });
+
+  it('uses FIFO cost basis, not sell proceeds, for a partial sell (see src/lib/costBasis.ts)', () => {
+    // Buy 10 @ ₹100, sell 5 @ ₹180. Old formula: invested = 1000 − (5×180) = 100,
+    // avgPrice = ₹20 — inflated the remaining position's apparent gain. FIFO keeps
+    // the 5 remaining shares costed at their original ₹100.
+    const transactions = [
+      txn({ type: 'BUY', quantity: 10, price: 100, date: new Date(2024, 0, 1).toISOString() }),
+      txn({ type: 'SELL', quantity: 5, price: 180, date: new Date(2024, 1, 1).toISOString() }),
+    ];
+    const snap = buildSnapshot(new Date(2024, 5, 1), transactions, { SYM: 250 }, symbolMeta, [], ZERO_CASH, { useLive: true });
+    expect(snap.holdings[0].totalQuantity).toBe(5);
+    expect(snap.holdings[0].avgPrice).toBe(100);
+    expect(snap.invested).toBe(500);
+    expect(snap.pnl).toBe(750); // (250-100)*5, not the inflated (250-20)*5
+  });
 });
 
 describe('buildSnapshot — cash resolution', () => {

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Transaction, DerivedHolding, PortfolioSummary, CashSettings, CurrentPrices, SymbolMetadata, ExposureBreakdown } from '@/types/portfolio';
 import { toast } from 'sonner';
 import { calculateXIRR } from '@/lib/xirr';
+import { computeFifoPosition } from '@/lib/costBasis';
 
 export function usePortfolio() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -302,20 +303,10 @@ export function usePortfolio() {
     }
 
     return Object.entries(bySymbol).map(([symbol, txns]) => {
-      let totalQuantity = 0;
-      let totalInvested = 0;
-
-      for (const t of txns) {
-        if (t.type === 'BUY') {
-          totalQuantity += t.quantity;
-          totalInvested += t.quantity * t.price;
-        } else {
-          totalQuantity -= t.quantity;
-          totalInvested -= t.quantity * t.price;
-        }
-      }
-
-      const avgPrice = totalQuantity > 0 ? totalInvested / totalQuantity : 0;
+      // FIFO cost basis — a SELL consumes the oldest open BUY lot(s) first,
+      // so "Invested" reflects the actual cost of the shares still held,
+      // not the sell's proceeds. See src/lib/costBasis.ts.
+      const { totalQuantity, totalInvested, avgPrice } = computeFifoPosition(txns);
       const cp = currentPrices[symbol] || 0;
       const currentValue = cp * totalQuantity;
       const pnl = currentValue - totalInvested;
