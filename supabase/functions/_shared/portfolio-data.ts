@@ -192,24 +192,45 @@ export function concentrationRisk(holdings: Holding[], topN = 5) {
   return { rows, topNWeight: Number(topNWeight.toFixed(1)) };
 }
 
-/** Daily log-return series for a symbol from historical_prices, most recent `days` points. */
-async function fetchDailyReturns(
+/**
+ * Daily log-return series for every symbol in `symbols`, most recent `days`
+ * points each — one `historical_prices` query for the whole batch (via
+ * `.in("symbol", ...)`), grouped and sliced per symbol in memory, instead of
+ * N separate `.eq("symbol", ...)` queries awaited one at a time in a loop.
+ * See docs/perf-findings.md#4.
+ *
+ * A single query can't express "most recent N rows per symbol" the way
+ * `.limit()` did per-symbol — so this orders the whole batch by date
+ * descending and takes the first `days + 1` rows per symbol after grouping,
+ * which is equivalent for a plain per-symbol slice.
+ */
+async function fetchDailyReturnsBySymbol(
   sb: SupabaseClient,
-  symbol: string,
+  symbols: string[],
   days: number,
-): Promise<number[]> {
+): Promise<Record<string, number[]>> {
+  if (symbols.length === 0) return {};
   const { data } = await sb
     .from("historical_prices")
-    .select("date, close")
-    .eq("symbol", symbol)
-    .order("date", { ascending: false })
-    .limit(days + 1);
-  const closes = (data || []).map((r) => Number(r.close)).reverse();
-  const returns: number[] = [];
-  for (let i = 1; i < closes.length; i++) {
-    if (closes[i - 1] > 0) returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+    .select("symbol, date, close")
+    .in("symbol", symbols)
+    .order("date", { ascending: false });
+
+  const rowsBySymbol: Record<string, { date: string; close: number }[]> = {};
+  for (const r of (data || []) as { symbol: string; date: string; close: number }[]) {
+    (rowsBySymbol[r.symbol] ||= []).push({ date: r.date, close: Number(r.close) });
   }
-  return returns;
+
+  const returnsBySymbol: Record<string, number[]> = {};
+  for (const symbol of symbols) {
+    const closes = (rowsBySymbol[symbol] || []).slice(0, days + 1).map((r) => r.close).reverse();
+    const returns: number[] = [];
+    for (let i = 1; i < closes.length; i++) {
+      if (closes[i - 1] > 0) returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+    }
+    returnsBySymbol[symbol] = returns;
+  }
+  return returnsBySymbol;
 }
 
 function stdDev(values: number[]): number {
@@ -241,6 +262,9 @@ function beta(returns: number[], benchmarkReturns: number[]): number {
  * Per-holding + portfolio-level annualized volatility and beta vs NIFTY 50,
  * computed from historical_prices / benchmark_history over `lookbackDays`.
  * Symbols/benchmark rows with insufficient history are skipped gracefully.
+ * Fetches every holding's historical_prices in one batched query (see
+ * fetchDailyReturnsBySymbol) rather than one query per holding, awaited
+ * serially in a loop — see docs/perf-findings.md#4.
  */
 export async function getRiskMetrics(
   sb: SupabaseClient,
@@ -264,11 +288,13 @@ export async function getRiskMetrics(
   }
   const benchmarkDataAvailable = benchReturns.length >= 2;
 
+  const returnsBySymbol = await fetchDailyReturnsBySymbol(sb, holdings.map((h) => h.symbol), lookbackDays);
+
   const perHolding = [];
   let weightedVol = 0;
   let weightedBeta = 0;
   for (const h of holdings) {
-    const returns = await fetchDailyReturns(sb, h.symbol, lookbackDays);
+    const returns = returnsBySymbol[h.symbol] || [];
     const dailyVol = stdDev(returns);
     const annualizedVol = dailyVol * Math.sqrt(252) * 100; // %
     const symbolBeta = benchmarkDataAvailable ? beta(returns, benchReturns) : null;
