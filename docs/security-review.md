@@ -428,6 +428,18 @@ entry below, which added the same `requireUser` gate to all four.
   400) from any other unexpected/internal error (generic 500 message; real detail still logged via
   `_shared/logger.ts`).
 
+  **2026-08-23 addendum — classified, still leak-free, error messages.** A user-reported Groq 429
+  surfaced as the same flat "Something went wrong" as every other failure, with no way to tell a
+  rate limit apart from a real outage. [`_shared/chat-error-classifier.ts`](../supabase/functions/_shared/chat-error-classifier.ts)
+  now maps a failure to one of a small fixed set of safe messages (rate limited, temporarily
+  unavailable, timed out, payload too large, bad request, tool-loop exceeded, unknown) based on
+  the upstream HTTP status — via a new [`HttpCallError`](../supabase/functions/_shared/http-call-error.ts)
+  type thrown by both LLM providers and `_shared/mcp-client.ts`, never by parsing a status code out
+  of a formatted string. The security property from the original fix is unchanged and still
+  enforced by [`sse.test.ts`](../supabase/functions/_shared/sse.test.ts): every message in the
+  classifier's fixed vocabulary is a hardcoded string, none of them ever interpolate the real
+  status, response body, or provider name.
+
 **#8 — `verify_jwt` posture:**
 - [`supabase/config.toml`](../supabase/config.toml) now explicitly declares `[functions.portfolio-ai]`
   and `[functions.portfolio-mcp-server]` with `verify_jwt = true`, with a comment clarifying this

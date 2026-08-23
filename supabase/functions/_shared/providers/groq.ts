@@ -1,6 +1,7 @@
 // Groq provider — OpenAI-compatible chat-completions API, used as the
 // default/primary provider (see router.ts for the gpt-oss-20b/120b tiering).
 import type { McpToolDef } from "../mcp-client.ts";
+import { HttpCallError } from "../http-call-error.ts";
 import type { LlmProvider, ToolCallRequest, ToolResultForProvider, TurnResult } from "./types.ts";
 
 interface GroqToolCall {
@@ -54,7 +55,7 @@ export class GroqProvider implements LlmProvider {
         stream: false,
       }),
     });
-    if (!res.ok) throw new Error(`Groq request failed: ${res.status} ${await res.text()}`);
+    if (!res.ok) throw new HttpCallError("Groq", res.status, await res.text());
     const data = await res.json();
     const message = data.choices[0].message;
 

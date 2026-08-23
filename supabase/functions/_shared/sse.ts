@@ -8,15 +8,19 @@
 //   event: done          data: { attribution }             — stream finished successfully
 //   event: error          data: { message }                — stream finished with an error
 //
-// The client-facing error message is always a fixed, generic string — never
-// the caught error's own message. Provider errors (e.g. "Anthropic request
-// failed: 401 ...") embed upstream response bodies/status codes, and
-// forwarding those to the browser both contradicts the AI system prompt's
-// "never reveal infrastructure/provider details" instruction and hands an
-// attacker a way to fingerprint or probe the backend. The real error is
-// still fully available server-side via `onError` (wired to the caller's
-// structured logger), just never sent over the wire.
-const GENERIC_CLIENT_ERROR = "Something went wrong while generating a response. Please try again.";
+// The client-facing error message always comes from classifyChatError's
+// fixed vocabulary — never the caught error's own message. Provider errors
+// (e.g. "Anthropic request failed: 401 ...") embed upstream response
+// bodies/status codes, and forwarding those to the browser both contradicts
+// the AI system prompt's "never reveal infrastructure/provider details"
+// instruction and hands an attacker a way to fingerprint or probe the
+// backend. What DOES reach the client is which *category* of failure this
+// was (rate limited vs. temporarily unavailable vs. timed out, etc.) — see
+// chat-error-classifier.ts — so the user isn't left with a single flat
+// "something went wrong" for every possible cause. The real error (with its
+// real status/body) is still fully available server-side via `onError`
+// (wired to the caller's structured logger), just never sent over the wire.
+import { classifyChatError } from "./chat-error-classifier.ts";
 
 export function createSseStream(
   run: (send: (event: string, data: unknown) => void) => Promise<void>,
@@ -32,7 +36,7 @@ export function createSseStream(
         await run(send);
       } catch (err) {
         onError?.(err);
-        send("error", { message: GENERIC_CLIENT_ERROR });
+        send("error", { message: classifyChatError(err).message });
       } finally {
         controller.close();
       }

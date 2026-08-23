@@ -4,6 +4,8 @@
 // handlers directly, only their static complexity metadata (see mcp-tools.ts
 // header comment). Every tool execution is a real network round trip.
 
+import { HttpCallError } from "./http-call-error.ts";
+
 export interface McpToolDef {
   name: string;
   description: string;
@@ -32,7 +34,7 @@ export class McpClient {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`MCP server ${method} failed: ${res.status} ${text}`);
+      throw new HttpCallError(`MCP server ${method}`, res.status, text);
     }
     const body = await res.json();
     if (body.error) throw new Error(`MCP error (${method}): ${body.error.message}`);
