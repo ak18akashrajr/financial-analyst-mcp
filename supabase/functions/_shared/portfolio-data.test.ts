@@ -2,14 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildBenchmarkCompareNote,
+  buildFYPeriods,
   checkLimitBreaches,
   compareToBenchmark,
   computeHoldingsFromTxns,
   concentrationRisk,
   exposureBy,
+  fyStartYearFromDate,
   getCurrentPortfolio,
   getExposureDrift,
+  getPeriodPerformance,
   getRiskMetrics,
+  resolveFYPeriod,
   runStressTest,
   splitByPriceAvailability,
   type Holding,
@@ -504,5 +508,171 @@ describe("getRiskMetrics", () => {
     const tcs = result.perHolding.find((h) => h.symbol === "TCS")!;
     expect(aapl.annualizedVolatilityPercent).toBe(0);
     expect(tcs.annualizedVolatilityPercent).toBeGreaterThan(0);
+  });
+});
+
+describe("fyStartYearFromDate / buildFYPeriods", () => {
+  it("attributes a date before April to the previous FY", () => {
+    expect(fyStartYearFromDate("2026-03-31")).toBe(2025);
+    expect(fyStartYearFromDate("2026-04-01")).toBe(2026);
+  });
+
+  it("builds four contiguous, non-overlapping quarters spanning the full FY", () => {
+    const quarters = buildFYPeriods(2026, "quarter");
+    expect(quarters).toHaveLength(4);
+    expect(quarters[0].start).toBe("2026-04-01");
+    expect(quarters[3].end).toBe("2027-04-01");
+    for (let i = 1; i < quarters.length; i++) {
+      expect(quarters[i].start).toBe(quarters[i - 1].end); // contiguous, no gap/overlap
+    }
+  });
+
+  it("builds two halves and a single full year", () => {
+    expect(buildFYPeriods(2026, "half")).toHaveLength(2);
+    const fy = buildFYPeriods(2026, "year");
+    expect(fy).toHaveLength(1);
+    expect(fy[0].start).toBe("2026-04-01");
+    expect(fy[0].end).toBe("2027-04-01");
+  });
+});
+
+describe("resolveFYPeriod", () => {
+  it("defaults to whichever quarter contains today when no explicit period is given", () => {
+    const p = resolveFYPeriod("2026-08-23", "quarter");
+    expect(p.key).toBe("FY2026-27-Q2"); // Aug falls in Jul-Sep
+  });
+
+  it("honors an explicit periodIndex within an explicit fyStartYear", () => {
+    const p = resolveFYPeriod("2026-08-23", "quarter", 2025, 4);
+    expect(p.key).toBe("FY2025-26-Q4");
+  });
+
+  it("throws for a periodIndex out of range for the period type", () => {
+    expect(() => resolveFYPeriod("2026-08-23", "half", undefined, 3)).toThrow(/periodIndex must be between 1 and 2/);
+  });
+
+  it("falls back to the FY's last period when an explicit past fyStartYear has no periodIndex", () => {
+    const p = resolveFYPeriod("2026-08-23", "quarter", 2020);
+    expect(p.key).toBe("FY2020-21-Q4");
+  });
+});
+
+describe("getPeriodPerformance", () => {
+  const meta = {
+    rows: [{ symbol: "TCS", geography: "India", sector: "Tech" }],
+  };
+
+  it("separates market gain from new money added during an in-progress quarter", async () => {
+    const txns = {
+      rows: [
+        // Bought before the quarter — establishes the start-of-period position.
+        { symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-06-01" },
+        // Bought mid-quarter — this is new money, must not count as "market gain".
+        { symbol: "TCS", type: "BUY", quantity: 5, price: 150, date: "2026-08-01" },
+      ],
+    };
+    const sb = makeFakeSb({
+      transactions: txns,
+      symbol_metadata: meta,
+      // Historical close on/before the quarter start (2026-07-01): ₹100/share.
+      historical_prices: { rows: [{ symbol: "TCS", date: "2026-06-15", close: 100 }] },
+      net_worth_history: { rows: [] },
+    });
+    const currentHoldings: Holding[] = [
+      makeHolding({ symbol: "TCS", quantity: 15, currentValue: 15 * 120, hasPriceData: true }),
+    ];
+    const currentCash = { liquid: 0, vault: 0, pf: 0, creditCardDebt: 0 };
+
+    const result = await getPeriodPerformance(
+      sb,
+      currentHoldings,
+      currentCash,
+      "quarter",
+      2026,
+      2, // Q2: Jul-Sep 2026
+      new Date("2026-08-23T00:00:00Z"),
+    );
+
+    expect(result.status).toBe("in-progress");
+    // Start: 10 shares held as of 2026-07-01 @ historical ₹100 = 1000.
+    expect(result.startPortfolioValue).toBe(1000);
+    // End: 15 shares (10 + 5 bought mid-quarter) @ live ₹120 = 1800.
+    expect(result.endPortfolioValue).toBe(1800);
+    // New money added mid-quarter: 5 * 150 = 750.
+    expect(result.netInvestedInPeriod).toBe(750);
+    // Raw change is 800, but 750 of that is new money — market gain is only 50.
+    expect(result.marketGain).toBe(50);
+    expect(result.marketGainPercent).toBeCloseTo(5); // 50 / 1000 * 100
+    expect(result.buyCount).toBe(1); // only the mid-quarter buy is "in period"
+  });
+
+  it("marks a completed period entirely with historical closes, never live prices", async () => {
+    const txns = {
+      rows: [{ symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-01-01" }],
+    };
+    const sb = makeFakeSb({
+      transactions: txns,
+      symbol_metadata: meta,
+      historical_prices: {
+        rows: [
+          { symbol: "TCS", date: "2026-03-31", close: 110 }, // last close of Q4 FY2025-26
+        ],
+      },
+      net_worth_history: { rows: [] },
+    });
+    // Live price is 999 — must NOT leak into a completed period's endPortfolioValue.
+    const currentHoldings: Holding[] = [makeHolding({ symbol: "TCS", quantity: 10, currentValue: 9990 })];
+
+    const result = await getPeriodPerformance(
+      sb,
+      currentHoldings,
+      { liquid: 0, vault: 0, pf: 0, creditCardDebt: 0 },
+      "quarter",
+      2025,
+      4, // Q4 FY2025-26: Jan-Mar 2026 — completed relative to "today" below
+      new Date("2026-08-23T00:00:00Z"),
+    );
+
+    expect(result.status).toBe("completed");
+    expect(result.endPortfolioValue).toBe(1100); // 10 * 110 (historical), not 9990 (live)
+  });
+
+  it("reports an upcoming period as having no performance yet, without querying transaction data", async () => {
+    const sb = makeFakeSb({});
+    const result = await getPeriodPerformance(
+      sb,
+      [],
+      { liquid: 0, vault: 0, pf: 0, creditCardDebt: 0 },
+      "quarter",
+      2027, // a future FY relative to "today" below
+      1,
+      new Date("2026-08-23T00:00:00Z"),
+    );
+    expect(result.status).toBe("upcoming");
+    expect(result.note).toContain("hasn't started yet");
+  });
+
+  it("flags a symbol with no historical_prices row on/before the period start instead of pricing it at ₹0", async () => {
+    const txns = {
+      rows: [{ symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-06-01" }],
+    };
+    const sb = makeFakeSb({
+      transactions: txns,
+      symbol_metadata: meta,
+      historical_prices: { rows: [] }, // no history at all for TCS
+      net_worth_history: { rows: [] },
+    });
+    const result = await getPeriodPerformance(
+      sb,
+      [makeHolding({ symbol: "TCS", quantity: 10, currentValue: 1200 })],
+      { liquid: 0, vault: 0, pf: 0, creditCardDebt: 0 },
+      "quarter",
+      2026,
+      2,
+      new Date("2026-08-23T00:00:00Z"),
+    );
+    expect(result.startPortfolioValue).toBe(0); // TCS excluded, not counted at ₹0 loss
+    expect(result.note).toContain("TCS");
+    expect(result.note).toContain("excluded from startPortfolioValue");
   });
 });

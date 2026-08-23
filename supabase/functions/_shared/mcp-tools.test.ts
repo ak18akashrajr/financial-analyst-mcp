@@ -17,7 +17,27 @@ function makeQueryBuilder(table: FakeTable) {
       rows = rows.filter((r) => r[col] === val);
       return builder;
     },
-    order: () => builder,
+    in: (col: string, vals: unknown[]) => {
+      const set = new Set(vals);
+      rows = rows.filter((r) => set.has(r[col]));
+      return builder;
+    },
+    lte: (col: string, val: unknown) => {
+      rows = rows.filter((r) => (r[col] as string | number) <= (val as string | number));
+      return builder;
+    },
+    order: (col?: string, opts?: { ascending?: boolean }) => {
+      if (col) {
+        const asc = opts?.ascending !== false;
+        rows = [...rows].sort((a, b) => {
+          const av = a[col] as string | number;
+          const bv = b[col] as string | number;
+          if (av === bv) return 0;
+          return asc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+        });
+      }
+      return builder;
+    },
     limit: (n: number) => {
       rows = rows.slice(0, n);
       return builder;
@@ -107,6 +127,37 @@ describe("list_holdings", () => {
     };
     expect(result.holdings.map((h) => h.symbol)).toEqual(["TCS"]);
     expect(result.missingPriceSymbols).toEqual(["HDFC"]);
+  });
+});
+
+describe("get_period_performance", () => {
+  it("routes args through to getPeriodPerformance and marks a completed period with historical closes", async () => {
+    // FY2020-21 Q4 (Jan-Mar 2021) is guaranteed to be "completed" regardless of
+    // wall-clock time when this test runs, so the test doesn't depend on today's date.
+    const sb = makeFakeSb({
+      transactions: {
+        rows: [{ symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2020-06-01" }],
+      },
+      symbol_metadata: { rows: [{ symbol: "TCS", geography: "India", sector: "Tech" }] },
+      current_prices: { rows: [{ symbol: "TCS", price: 999 }] }, // must not leak into a completed period
+      cash_settings: { rows: [{ liquid_cash: 0, vault_cash: 0 }] },
+      historical_prices: { rows: [{ symbol: "TCS", date: "2021-03-31", close: 130 }] },
+      net_worth_history: { rows: [] },
+    });
+    const result = (await findTool("get_period_performance")!.handler(
+      { periodType: "quarter", fyStartYear: 2020, periodIndex: 4 },
+      sb,
+    )) as Record<string, unknown>;
+    expect(result.status).toBe("completed");
+    expect(result.periodKey).toBe("FY2020-21-Q4");
+    expect(result.endPortfolioValue).toBe(1300); // 10 * 130 (historical), not 999 (live)
+  });
+
+  it("rejects a periodIndex out of range for the requested periodType", async () => {
+    const sb = makeFakeSb({});
+    await expect(
+      findTool("get_period_performance")!.handler({ periodType: "half", periodIndex: 3 }, sb),
+    ).rejects.toThrow(/periodIndex must be between 1 and 2/);
   });
 });
 
