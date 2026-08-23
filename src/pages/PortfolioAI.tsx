@@ -228,7 +228,7 @@ const PortfolioAI = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* Header */}
       <div className="border-b border-border/80 bg-card/70 backdrop-blur-md sticky top-0 z-50 supports-[backdrop-filter]:bg-card/50">
         <div className="max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between">
@@ -254,9 +254,9 @@ const PortfolioAI = () => {
         </div>
       </div>
 
-      <div className="flex-1 flex max-w-6xl mx-auto w-full">
+      <div className="flex-1 flex max-w-6xl mx-auto w-full min-h-0">
         {/* Sidebar — preset questions */}
-        <div className="w-80 border-r border-border/80 flex-shrink-0 flex flex-col bg-card/30 hidden md:flex">
+        <div className="w-80 border-r border-border/80 flex-shrink-0 flex flex-col bg-card/30 hidden md:flex min-h-0">
           <div className="px-4 py-3.5 border-b border-border/80">
             <p className="text-[10px] font-bold tracking-[0.25em] uppercase text-primary flex items-center gap-1.5">
               <MessageSquare className="w-3 h-3" />
@@ -287,7 +287,7 @@ const PortfolioAI = () => {
         </div>
 
         {/* Chat area */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {/* Messages */}
           <div ref={chatBodyRef} className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.length === 0 && (
