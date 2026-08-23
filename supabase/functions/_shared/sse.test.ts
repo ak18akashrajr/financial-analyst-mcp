@@ -3,8 +3,13 @@
 // docs/security-review.md finding #5: raw provider error text was being
 // relayed verbatim, e.g. "Anthropic request failed: 401 ..."). The real
 // error must still reach the caller's logger via the onError callback.
+// Classification of *which* safe message a given error maps to (429 vs.
+// 503 vs. network, etc.) is unit-tested in chat-error-classifier.test.ts;
+// this file only checks createSseStream wires that classifier in correctly
+// and still never leaks the raw error.
 import { describe, expect, it, vi } from "vitest";
 import { chunkText, createSseStream } from "./sse.ts";
+import { HttpCallError } from "./http-call-error.ts";
 
 async function readAllEvents(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader();
@@ -47,6 +52,25 @@ describe("createSseStream", () => {
     }, onError);
     await readAllEvents(stream);
     expect(onError).toHaveBeenCalledWith(boom);
+  });
+
+  it("sends a specific rate-limited message for a 429 HttpCallError, not the flat generic message", async () => {
+    const stream = createSseStream(async () => {
+      throw new HttpCallError("Groq", 429, "rate limit exceeded");
+    });
+    const text = await readAllEvents(stream);
+    expect(text).toMatch(/high volume of requests/i);
+    expect(text).not.toContain("429");
+    expect(text).not.toContain("Groq");
+  });
+
+  it("sends a specific unavailable message for a 503 HttpCallError, distinct from the rate-limited message", async () => {
+    const stream = createSseStream(async () => {
+      throw new HttpCallError("Anthropic", 503, "overloaded");
+    });
+    const text = await readAllEvents(stream);
+    expect(text).toMatch(/temporarily unavailable/i);
+    expect(text).not.toMatch(/high volume of requests/i);
   });
 });
 

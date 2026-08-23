@@ -19,6 +19,7 @@ import { GroqProvider } from "../_shared/providers/groq.ts";
 import { AnthropicProvider } from "../_shared/providers/anthropic.ts";
 import type { LlmProvider, ToolResultForProvider } from "../_shared/providers/types.ts";
 import { chunkText, createSseStream } from "../_shared/sse.ts";
+import { classifyChatError, ToolLoopExceededError } from "../_shared/chat-error-classifier.ts";
 import { createLogger } from "../_shared/logger.ts";
 
 const logger = createLogger("portfolio-ai");
@@ -226,7 +227,7 @@ Deno.serve(async (req: Request) => {
           provider.appendToolResults(toolResults);
 
           if (turn === MAX_TOOL_TURNS - 1) {
-            throw new Error("Tool loop exceeded the maximum number of turns");
+            throw new ToolLoopExceededError("Tool loop exceeded the maximum number of turns");
           }
         }
 
@@ -254,20 +255,23 @@ Deno.serve(async (req: Request) => {
     return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
   } catch (e) {
     logger.error("portfolio-ai error", { error: e });
-    // Validation errors are safe (and useful) to show verbatim; anything
-    // else is an internal/provider failure and must not leak details like
-    // "No LLM API keys configured" or an upstream provider's error body —
-    // see _shared/sse.ts's GENERIC_CLIENT_ERROR for the same rule applied
-    // to errors raised mid-stream.
+    // Validation errors are safe (and useful) to show verbatim. Anything
+    // else is an internal/provider failure whose real detail (e.g. "No LLM
+    // API keys configured" or an upstream provider's error body) must never
+    // leak to the client — classifyChatError maps it to a fixed, safe
+    // message and an appropriate HTTP status instead of one flat 500 for
+    // every possible cause. Same rule, same classifier, as errors raised
+    // mid-stream in _shared/sse.ts.
     if (e instanceof ValidationError) {
       return new Response(JSON.stringify({ error: e.message }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    return new Response(
-      JSON.stringify({ error: "Something went wrong while starting the chat. Please try again." }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    const { message, httpStatus } = classifyChatError(e);
+    return new Response(JSON.stringify({ error: message }), {
+      status: httpStatus,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

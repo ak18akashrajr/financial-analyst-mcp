@@ -1,6 +1,7 @@
 // Anthropic provider — Claude Messages API. Becomes the active provider
 // (instead of Groq) whenever ANTHROPIC_API_KEY is set; see portfolio-ai/index.ts.
 import type { McpToolDef } from "../mcp-client.ts";
+import { HttpCallError } from "../http-call-error.ts";
 import type { LlmProvider, ToolCallRequest, ToolResultForProvider, TurnResult } from "./types.ts";
 
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -58,7 +59,7 @@ export class AnthropicProvider implements LlmProvider {
         tools: this.toAnthropicTools(tools),
       }),
     });
-    if (!res.ok) throw new Error(`Anthropic request failed: ${res.status} ${await res.text()}`);
+    if (!res.ok) throw new HttpCallError("Anthropic", res.status, await res.text());
     const data = await res.json();
     const blocks: ContentBlock[] = data.content;
 

@@ -5,6 +5,7 @@
 // validation.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { McpClient } from "./mcp-client.ts";
+import { HttpCallError } from "./http-call-error.ts";
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -45,5 +46,30 @@ describe("McpClient.callTool", () => {
     const body = JSON.parse(init.body as string);
     expect(body.params.name).toBe("list_holdings");
     expect(body.params.actor).toBeUndefined();
+  });
+});
+
+describe("McpClient non-ok HTTP response", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("throws a typed HttpCallError carrying the real status, instead of an untyped Error", async () => {
+    // A fresh Response per call — a Response body can only be read once,
+    // and rpc() awaits res.text() when building the error.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => Promise.resolve(new Response("service unavailable", { status: 503 }))),
+    );
+    const client = new McpClient("https://example.com/portfolio-mcp-server", "Bearer test-key");
+
+    let caught: unknown;
+    try {
+      await client.initialize();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(HttpCallError);
+    expect((caught as HttpCallError).status).toBe(503);
   });
 });
