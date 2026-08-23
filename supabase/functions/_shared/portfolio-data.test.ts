@@ -562,12 +562,15 @@ describe("getPeriodPerformance", () => {
     rows: [{ symbol: "TCS", geography: "India", sector: "Tech" }],
   };
 
-  it("separates market gain from new money added during an in-progress quarter", async () => {
+  it("reports the raw net-worth delta as totalChange, without double-counting a mid-period buy funded from already-tracked cash", async () => {
     const txns = {
       rows: [
         // Bought before the quarter — establishes the start-of-period position.
         { symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-06-01" },
-        // Bought mid-quarter — this is new money, must not count as "market gain".
+        // Bought mid-quarter, funded from the portfolio's own tracked cash — a pure
+        // reallocation, not new external money, so it must NOT be subtracted from totalChange
+        // (that would double-count it as a phantom loss — see the getPortfolioSummary vs.
+        // Reports.tsx cross-check that caught this bug).
         { symbol: "TCS", type: "BUY", quantity: 5, price: 150, date: "2026-08-01" },
       ],
     };
@@ -598,11 +601,12 @@ describe("getPeriodPerformance", () => {
     expect(result.startPortfolioValue).toBe(1000);
     // End: 15 shares (10 + 5 bought mid-quarter) @ live ₹120 = 1800.
     expect(result.endPortfolioValue).toBe(1800);
-    // New money added mid-quarter: 5 * 150 = 750.
+    // Reported for information only — money moved from cash into stock (5 * 150 = 750),
+    // not subtracted from totalChange below.
     expect(result.netInvestedInPeriod).toBe(750);
-    // Raw change is 800, but 750 of that is new money — market gain is only 50.
-    expect(result.marketGain).toBe(50);
-    expect(result.marketGainPercent).toBeCloseTo(5); // 50 / 1000 * 100
+    // The real return is the raw delta: 1800 - 1000 = 800, not 800 - 750 = 50.
+    expect(result.totalChange).toBe(800);
+    expect(result.totalChangePercent).toBeCloseTo(80); // 800 / 1000 * 100
     expect(result.buyCount).toBe(1); // only the mid-quarter buy is "in period"
   });
 

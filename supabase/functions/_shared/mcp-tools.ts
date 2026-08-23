@@ -273,12 +273,14 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       "all-time totals relabeled as if they were for that period. Returns startPortfolioValue (marked " +
       "at the closest historical close on or before the period start), endPortfolioValue (today's live " +
       "price if the period is still in progress, or the closest historical close on/before period end " +
-      "once it has completed), netInvestedInPeriod (buys minus sells within the period), and " +
-      "marketGain/marketGainPercent, which isolates price appreciation from new money added or " +
-      "withdrawn during the period — use marketGain, not the raw endPortfolioValue-startPortfolioValue " +
-      "difference, when asked for \"performance\" or \"return\". Defaults to the quarter containing " +
-      "today if no arguments are given. Does not support month-level granularity — say so if asked " +
-      "for a specific month.",
+      "once it has completed), and totalChange/totalChangePercent — the change between them, which is " +
+      "the actual period return to report for \"performance\". netInvestedInPeriod (buys minus sells " +
+      "within the period) is informational only: buying/selling with cash already tracked in this " +
+      "portfolio is a reallocation, not a value change, so never subtract it from totalChange yourself " +
+      "— that would double-count the reallocation as a phantom gain or loss (this tool cannot tell " +
+      "fresh external money apart from redeployed existing cash, since no such distinction is tracked). " +
+      "Defaults to the quarter containing today if no arguments are given. Does not support " +
+      "month-level granularity — say so if asked for a specific month.",
     complexity: "complex",
     inputSchema: {
       type: "object",
