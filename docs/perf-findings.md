@@ -1,7 +1,7 @@
 # Performance Findings
 
-**Status:** #1-#4 implemented 2026-08-22/23 (see below); #5 still open, findings only. Written
-2026-08-22, as a follow-up sweep
+**Status:** all five findings implemented 2026-08-22/23 (see below). This report is fully worked
+through. Written 2026-08-22, as a follow-up sweep
 after fixing the `current_prices` write-amplification bug (see
 [scaling-and-archival-plan.md's addendum](scaling-and-archival-plan.md#2026-08-22--implemented-skip-no-op-writes-to-current_prices)):
 once one instance of "writes unconditionally when nothing changed" turned up, it was worth checking
@@ -114,7 +114,7 @@ exactly one `historical_prices` query fires for a 3-holding portfolio, and a cor
 that each holding's return series stays correctly separated after the batched fetch (a flat-price
 holding computes zero volatility, a volatile one doesn't).
 
-## 5. No route-based code splitting — Low
+## 5. No route-based code splitting — Low — ✅ Implemented 2026-08-23
 
 **File:** [`src/App.tsx:7-19`](../src/App.tsx).
 
@@ -127,6 +127,18 @@ other findings are.
 
 **Fix idea:** convert route imports in `App.tsx` to `React.lazy(() => import(...))` wrapped in a
 `<Suspense>` boundary, so chart-heavy pages only load when actually visited.
+
+**Implemented:** all 12 page components in [`App.tsx`](../src/App.tsx) are now
+`lazy(() => import(...))`, wrapped in a single `<Suspense>` boundary around `<Routes>` with a
+fallback matching `ProtectedRoute`'s existing loading style. `NotFound` stays a regular static
+import — it's tiny, has no heavy deps, and is the catch-all route most likely to need to render
+immediately. Verified with a production build (`npm run build`): each page now produces its own
+chunk (`Charts-*.js`, `Taxes-*.js`, `Benchmark-*.js`, `PortfolioAI-*.js`, etc.) instead of one
+monolithic bundle, and manually confirmed in the dev server that routing (including the 404
+catch-all) still works with no console errors. No unit test added — this is a bundling/loading
+change with no new logic to assert on beyond what the build output and manual check already
+verify; existing page-level tests (which import pages directly, not through `App.tsx`) are
+unaffected either way.
 
 ## Checked and found to be fine (no finding)
 
@@ -155,9 +167,6 @@ skipped entirely; none are urgent at this app's current scale.
 
 ## Next action
 
-#1-#4 are all done. **#5 (route-based code splitting)** is the only finding left in this report —
-convert `App.tsx`'s route imports to `React.lazy(() => import(...))` wrapped in a `<Suspense>`
-boundary. It's the one most worth a visual smoke-test after the change (it touches every route),
-but otherwise not urgent at this app's scale — a purely first-paint cost, not a resource-waste
-problem like the others were. Once it's done (or explicitly skipped), this report is fully worked
-through.
+None — all five findings are implemented. This report is fully worked through; nothing further
+to pick up from it. Any new performance concern should get its own fresh findings doc rather than
+being appended here.
