@@ -1,7 +1,7 @@
 # Performance Findings
 
-**Status:** #1 and #2 implemented 2026-08-22/23, #3 implemented 2026-08-23 (see below); #4-#5 still
-open, findings only. Written 2026-08-22, as a follow-up sweep
+**Status:** #1-#4 implemented 2026-08-22/23 (see below); #5 still open, findings only. Written
+2026-08-22, as a follow-up sweep
 after fixing the `current_prices` write-amplification bug (see
 [scaling-and-archival-plan.md's addendum](scaling-and-archival-plan.md#2026-08-22--implemented-skip-no-op-writes-to-current_prices)):
 once one instance of "writes unconditionally when nothing changed" turned up, it was worth checking
@@ -88,7 +88,7 @@ stale data. Covered by [`src/test/correlation-heatmap.test.tsx`](../src/test/cor
 which asserts the `.in()` call receives exactly the portfolio's own (deduped, sorted) symbols, and
 that no query happens at all for an empty portfolio.
 
-## 4. `get_risk_metrics` queries `historical_prices` once per holding, sequentially — Low
+## 4. `get_risk_metrics` queries `historical_prices` once per holding, sequentially — Low — ✅ Implemented 2026-08-23
 
 **File:** [`supabase/functions/_shared/portfolio-data.ts:253-269`](../supabase/functions/_shared/portfolio-data.ts)
 (`getRiskMetrics`'s loop calling `fetchDailyReturns`, defined at line 179).
@@ -101,6 +101,18 @@ so this is a per-call latency cost, not a database load problem.
 **Fix idea:** fetch `historical_prices` once with `.in("symbol", holdings.map(h => h.symbol))` and
 group the results by symbol in memory, or at minimum wrap the loop body in `Promise.all` so the
 per-symbol queries run concurrently instead of serially.
+
+**Implemented:** `fetchDailyReturns` (per-symbol) is replaced by `fetchDailyReturnsBySymbol`
+(batched) in [`portfolio-data.ts`](../supabase/functions/_shared/portfolio-data.ts) — one
+`.in("symbol", ...)` query for every holding, ordered by date descending, then grouped and sliced
+to the most recent `lookbackDays + 1` rows per symbol in memory (a single query can't express
+"top N rows per symbol" the way a per-symbol `.limit()` could, so the equivalent slicing happens
+after grouping instead). `getRiskMetrics` now calls this once before its per-holding loop instead
+of once per holding inside it. Covered by two new cases in
+[`portfolio-data.test.ts`](../supabase/functions/_shared/portfolio-data.test.ts): a spy confirming
+exactly one `historical_prices` query fires for a 3-holding portfolio, and a correctness check
+that each holding's return series stays correctly separated after the batched fetch (a flat-price
+holding computes zero volatility, a volatile one doesn't).
 
 ## 5. No route-based code splitting — Low
 
@@ -143,9 +155,9 @@ skipped entirely; none are urgent at this app's current scale.
 
 ## Next action
 
-#1, #2, and #3 are done; #4-#5 are still open and independent — pick any or skip entirely, none
-are urgent at this app's scale. **#4 (`get_risk_metrics`'s serial per-holding queries)** is the
-natural next pick: fetch `historical_prices` once with `.in("symbol", ...)` and group by symbol in
-memory (or at minimum wrap the loop in `Promise.all`), no schema changes. **#5 (route-based code
-splitting)** touches every route in `App.tsx` and is the most likely of the two to want a visual
-smoke-test after the change, so it's reasonable to leave for last.
+#1-#4 are all done. **#5 (route-based code splitting)** is the only finding left in this report —
+convert `App.tsx`'s route imports to `React.lazy(() => import(...))` wrapped in a `<Suspense>`
+boundary. It's the one most worth a visual smoke-test after the change (it touches every route),
+but otherwise not urgent at this app's scale — a purely first-paint cost, not a resource-waste
+problem like the others were. Once it's done (or explicitly skipped), this report is fully worked
+through.

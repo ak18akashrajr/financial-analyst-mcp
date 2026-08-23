@@ -225,6 +225,11 @@ function makeQueryBuilder(table: FakeTable) {
       rows = rows.filter((r) => r[col] === val);
       return builder;
     },
+    in: (col: string, vals: unknown[]) => {
+      const set = new Set(vals);
+      rows = rows.filter((r) => set.has(r[col]));
+      return builder;
+    },
     lte: (col: string, val: unknown) => {
       rows = rows.filter((r) => (r[col] as string | number) <= (val as string | number));
       return builder;
@@ -451,5 +456,53 @@ describe("getRiskMetrics", () => {
     expect(result.portfolioBetaVsNifty50).not.toBeNull();
     expect(typeof result.portfolioBetaVsNifty50).toBe("number");
     expect(result.note).not.toContain("not available");
+  });
+
+  it("fetches historical_prices for every holding in a single batched query, not one per holding", async () => {
+    const multiHoldings: Holding[] = [
+      makeHolding({ symbol: "AAPL", currentValue: 1000 }),
+      makeHolding({ symbol: "TCS", currentValue: 2000 }),
+      makeHolding({ symbol: "HDFC", currentValue: 3000 }),
+    ];
+    const multiRows = ["AAPL", "TCS", "HDFC"].flatMap((symbol) =>
+      Array.from({ length: 30 }, (_, i) => ({
+        symbol,
+        date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+        close: 100 + i,
+      })),
+    );
+    const sb = makeFakeSb({ historical_prices: { rows: multiRows }, benchmark_history: { rows: [] } });
+    const fromSpy = vi.fn(sb.from.bind(sb));
+    (sb as any).from = fromSpy;
+
+    await getRiskMetrics(sb, multiHoldings, 30);
+
+    const historicalPriceCalls = fromSpy.mock.calls.filter(([table]) => table === "historical_prices");
+    expect(historicalPriceCalls.length).toBe(1);
+  });
+
+  it("keeps each holding's return series correctly separated after a batched fetch", async () => {
+    const multiHoldings: Holding[] = [
+      makeHolding({ symbol: "AAPL", currentValue: 1000 }),
+      makeHolding({ symbol: "TCS", currentValue: 1000 }),
+    ];
+    // AAPL: flat prices -> zero daily returns -> zero volatility. TCS: an
+    // erratic up/down swing each day -> genuinely varying daily returns, so
+    // its standard deviation (and therefore annualized volatility) is
+    // nonzero — a smooth constant-percentage trend would NOT work here,
+    // since every daily return would be identical and stdDev would still be 0.
+    const tcsCloses = [100, 110, 95, 120, 90, 130, 85, 140, 80, 150];
+    const multiRows = [
+      ...Array.from({ length: 10 }, (_, i) => ({ symbol: "AAPL", date: `2026-01-${String(i + 1).padStart(2, "0")}`, close: 100 })),
+      ...tcsCloses.map((close, i) => ({ symbol: "TCS", date: `2026-01-${String(i + 1).padStart(2, "0")}`, close })),
+    ];
+    const sb = makeFakeSb({ historical_prices: { rows: multiRows }, benchmark_history: { rows: [] } });
+
+    const result = await getRiskMetrics(sb, multiHoldings, 10);
+
+    const aapl = result.perHolding.find((h) => h.symbol === "AAPL")!;
+    const tcs = result.perHolding.find((h) => h.symbol === "TCS")!;
+    expect(aapl.annualizedVolatilityPercent).toBe(0);
+    expect(tcs.annualizedVolatilityPercent).toBeGreaterThan(0);
   });
 });
