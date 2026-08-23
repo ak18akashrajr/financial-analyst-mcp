@@ -697,14 +697,29 @@ export async function getPeriodPerformance(
     if (t.type === "BUY") { buyCount++; buyValue += v; } else { sellCount++; sellValue += v; }
   }
   const netInvested = buyValue - sellValue;
-  const marketGain = endPortfolioValue - startPortfolioValue - netInvested;
-  const marketGainPercent = startPortfolioValue !== 0 ? Number(((marketGain / startPortfolioValue) * 100).toFixed(2)) : null;
+  // NOT subtracted from the headline return below. netInvestedInPeriod is derived purely from the
+  // `transactions` table (stock buys/sells) — it cannot tell "fresh external money deposited this
+  // period" apart from "cash the user already had in liquid/vault, redeployed into stocks", and the
+  // latter is the common case for this app (no separate cash-deposit event is tracked anywhere).
+  // Buying a stock with your own already-tracked cash is a pure reallocation — it doesn't change
+  // startPortfolioValue vs. endPortfolioValue, since both already sum equity + cash. Subtracting
+  // netInvested again here would double-count that reallocation as a phantom loss. This matches how
+  // src/pages/Reports.tsx's own period-over-period figure works — a plain
+  // `endSnap.netWorth - prevSnap.netWorth` delta, with netInvested reported only as an informational
+  // activity line, never subtracted from the return.
+  const totalChange = endPortfolioValue - startPortfolioValue;
+  const totalChangePercent = startPortfolioValue !== 0 ? Number(((totalChange / startPortfolioValue) * 100).toFixed(2)) : null;
 
   const notes: string[] = [
     status === "completed"
       ? "Both start and end values use historical_prices closes on or before their respective dates — a completed period is never re-priced with today's live price."
       : "startPortfolioValue marks holdings at the closest historical_prices close on or before the period start; endPortfolioValue uses today's live prices since this period is still in progress.",
-    "marketGain/marketGainPercent isolates price appreciation only — netInvestedInPeriod (buys minus sells within the period) is subtracted out first, so adding new money doesn't inflate the reported gain.",
+    "totalChange/totalChangePercent is the raw change in startPortfolioValue vs. endPortfolioValue. " +
+      "netInvestedInPeriod (buys minus sells within the period) is reported separately as informational " +
+      "activity, not subtracted from totalChange — buying/selling with cash already tracked in this " +
+      "portfolio is a reallocation, not a change in total value, so subtracting it would double-count " +
+      "that reallocation as a phantom gain/loss. This tool cannot separate 'fresh external money' from " +
+      "'redeployed existing cash' since no such distinction is tracked in the underlying data.",
   ];
   if (missingStartPrice.length > 0) {
     notes.push(`No historical_prices row on or before ${period.start} for ${missingStartPrice.join(", ")} — excluded from startPortfolioValue, not counted as ₹0.`);
@@ -723,8 +738,8 @@ export async function getPeriodPerformance(
     netInvestedInPeriod: Math.round(netInvested),
     buyCount,
     sellCount,
-    marketGain: Math.round(marketGain),
-    marketGainPercent,
+    totalChange: Math.round(totalChange),
+    totalChangePercent,
     note: notes.join(" "),
   };
 }
