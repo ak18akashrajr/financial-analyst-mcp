@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { usePortfolio } from '@/hooks/usePortfolio';
 import { Activity } from 'lucide-react';
+import type { Transaction } from '@/types/portfolio';
 
 type PriceRow = { symbol: string; date: string; close: number };
 
@@ -36,8 +36,14 @@ function colorFor(c: number): string {
   }
 }
 
-export function CorrelationHeatmap() {
-  const { transactions } = usePortfolio();
+/**
+ * Takes `transactions` as a prop from the parent's own usePortfolio() call
+ * instead of calling usePortfolio() again itself — that second call used to
+ * re-fetch transactions/cash_settings/current_prices/symbol_metadata a
+ * second time on every visit to /charts, since usePortfolio isn't backed by
+ * a shared cache/context. See docs/perf-findings.md#2.
+ */
+export function CorrelationHeatmap({ transactions }: { transactions: Transaction[] }) {
   const [rows, setRows] = useState<PriceRow[]>([]);
   const [loading, setLoading] = useState(true);
 
