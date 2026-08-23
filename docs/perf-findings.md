@@ -1,7 +1,7 @@
 # Performance Findings
 
-**Status:** #1 implemented 2026-08-22 (see below); #2-#5 still open, findings only. Written
-2026-08-22, as a follow-up sweep
+**Status:** #1 implemented 2026-08-22, #2 implemented 2026-08-23 (see below); #3-#5 still open,
+findings only. Written 2026-08-22, as a follow-up sweep
 after fixing the `current_prices` write-amplification bug (see
 [scaling-and-archival-plan.md's addendum](scaling-and-archival-plan.md#2026-08-22--implemented-skip-no-op-writes-to-current_prices)):
 once one instance of "writes unconditionally when nothing changed" turned up, it was worth checking
@@ -40,7 +40,7 @@ earlier day never blocks today's first snapshot. The diff/day-comparison logic i
 [`src/test/use-portfolio-net-worth-snapshot.test.tsx`](../src/test/use-portfolio-net-worth-snapshot.test.tsx)
 (hook-level: insert vs. skip vs. a genuinely-changed value even with today's snapshot present).
 
-## 2. `Charts` page fetches the whole portfolio twice — Low
+## 2. `Charts` page fetches the whole portfolio twice — Low — ✅ Implemented 2026-08-23
 
 **Files:** [`src/pages/Charts.tsx:17-24`](../src/pages/Charts.tsx) and
 [`src/components/CorrelationHeatmap.tsx:40`](../src/components/CorrelationHeatmap.tsx).
@@ -53,6 +53,15 @@ time on every visit to `/charts`.
 
 **Fix idea:** have `CorrelationHeatmap` accept `transactions` as a prop from its parent instead of
 calling `usePortfolio()` itself.
+
+**Implemented:** [`CorrelationHeatmap`](../src/components/CorrelationHeatmap.tsx) now takes
+`transactions: Transaction[]` as a prop instead of calling `usePortfolio()` — it no longer imports
+the hook at all. [`Charts.tsx`](../src/pages/Charts.tsx) passes its own `transactions` (from the
+one `usePortfolio()` call it already makes) straight through. The component's own
+`historical_prices` query (finding #3, still open) is unchanged. Covered by
+[`src/test/correlation-heatmap.test.tsx`](../src/test/correlation-heatmap.test.tsx), which asserts
+the component never queries `transactions`/`cash_settings` (failing loudly if it ever did) as well
+as its existing rendering behavior (correlation table vs. not-enough-data message).
 
 ## 3. `CorrelationHeatmap` reads all of `historical_prices`, unfiltered — Low-Medium
 
@@ -125,10 +134,10 @@ skipped entirely; none are urgent at this app's current scale.
 
 ## Next action
 
-#1 is done; #2-#5 are all still open and independent — pick any or skip entirely, none are urgent
-at this app's scale. If continuing down the list, **#2 (`Charts` double-fetch)** is the next
-lowest-effort pick: it's a one-line change (pass `transactions` as a prop into
-`CorrelationHeatmap` instead of having it call `usePortfolio()` itself) with no schema or query
-changes involved. #3 and #4 are similarly small, isolated fixes. #5 (route-based code splitting)
-touches every route in `App.tsx` and is the most likely of the five to want a visual smoke-test
-after the change, so it's a reasonable one to leave for last if picking these off one at a time.
+#1 and #2 are done; #3-#5 are still open and independent — pick any or skip entirely, none are
+urgent at this app's scale. **#3 (`CorrelationHeatmap`'s unfiltered `historical_prices` read)** is
+the natural next pick — it's in the same file #2 just touched, and the fix is a one-line
+`.in('symbol', symbols)` filter mirroring `RollingReturns.tsx`'s existing pattern, no schema
+changes. #4 is similarly small and isolated. #5 (route-based code splitting) touches every route
+in `App.tsx` and is the most likely of the remaining three to want a visual smoke-test after the
+change, so it's a reasonable one to leave for last.

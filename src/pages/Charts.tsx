@@ -79,7 +79,7 @@ const ChartsContent = () => {
 
         {/* Seasonality + Correlation */}
         <SeasonalityHeatmap />
-        <CorrelationHeatmap />
+        <CorrelationHeatmap transactions={transactions} />
       </div>
     </div>
   );
