@@ -487,6 +487,248 @@ export async function compareToBenchmark(
   };
 }
 
+// ── Period (quarter/half/year) performance ──
+//
+// get_portfolio_summary is a point-in-time snapshot with no time dimension —
+// it has no concept of "this quarter". A question naming a time window needs
+// this instead. FY runs Apr-Mar, matching src/lib/periodReports.ts (the
+// Reports page's own period math) — reimplemented here rather than imported
+// because edge functions never import from src/ (different runtime/bundler;
+// see CLAUDE.md's frontend/edge-function boundary). All period boundaries
+// are plain "YYYY-MM-DD" strings, matching the string-date comparisons used
+// everywhere else in this file, rather than JS Date arithmetic subject to
+// timezone drift.
+export type PeriodType = "quarter" | "half" | "year";
+
+export interface FYPeriod {
+  index: number;
+  key: string; // e.g. "FY2026-27-Q2"
+  label: string; // e.g. "Q2 FY2026-27 (Jul-Sep 2026)"
+  start: string; // inclusive, "YYYY-MM-DD"
+  end: string; // exclusive, "YYYY-MM-DD"
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function ymd(y: number, m: number): string {
+  return `${y}-${pad2(m)}-01`; // always the 1st of the month — the only day period boundaries fall on
+}
+
+function fyLabel(fyStartYear: number): string {
+  return `FY${fyStartYear}-${String(fyStartYear + 1).slice(-2)}`;
+}
+
+/** Which FY (by its April start year) a given "YYYY-MM-DD" date falls in. */
+export function fyStartYearFromDate(dateStr: string): number {
+  const [y, m] = dateStr.split("-").map(Number);
+  return m >= 4 ? y : y - 1;
+}
+
+export function buildFYPeriods(fyStartYear: number, type: PeriodType): FYPeriod[] {
+  const fy = fyLabel(fyStartYear);
+  if (type === "quarter") {
+    return [
+      { index: 1, key: `${fy}-Q1`, label: `Q1 ${fy} (Apr-Jun ${fyStartYear})`, start: ymd(fyStartYear, 4), end: ymd(fyStartYear, 7) },
+      { index: 2, key: `${fy}-Q2`, label: `Q2 ${fy} (Jul-Sep ${fyStartYear})`, start: ymd(fyStartYear, 7), end: ymd(fyStartYear, 10) },
+      { index: 3, key: `${fy}-Q3`, label: `Q3 ${fy} (Oct-Dec ${fyStartYear})`, start: ymd(fyStartYear, 10), end: ymd(fyStartYear + 1, 1) },
+      { index: 4, key: `${fy}-Q4`, label: `Q4 ${fy} (Jan-Mar ${fyStartYear + 1})`, start: ymd(fyStartYear + 1, 1), end: ymd(fyStartYear + 1, 4) },
+    ];
+  }
+  if (type === "half") {
+    return [
+      { index: 1, key: `${fy}-H1`, label: `H1 ${fy} (Apr-Sep ${fyStartYear})`, start: ymd(fyStartYear, 4), end: ymd(fyStartYear, 10) },
+      { index: 2, key: `${fy}-H2`, label: `H2 ${fy} (Oct ${fyStartYear}-Mar ${fyStartYear + 1})`, start: ymd(fyStartYear, 10), end: ymd(fyStartYear + 1, 4) },
+    ];
+  }
+  return [{ index: 1, key: `${fy}-FY`, label: `Full Year ${fy}`, start: ymd(fyStartYear, 4), end: ymd(fyStartYear + 1, 4) }];
+}
+
+/**
+ * Resolves which period a caller means: an explicit `periodIndex` within
+ * `fyStartYear` (or the FY containing `todayStr` if omitted), or — when
+ * neither is given — whichever period actually contains today. Falling
+ * outside every period only happens when an explicit past/future
+ * `fyStartYear` is given without a `periodIndex`; in that case this falls
+ * back to the FY's last period (past FY) or first period (future FY) rather
+ * than throwing, since "which quarter of a past year did you mean" has no
+ * single right answer.
+ */
+export function resolveFYPeriod(todayStr: string, periodType: PeriodType, fyStartYear?: number, periodIndex?: number): FYPeriod {
+  const fy = fyStartYear ?? fyStartYearFromDate(todayStr);
+  const periods = buildFYPeriods(fy, periodType);
+  if (periodIndex !== undefined) {
+    const found = periods.find((p) => p.index === periodIndex);
+    if (!found) {
+      throw new Error(`periodIndex must be between 1 and ${periods[periods.length - 1].index} for periodType "${periodType}"`);
+    }
+    return found;
+  }
+  return (
+    periods.find((p) => todayStr >= p.start && todayStr < p.end) ??
+    (todayStr < periods[0].start ? periods[0] : periods[periods.length - 1])
+  );
+}
+
+function dayBefore(dateStr: string): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Most recent historical_prices close on/before `asOf`, per symbol. */
+async function fetchPriceMapAsOf(sb: SupabaseClient, asOf: string): Promise<Record<string, number>> {
+  const { data } = await sb
+    .from("historical_prices")
+    .select("symbol, date, close")
+    .lte("date", asOf)
+    .order("date", { ascending: false });
+  const map: Record<string, number> = {};
+  for (const row of (data || []) as { symbol: string; date: string; close: number }[]) {
+    if (!(row.symbol in map)) map[row.symbol] = Number(row.close); // first hit = most recent <= asOf
+  }
+  return map;
+}
+
+/** Cash/PF/debt as of `asOf`: nearest net_worth_history snapshot at-or-before it, else — only when
+ * `useLiveFallback` — today's live cash, else zeros. Never blends today's cash into a past date. */
+async function fetchCashAsOf(
+  sb: SupabaseClient,
+  asOf: string,
+  liveCash: CashSettings,
+  useLiveFallback: boolean,
+): Promise<{ cash: CashSettings; source: "history" | "live" | "none" }> {
+  const { data } = await sb
+    .from("net_worth_history")
+    .select("recorded_at, liquid_cash, vault_cash, pf_balance, credit_card_debt")
+    .lte("recorded_at", asOf)
+    .order("recorded_at", { ascending: false })
+    .limit(1);
+  const row = (data || [])[0] as Record<string, unknown> | undefined;
+  if (row) {
+    return {
+      cash: {
+        liquid: Number(row.liquid_cash || 0),
+        vault: Number(row.vault_cash || 0),
+        pf: Number(row.pf_balance || 0),
+        creditCardDebt: Number(row.credit_card_debt || 0),
+      },
+      source: "history",
+    };
+  }
+  if (useLiveFallback) return { cash: liveCash, source: "live" };
+  return { cash: { liquid: 0, vault: 0, pf: 0, creditCardDebt: 0 }, source: "none" };
+}
+
+/**
+ * Performance over a specific FY period (quarter/half/year) — as opposed to get_portfolio_summary's
+ * point-in-time snapshot. Marks start-of-period holdings at the closest historical_prices close
+ * on/before the period start (never live), matching src/lib/periodReports.ts's audit rules: a
+ * completed period is marked entirely with historical closes (never today's live price), while an
+ * in-progress period marks its end at live prices. Separates market appreciation from new money by
+ * subtracting netInvestedInPeriod (buys minus sells within the period) from the raw value change.
+ */
+export async function getPeriodPerformance(
+  sb: SupabaseClient,
+  currentHoldings: Holding[],
+  currentCash: CashSettings,
+  periodType: PeriodType = "quarter",
+  fyStartYear?: number,
+  periodIndex?: number,
+  now: Date = new Date(),
+  currentMissingPriceSymbols: string[] = [],
+) {
+  const todayStr = now.toISOString().slice(0, 10);
+  const period = resolveFYPeriod(todayStr, periodType, fyStartYear, periodIndex);
+  const status: "upcoming" | "in-progress" | "completed" =
+    todayStr < period.start ? "upcoming" : todayStr >= period.end ? "completed" : "in-progress";
+
+  const base = {
+    periodType,
+    periodKey: period.key,
+    periodLabel: period.label,
+    periodStart: period.start,
+    periodEnd: period.end,
+    status,
+  };
+
+  if (status === "upcoming") {
+    return { ...base, note: `This ${periodType} hasn't started yet (starts ${period.start}) — no performance to report.` };
+  }
+
+  const useLiveForEnd = status === "in-progress";
+  const endAsOf = useLiveForEnd ? todayStr : dayBefore(period.end);
+
+  const [txns, meta] = await Promise.all([fetchTxns(sb), fetchMetaMap(sb)]);
+  const [startPriceMap, endPriceMap] = await Promise.all([
+    fetchPriceMapAsOf(sb, period.start),
+    useLiveForEnd ? Promise.resolve({}) : fetchPriceMapAsOf(sb, endAsOf),
+  ]);
+
+  const { priced: startHoldings, missingSymbols: missingStartPrice } = splitByPriceAvailability(
+    computeHoldingsFromTxns(txns, startPriceMap, meta, period.start),
+  );
+  let endHoldings: Holding[];
+  let missingEndPrice: string[];
+  if (useLiveForEnd) {
+    endHoldings = currentHoldings; // already live-priced and pre-filtered by getCurrentPortfolio
+    missingEndPrice = currentMissingPriceSymbols;
+  } else {
+    const split = splitByPriceAvailability(computeHoldingsFromTxns(txns, endPriceMap, meta, endAsOf));
+    endHoldings = split.priced;
+    missingEndPrice = split.missingSymbols;
+  }
+
+  const [{ cash: startCash, source: startCashSource }, { cash: endCash }] = await Promise.all([
+    fetchCashAsOf(sb, period.start, currentCash, false),
+    fetchCashAsOf(sb, endAsOf, currentCash, useLiveForEnd),
+  ]);
+
+  const startEquity = startHoldings.reduce((s, h) => s + h.currentValue, 0);
+  const endEquity = endHoldings.reduce((s, h) => s + h.currentValue, 0);
+  const startPortfolioValue = startEquity + startCash.liquid + startCash.vault + startCash.pf - startCash.creditCardDebt;
+  const endPortfolioValue = endEquity + endCash.liquid + endCash.vault + endCash.pf - endCash.creditCardDebt;
+
+  const inPeriod = txns.filter((t) => t.date >= period.start && t.date <= endAsOf);
+  let buyCount = 0, sellCount = 0, buyValue = 0, sellValue = 0;
+  for (const t of inPeriod) {
+    const v = Number(t.quantity) * Number(t.price);
+    if (t.type === "BUY") { buyCount++; buyValue += v; } else { sellCount++; sellValue += v; }
+  }
+  const netInvested = buyValue - sellValue;
+  const marketGain = endPortfolioValue - startPortfolioValue - netInvested;
+  const marketGainPercent = startPortfolioValue !== 0 ? Number(((marketGain / startPortfolioValue) * 100).toFixed(2)) : null;
+
+  const notes: string[] = [
+    status === "completed"
+      ? "Both start and end values use historical_prices closes on or before their respective dates — a completed period is never re-priced with today's live price."
+      : "startPortfolioValue marks holdings at the closest historical_prices close on or before the period start; endPortfolioValue uses today's live prices since this period is still in progress.",
+    "marketGain/marketGainPercent isolates price appreciation only — netInvestedInPeriod (buys minus sells within the period) is subtracted out first, so adding new money doesn't inflate the reported gain.",
+  ];
+  if (missingStartPrice.length > 0) {
+    notes.push(`No historical_prices row on or before ${period.start} for ${missingStartPrice.join(", ")} — excluded from startPortfolioValue, not counted as ₹0.`);
+  }
+  if (missingEndPrice.length > 0) {
+    notes.push(`No price available as of ${endAsOf} for ${missingEndPrice.join(", ")} — excluded from endPortfolioValue, not counted as ₹0.`);
+  }
+  if (startCashSource === "none") {
+    notes.push("No net_worth_history snapshot on or before the period start — start-of-period cash/PF/credit-card-debt assumed ₹0 rather than today's live values.");
+  }
+
+  return {
+    ...base,
+    startPortfolioValue: Math.round(startPortfolioValue),
+    endPortfolioValue: Math.round(endPortfolioValue),
+    netInvestedInPeriod: Math.round(netInvested),
+    buyCount,
+    sellCount,
+    marketGain: Math.round(marketGain),
+    marketGainPercent,
+    note: notes.join(" "),
+  };
+}
+
 /** Compares current geography/category exposure % vs. exposure % as of `asOfDate`. */
 export async function getExposureDrift(sb: SupabaseClient, asOfDate: string) {
   const [txns, prices, meta] = await Promise.all([fetchTxns(sb), fetchCurrentPriceMap(sb), fetchMetaMap(sb)]);

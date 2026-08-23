@@ -17,9 +17,11 @@ import {
   exposureBy,
   getCurrentPortfolio,
   getExposureDrift,
+  getPeriodPerformance,
   getRiskMetrics,
   runStressTest,
   type Holding,
+  type PeriodType,
 } from "./portfolio-data.ts";
 
 /** Rounds a holding's monetary fields to whole rupees and rates/percentages to
@@ -259,6 +261,55 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       const benchmarkSymbol = typeof args.benchmarkSymbol === "string" ? args.benchmarkSymbol : "NIFTY50";
       const days = typeof args.days === "number" ? args.days : 90;
       return compareToBenchmark(sb, p.holdings, benchmarkSymbol, days);
+    },
+  },
+  {
+    name: "get_period_performance",
+    description:
+      "Performance over a financial-year period — quarter, half, or full year (FY runs Apr-Mar) — " +
+      "as opposed to get_portfolio_summary's point-in-time snapshot which has no time dimension at " +
+      "all. Use this whenever the question names a time window (\"this quarter\", \"Q2 performance\", " +
+      "\"this half\", \"this FY\") — never answer a period-scoped question with get_portfolio_summary's " +
+      "all-time totals relabeled as if they were for that period. Returns startPortfolioValue (marked " +
+      "at the closest historical close on or before the period start), endPortfolioValue (today's live " +
+      "price if the period is still in progress, or the closest historical close on/before period end " +
+      "once it has completed), netInvestedInPeriod (buys minus sells within the period), and " +
+      "marketGain/marketGainPercent, which isolates price appreciation from new money added or " +
+      "withdrawn during the period — use marketGain, not the raw endPortfolioValue-startPortfolioValue " +
+      "difference, when asked for \"performance\" or \"return\". Defaults to the quarter containing " +
+      "today if no arguments are given. Does not support month-level granularity — say so if asked " +
+      "for a specific month.",
+    complexity: "complex",
+    inputSchema: {
+      type: "object",
+      properties: {
+        periodType: {
+          type: "string",
+          enum: ["quarter", "half", "year"],
+          description: "Period granularity (default \"quarter\")",
+        },
+        fyStartYear: {
+          type: "number",
+          minimum: 2000,
+          description: "FY start year, e.g. 2026 for FY2026-27 (default: the FY containing today)",
+        },
+        periodIndex: {
+          type: "number",
+          minimum: 1,
+          description:
+            "Which period within that FY/type: 1-4 for quarter, 1-2 for half, 1 for year " +
+            "(default: the period containing today)",
+        },
+      },
+      additionalProperties: false,
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+    handler: async (args, sb) => {
+      const p = await getCurrentPortfolio(sb);
+      const periodType = (typeof args.periodType === "string" ? args.periodType : "quarter") as PeriodType;
+      const fyStartYear = typeof args.fyStartYear === "number" ? args.fyStartYear : undefined;
+      const periodIndex = typeof args.periodIndex === "number" ? args.periodIndex : undefined;
+      return getPeriodPerformance(sb, p.holdings, p.cash, periodType, fyStartYear, periodIndex, new Date(), p.missingPriceSymbols);
     },
   },
   {
