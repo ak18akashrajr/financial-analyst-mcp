@@ -55,14 +55,27 @@ export function CorrelationHeatmap({ transactions }: { transactions: Transaction
   useEffect(() => {
     (async () => {
       setLoading(true);
+      // Scoped to this portfolio's own symbols — mirrors RollingReturns.tsx's
+      // query. Without `.in('symbol', symbols)` this pulled every row for
+      // every symbol ever fetched anywhere in the app, not just the ones
+      // this heatmap actually renders. See docs/perf-findings.md#3.
+      if (symbols.length === 0) {
+        setRows([]);
+        setLoading(false);
+        return;
+      }
       const { data } = await supabase
         .from('historical_prices')
         .select('symbol,date,close')
+        .in('symbol', symbols)
         .order('date', { ascending: true });
       setRows((data as any[] | null)?.map(r => ({ symbol: r.symbol, date: r.date, close: Number(r.close) })) ?? []);
       setLoading(false);
     })();
-  }, []);
+    // `symbols` is now a real dependency — the query is scoped to it, so a
+    // change in the portfolio's symbol set (e.g. a new holding) should
+    // re-fetch rather than silently keep showing the old symbol set's data.
+  }, [symbols]);
 
   const { matrix, cellSymbols } = useMemo(() => {
     // Build daily returns per symbol

@@ -1,7 +1,7 @@
 # Performance Findings
 
-**Status:** #1 implemented 2026-08-22, #2 implemented 2026-08-23 (see below); #3-#5 still open,
-findings only. Written 2026-08-22, as a follow-up sweep
+**Status:** #1 and #2 implemented 2026-08-22/23, #3 implemented 2026-08-23 (see below); #4-#5 still
+open, findings only. Written 2026-08-22, as a follow-up sweep
 after fixing the `current_prices` write-amplification bug (see
 [scaling-and-archival-plan.md's addendum](scaling-and-archival-plan.md#2026-08-22--implemented-skip-no-op-writes-to-current_prices)):
 once one instance of "writes unconditionally when nothing changed" turned up, it was worth checking
@@ -63,7 +63,7 @@ one `usePortfolio()` call it already makes) straight through. The component's ow
 the component never queries `transactions`/`cash_settings` (failing loudly if it ever did) as well
 as its existing rendering behavior (correlation table vs. not-enough-data message).
 
-## 3. `CorrelationHeatmap` reads all of `historical_prices`, unfiltered — Low-Medium
+## 3. `CorrelationHeatmap` reads all of `historical_prices`, unfiltered — Low-Medium — ✅ Implemented 2026-08-23
 
 **File:** [`src/components/CorrelationHeatmap.tsx:51-54`](../src/components/CorrelationHeatmap.tsx).
 
@@ -78,6 +78,15 @@ table is still small), but it's the one client-side full-table read on `historic
 already covered in the scaling plan, and it'll grow with tracked-symbol count.
 
 **Fix idea:** add `.in('symbol', symbols)`, mirroring `RollingReturns.tsx`.
+
+**Implemented:** [`CorrelationHeatmap`](../src/components/CorrelationHeatmap.tsx) now adds
+`.in('symbol', symbols)` before `.order(...)`, and skips the query entirely (no round trip at all)
+when there are no symbols yet. The effect's dependency array also now includes `symbols` (it was
+`[]` before, which was already a latent staleness bug given the query used to be unfiltered
+anyway) so a genuine change in the portfolio's symbol set re-fetches instead of silently keeping
+stale data. Covered by [`src/test/correlation-heatmap.test.tsx`](../src/test/correlation-heatmap.test.tsx),
+which asserts the `.in()` call receives exactly the portfolio's own (deduped, sorted) symbols, and
+that no query happens at all for an empty portfolio.
 
 ## 4. `get_risk_metrics` queries `historical_prices` once per holding, sequentially — Low
 
@@ -134,10 +143,9 @@ skipped entirely; none are urgent at this app's current scale.
 
 ## Next action
 
-#1 and #2 are done; #3-#5 are still open and independent — pick any or skip entirely, none are
-urgent at this app's scale. **#3 (`CorrelationHeatmap`'s unfiltered `historical_prices` read)** is
-the natural next pick — it's in the same file #2 just touched, and the fix is a one-line
-`.in('symbol', symbols)` filter mirroring `RollingReturns.tsx`'s existing pattern, no schema
-changes. #4 is similarly small and isolated. #5 (route-based code splitting) touches every route
-in `App.tsx` and is the most likely of the remaining three to want a visual smoke-test after the
-change, so it's a reasonable one to leave for last.
+#1, #2, and #3 are done; #4-#5 are still open and independent — pick any or skip entirely, none
+are urgent at this app's scale. **#4 (`get_risk_metrics`'s serial per-holding queries)** is the
+natural next pick: fetch `historical_prices` once with `.in("symbol", ...)` and group by symbol in
+memory (or at minimum wrap the loop in `Promise.all`), no schema changes. **#5 (route-based code
+splitting)** touches every route in `App.tsx` and is the most likely of the two to want a visual
+smoke-test after the change, so it's reasonable to leave for last.
