@@ -1,28 +1,45 @@
+import { lazy, Suspense } from "react";
 import { Analytics } from "@vercel/analytics/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Index from "./pages/Index.tsx";
-import Taxes from "./pages/Taxes.tsx";
-import Charts from "./pages/Charts.tsx";
-import Projections from "./pages/Projections.tsx";
-import DeploymentPlan from "./pages/DeploymentPlan.tsx";
-import PortfolioAI from "./pages/PortfolioAI.tsx";
-import GoalTrack from "./pages/GoalTrack.tsx";
-import Updates from "./pages/Updates.tsx";
-import RollingReturns from "./pages/RollingReturns.tsx";
-import Reports from "./pages/Reports.tsx";
-import DollarAdjustedReturns from "./pages/DollarAdjustedReturns.tsx";
-import Benchmark from "./pages/Benchmark.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import { SideNav } from "@/components/SideNav";
 import { MobileTopNav } from "@/components/MobileTopNav";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
+// Lazy — several of these (Charts, Projections, RollingReturns, Benchmark,
+// GoalTrack via GoalProjection) pull in recharts, so eagerly importing all
+// 12 pages here shipped every page's code and the charting library in one
+// bundle even though most visits only ever touch one page. NotFound stays a
+// regular import: it's tiny, has no heavy deps, and is the catch-all route
+// most likely to render immediately. See docs/perf-findings.md#5.
+const Index = lazy(() => import("./pages/Index.tsx"));
+const Taxes = lazy(() => import("./pages/Taxes.tsx"));
+const Charts = lazy(() => import("./pages/Charts.tsx"));
+const Projections = lazy(() => import("./pages/Projections.tsx"));
+const DeploymentPlan = lazy(() => import("./pages/DeploymentPlan.tsx"));
+const PortfolioAI = lazy(() => import("./pages/PortfolioAI.tsx"));
+const GoalTrack = lazy(() => import("./pages/GoalTrack.tsx"));
+const Updates = lazy(() => import("./pages/Updates.tsx"));
+const RollingReturns = lazy(() => import("./pages/RollingReturns.tsx"));
+const Reports = lazy(() => import("./pages/Reports.tsx"));
+const DollarAdjustedReturns = lazy(() => import("./pages/DollarAdjustedReturns.tsx"));
+const Benchmark = lazy(() => import("./pages/Benchmark.tsx"));
+
 const queryClient = new QueryClient();
+
+// Same loading style as ProtectedRoute's own auth-resolving state, so a
+// lazy chunk load and an auth check look like the same kind of pause to the
+// user rather than two different loading UIs.
+const RouteFallback = () => (
+  <div className="min-h-screen bg-background flex items-center justify-center">
+    <p className="text-sm text-muted-foreground">Loading...</p>
+  </div>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -35,27 +52,29 @@ const App = () => (
           <SideNav />
           <MobileTopNav />
           <div className="md:pl-[calc(var(--sidenav-w,16rem)+1.25rem)] transition-[padding] duration-300 ease-out">
-            <Routes>
-              {/* Single centralized auth gate — every route below requires a real
-                  Supabase Auth session. Adding a new page here automatically
-                  inherits protection; nothing extra to remember per-page. */}
-              <Route element={<ProtectedRoute />}>
-                <Route path="/" element={<Index />} />
-                <Route path="/taxes" element={<Taxes />} />
-                <Route path="/charts" element={<Charts />} />
-                <Route path="/projections" element={<Projections />} />
-                <Route path="/deployment-plan" element={<DeploymentPlan />} />
-                <Route path="/ai" element={<PortfolioAI />} />
-                <Route path="/goal-track" element={<GoalTrack />} />
-                <Route path="/updates" element={<Updates />} />
-                <Route path="/rolling-returns" element={<RollingReturns />} />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
-                <Route path="/benchmark" element={<Benchmark />} />
-              </Route>
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
+                {/* Single centralized auth gate — every route below requires a real
+                    Supabase Auth session. Adding a new page here automatically
+                    inherits protection; nothing extra to remember per-page. */}
+                <Route element={<ProtectedRoute />}>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/taxes" element={<Taxes />} />
+                  <Route path="/charts" element={<Charts />} />
+                  <Route path="/projections" element={<Projections />} />
+                  <Route path="/deployment-plan" element={<DeploymentPlan />} />
+                  <Route path="/ai" element={<PortfolioAI />} />
+                  <Route path="/goal-track" element={<GoalTrack />} />
+                  <Route path="/updates" element={<Updates />} />
+                  <Route path="/rolling-returns" element={<RollingReturns />} />
+                  <Route path="/reports" element={<Reports />} />
+                  <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
+                  <Route path="/benchmark" element={<Benchmark />} />
+                </Route>
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
           </div>
         </BrowserRouter>
       </TooltipProvider>
