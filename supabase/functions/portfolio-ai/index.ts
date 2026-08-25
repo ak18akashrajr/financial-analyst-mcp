@@ -12,6 +12,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 import { requireUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit } from "../_shared/rate-limit.ts";
+import { mapWithConcurrency } from "../_shared/concurrency.ts";
 import { McpClient } from "../_shared/mcp-client.ts";
 import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, isComplexQuery, shouldEscalate } from "../_shared/router.ts";
 import { findTool } from "../_shared/mcp-tools.ts";
@@ -30,6 +31,13 @@ const corsHeaders = buildCorsHeaders(
 
 const CLAUDE_MODEL = "claude-sonnet-5";
 const MAX_TOOL_TURNS = 5;
+// A single turn can request several independent tool calls at once (e.g. a
+// "what's my exposure and my risk metrics" question). They're independent
+// network round trips to the same portfolio-mcp-server, so running them
+// serially wastes wall-clock time for no benefit — but running an unbounded
+// number of them at once would burst against that server's own Postgres
+// connections. This caps how many run concurrently per turn.
+const MAX_CONCURRENT_TOOL_CALLS = 3;
 
 /** Thrown for expected, safe-to-show request validation problems (e.g. a
  * malformed body) — distinct from unexpected/internal errors (provider
@@ -216,21 +224,29 @@ Deno.serve(async (req: Request) => {
             }
           }
 
-          const toolResults: ToolResultForProvider[] = [];
+          // Announce every call this turn wants before any of them run, so
+          // the client sees the full set immediately rather than one at a
+          // time as a bounded worker pool gets around to starting each.
           for (const call of result.calls) {
             send("tool_call", { name: call.name, args: call.arguments });
-            try {
-              const toolResult = await mcpClient.callTool(call.name, call.arguments, user.id);
-              toolResults.push({ id: call.id, name: call.name, result: toolResult });
-            } catch (err) {
-              logger.error("Tool call failed", { tool: call.name, error: err });
-              toolResults.push({
-                id: call.id,
-                name: call.name,
-                result: { error: err instanceof Error ? err.message : "Tool call failed" },
-              });
-            }
           }
+          const toolResults: ToolResultForProvider[] = await mapWithConcurrency(
+            result.calls,
+            MAX_CONCURRENT_TOOL_CALLS,
+            async (call) => {
+              try {
+                const toolResult = await mcpClient.callTool(call.name, call.arguments, user.id);
+                return { id: call.id, name: call.name, result: toolResult };
+              } catch (err) {
+                logger.error("Tool call failed", { tool: call.name, error: err });
+                return {
+                  id: call.id,
+                  name: call.name,
+                  result: { error: err instanceof Error ? err.message : "Tool call failed" },
+                };
+              }
+            },
+          );
           provider.appendToolResults(toolResults);
 
           if (turn === MAX_TOOL_TURNS - 1) {
