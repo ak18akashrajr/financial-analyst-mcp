@@ -19,6 +19,7 @@ import {
   getExposureDrift,
   getPeriodPerformance,
   getRiskMetrics,
+  listTransactions,
   runStressTest,
   type Holding,
   type PeriodType,
@@ -124,6 +125,36 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
         holdings: p.holdings.map(roundHolding),
         ...missingPriceFields(p.missingPriceSymbols, "omitted from this list"),
       };
+    },
+  },
+  {
+    name: "list_transactions",
+    description:
+      "Itemized buy/sell transaction history within a date range — one row per trade (symbol, type, " +
+      "quantity, price, date, value) — as opposed to list_holdings' aggregated per-symbol positions or " +
+      "get_period_performance's buyCount/sellCount-only summary. Use this for \"what did I buy/sell " +
+      "this month\", \"list my trades in January\", or \"show me every TCS transaction\" — questions " +
+      "that need the individual trades, not a rolled-up total. The transactions table lives in this " +
+      "app's own Supabase database (not a brokerage), so this data is genuinely available — never " +
+      "decline a transaction-history question by claiming no access to it. Defaults to the current " +
+      "calendar month (1st through today) if no startDate/endDate is given, since get_period_performance " +
+      "only supports FY quarter/half/year granularity, not calendar months.",
+    complexity: "simple",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", minLength: 1, description: "Optional: only this symbol's transactions" },
+        startDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Inclusive start date, format YYYY-MM-DD (default: 1st of the current calendar month)" },
+        endDate: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Inclusive end date, format YYYY-MM-DD (default: today)" },
+      },
+      additionalProperties: false,
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+    handler: async (args, sb) => {
+      const symbol = typeof args.symbol === "string" ? args.symbol : undefined;
+      const startDate = typeof args.startDate === "string" ? args.startDate : undefined;
+      const endDate = typeof args.endDate === "string" ? args.endDate : undefined;
+      return listTransactions(sb, symbol, startDate, endDate);
     },
   },
   {

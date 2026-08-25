@@ -130,6 +130,27 @@ describe("list_holdings", () => {
   });
 });
 
+describe("list_transactions", () => {
+  it("routes args through and returns itemized trades for an explicit date range", async () => {
+    const sb = makeFakeSb({
+      transactions: {
+        rows: [
+          { symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-01-05" },
+          { symbol: "HDFC", type: "BUY", quantity: 3, price: 200, date: "2026-01-10" },
+          { symbol: "TCS", type: "SELL", quantity: 4, price: 120, date: "2026-02-01" }, // out of range
+        ],
+      },
+    });
+    const result = (await findTool("list_transactions")!.handler(
+      { startDate: "2026-01-01", endDate: "2026-01-31" },
+      sb,
+    )) as { transactions: Array<{ symbol: string }>; buyCount: number; sellCount: number };
+    expect(result.transactions.map((t) => t.symbol)).toEqual(["TCS", "HDFC"]);
+    expect(result.buyCount).toBe(2);
+    expect(result.sellCount).toBe(0);
+  });
+});
+
 describe("get_period_performance", () => {
   it("routes args through to getPeriodPerformance and marks a completed period with historical closes", async () => {
     // FY2020-21 Q4 (Jan-Mar 2021) is guaranteed to be "completed" regardless of

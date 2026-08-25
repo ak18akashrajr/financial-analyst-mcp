@@ -13,6 +13,7 @@ import {
   getExposureDrift,
   getPeriodPerformance,
   getRiskMetrics,
+  listTransactions,
   resolveFYPeriod,
   runStressTest,
   splitByPriceAvailability,
@@ -678,5 +679,52 @@ describe("getPeriodPerformance", () => {
     expect(result.startPortfolioValue).toBe(0); // TCS excluded, not counted at ₹0 loss
     expect(result.note).toContain("TCS");
     expect(result.note).toContain("excluded from startPortfolioValue");
+  });
+});
+
+describe("listTransactions", () => {
+  const txns = {
+    rows: [
+      { symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-06-15" }, // before the month
+      { symbol: "TCS", type: "BUY", quantity: 5, price: 150, date: "2026-08-05" },
+      { symbol: "HDFC", type: "BUY", quantity: 3, price: 200.333, date: "2026-08-10" },
+      { symbol: "TCS", type: "SELL", quantity: 2, price: 160, date: "2026-08-15" },
+      { symbol: "TCS", type: "BUY", quantity: 1, price: 170, date: "2026-09-01" }, // after the month
+    ],
+  };
+
+  it("defaults to the current calendar month and totals buys/sells correctly", async () => {
+    const sb = makeFakeSb({ transactions: txns });
+    const result = await listTransactions(sb, undefined, undefined, undefined, new Date("2026-08-23T00:00:00Z"));
+    expect(result.startDate).toBe("2026-08-01");
+    expect(result.endDate).toBe("2026-08-23");
+    expect(result.transactions.map((t) => `${t.symbol}-${t.type}-${t.date}`)).toEqual([
+      "TCS-BUY-2026-08-05",
+      "HDFC-BUY-2026-08-10",
+      "TCS-SELL-2026-08-15",
+    ]);
+    expect(result.buyCount).toBe(2);
+    expect(result.sellCount).toBe(1);
+    expect(result.buyValue).toBe(Math.round(5 * 150 + 3 * 200.333)); // 750 + 600.999 -> 1351
+    expect(result.sellValue).toBe(2 * 160);
+    expect(result.netInvested).toBe(result.buyValue - result.sellValue);
+    // Each transaction carries its own per-trade value, rounded to whole rupees.
+    const tcsBuy = result.transactions.find((t) => t.date === "2026-08-05")!;
+    expect(tcsBuy.value).toBe(750);
+  });
+
+  it("filters to a single symbol when `symbol` is passed", async () => {
+    const sb = makeFakeSb({ transactions: txns });
+    const result = await listTransactions(sb, "HDFC", undefined, undefined, new Date("2026-08-23T00:00:00Z"));
+    expect(result.symbol).toBe("HDFC");
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0].symbol).toBe("HDFC");
+  });
+
+  it("honors an explicit startDate/endDate range instead of defaulting to the current month", async () => {
+    const sb = makeFakeSb({ transactions: txns });
+    const result = await listTransactions(sb, undefined, "2026-06-01", "2026-06-30", new Date("2026-08-23T00:00:00Z"));
+    expect(result.transactions).toHaveLength(1);
+    expect(result.transactions[0].date).toBe("2026-06-15");
   });
 });

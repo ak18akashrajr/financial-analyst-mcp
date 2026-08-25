@@ -111,6 +111,69 @@ export async function fetchTxns(sb: SupabaseClient): Promise<Txn[]> {
   return (data || []) as Txn[];
 }
 
+export interface TransactionActivity {
+  startDate: string;
+  endDate: string;
+  symbol?: string;
+  transactions: Array<{ symbol: string; type: "BUY" | "SELL"; quantity: number; price: number; date: string; value: number }>;
+  buyCount: number;
+  sellCount: number;
+  buyValue: number;
+  sellValue: number;
+  netInvested: number;
+}
+
+/**
+ * Itemized buy/sell activity within a date range — as opposed to list_holdings' aggregated
+ * per-symbol positions or get_period_performance's buyCount/sellCount-only summary. Defaults to the
+ * current calendar month (1st through today) when no explicit range is given, since
+ * get_period_performance only supports FY quarter/half/year granularity and "this month" needs
+ * something else. `startDate`/`endDate` are both inclusive "YYYY-MM-DD" strings, matching the
+ * string-date comparisons used everywhere else in this file.
+ */
+export async function listTransactions(
+  sb: SupabaseClient,
+  symbol?: string,
+  startDate?: string,
+  endDate?: string,
+  now: Date = new Date(),
+): Promise<TransactionActivity> {
+  const todayStr = now.toISOString().slice(0, 10);
+  const effectiveEnd = endDate ?? todayStr;
+  const effectiveStart = startDate ?? `${effectiveEnd.slice(0, 7)}-01`; // 1st of endDate's calendar month
+
+  const txns = await fetchTxns(sb);
+  const inRange = txns
+    .filter((t) => t.date >= effectiveStart && t.date <= effectiveEnd)
+    .filter((t) => !symbol || t.symbol === symbol);
+
+  let buyCount = 0, sellCount = 0, buyValue = 0, sellValue = 0;
+  const transactions = inRange.map((t) => {
+    const value = Number(t.quantity) * Number(t.price);
+    if (t.type === "BUY") { buyCount++; buyValue += value; } else { sellCount++; sellValue += value; }
+    return {
+      symbol: t.symbol,
+      type: t.type,
+      quantity: Number(t.quantity),
+      price: Number(Number(t.price).toFixed(2)),
+      date: t.date,
+      value: Math.round(value),
+    };
+  });
+
+  return {
+    startDate: effectiveStart,
+    endDate: effectiveEnd,
+    ...(symbol ? { symbol } : {}),
+    transactions,
+    buyCount,
+    sellCount,
+    buyValue: Math.round(buyValue),
+    sellValue: Math.round(sellValue),
+    netInvested: Math.round(buyValue - sellValue),
+  };
+}
+
 export async function fetchCurrentPriceMap(sb: SupabaseClient): Promise<Record<string, number>> {
   const { data } = await sb.from("current_prices").select("*");
   const map: Record<string, number> = {};
