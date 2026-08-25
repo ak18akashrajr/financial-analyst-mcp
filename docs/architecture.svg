@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 1180 760" xmlns="http://www.w3.org/2000/svg" role="img"
-     aria-label="Portfolio AI architecture: the chat UI sends a request through Supabase Edge auth and rate limiting to the portfolio-ai coordinator agent, which for Groq picks a model via keyword routing, calls MCP tools over JSON-RPC against portfolio-mcp-server, which runs SQL against Postgres under RLS, and streams a token response back over SSE. Dashboard pages instead query Postgres directly via usePortfolio, bypassing the agent and MCP hop.">
+<svg viewBox="0 0 1180 1220" xmlns="http://www.w3.org/2000/svg" role="img"
+     aria-label="Portfolio AI architecture: the chat UI sends a request through Supabase Edge auth and rate limiting to the portfolio-ai coordinator agent, which for Groq picks a model via keyword routing or switches to Claude Sonnet 5 entirely once an Anthropic key is set, calls MCP tools over JSON-RPC against portfolio-mcp-server, which runs SQL against Postgres under RLS, and streams a token response back over SSE. Dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop. Below, a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX rates and fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX) into the same Postgres tables.">
   <style>
     text { font-family: 'IBM Plex Sans', 'Segoe UI', ui-sans-serif, system-ui, sans-serif; }
     .mono { font-family: 'IBM Plex Mono', 'Cascadia Code', ui-monospace, Consolas, monospace; }
@@ -17,30 +17,36 @@
     </marker>
   </defs>
 
-  <rect x="0" y="0" width="1180" height="760" fill="#101113"/>
+  <rect x="0" y="0" width="1180" height="1220" fill="#101113"/>
 
-  <!-- ================= EDGES ================= -->
+  <!-- ================= APP-LAYER EDGES ================= -->
   <g stroke="#c9c8c0" stroke-width="1.3" fill="none" opacity="0.8">
     <line x1="150" y1="78" x2="150" y2="118" marker-end="url(#arrow)"/>
     <line x1="185" y1="148" x2="330" y2="148" marker-end="url(#arrow)"/>
     <line x1="150" y1="178" x2="150" y2="212" marker-end="url(#arrow)"/>
-    <line x1="150" y1="252" x2="150" y2="296" marker-end="url(#arrow)"/>
-    <line x1="255" y1="330" x2="330" y2="330" marker-end="url(#arrow)"/>
-    <line x1="440" y1="330" x2="560" y2="330" marker-end="url(#arrow)"/>
-    <line x1="150" y1="356" x2="150" y2="400" marker-end="url(#arrow)"/>
-    <line x1="180" y1="384" x2="330" y2="440" marker-end="url(#arrow)"/>
-    <line x1="425" y1="452" x2="560" y2="452" marker-end="url(#arrow)"/>
-    <line x1="655" y1="480" x2="655" y2="520" marker-end="url(#arrow)"/>
-    <line x1="655" y1="560" x2="655" y2="600" marker-end="url(#arrow)"/>
-    <line x1="655" y1="634" x2="655" y2="670" marker-end="url(#arrow)"/>
-    <line x1="330" y1="468" x2="185" y2="392" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
-    <line x1="560" y1="345" x2="256" y2="322" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
-    <line x1="120" y1="330" x2="60" y2="330" marker-end="url(#arrow)"/>
-    <line x1="60" y1="330" x2="60" y2="60" marker-end="none"/>
+    <line x1="150" y1="252" x2="150" y2="284" marker-end="url(#arrow)"/>
+    <line x1="255" y1="322" x2="330" y2="322" marker-end="url(#arrow)"/>
+    <line x1="440" y1="322" x2="560" y2="322" marker-end="url(#arrow)"/>
+    <line x1="180" y1="376" x2="330" y2="432" marker-end="url(#arrow)"/>
+    <line x1="425" y1="446" x2="560" y2="446" marker-end="url(#arrow)"/>
+    <line x1="655" y1="474" x2="655" y2="500" marker-end="url(#arrow)"/>
+    <line x1="655" y1="700" x2="655" y2="736" marker-end="url(#arrow)"/>
+    <line x1="655" y1="770" x2="655" y2="806" marker-end="url(#arrow)"/>
+    <line x1="330" y1="460" x2="185" y2="380" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+    <line x1="560" y1="337" x2="256" y2="314" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+    <line x1="120" y1="322" x2="60" y2="322" marker-end="url(#arrow)"/>
+    <line x1="60" y1="322" x2="60" y2="60" marker-end="none"/>
     <line x1="60" y1="60" x2="115" y2="52" marker-end="url(#arrow)"/>
   </g>
 
-  <!-- ================= NODES ================= -->
+  <!-- Logger cross-cutting connectors (dashed, outside the agentic zone) -->
+  <g stroke="#5c96d6" stroke-width="1.1" fill="none" opacity="0.55" stroke-dasharray="2 3">
+    <path d="M 150 178 C 40 260, 40 400, 90 425" marker-end="url(#arrow)"/>
+    <path d="M 150 252 C 60 300, 60 400, 90 435" marker-end="url(#arrow)"/>
+    <path d="M 167 382 C 167 410, 167 415, 210 425" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- ================= APP-LAYER NODES ================= -->
 
   <g>
     <rect class="box" x="90" y="24" width="120" height="54" rx="6" fill="#182c42" stroke="#5c96d6"/>
@@ -67,74 +73,95 @@
     <text class="mono sub" x="150" y="244" text-anchor="middle" fill="#a9cdf2">rate-limit.ts</text>
   </g>
 
-  <rect x="70" y="285" width="560" height="130" rx="10" fill="none" stroke="#4fae76" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.55"/>
-  <text class="mono group" x="80" y="278">Agent loop (agentic zone)</text>
+  <!-- Agentic zone, shrunk to only enclose what's actually in the agent loop -->
+  <rect x="70" y="277" width="560" height="112" rx="10" fill="none" stroke="#4fae76" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.55"/>
+  <text class="mono group" x="80" y="270">Agent loop (agentic zone)</text>
 
   <g>
-    <rect class="box" x="80" y="296" width="175" height="60" rx="6" fill="#173323" stroke="#4fae76"/>
-    <text class="label" x="167" y="320" text-anchor="middle" fill="#8fd8ab">Coordinator agent</text>
-    <text class="mono sub" x="167" y="336" text-anchor="middle" fill="#8fd8ab">portfolio-ai/index.ts</text>
-    <text class="mono sub" x="167" y="349" text-anchor="middle" fill="#8fd8ab">tool-call loop, bounded concurrency</text>
+    <rect class="box" x="80" y="288" width="175" height="60" rx="6" fill="#173323" stroke="#4fae76"/>
+    <text class="label" x="167" y="312" text-anchor="middle" fill="#8fd8ab">Coordinator agent</text>
+    <text class="mono sub" x="167" y="328" text-anchor="middle" fill="#8fd8ab">portfolio-ai/index.ts</text>
+    <text class="mono sub" x="167" y="341" text-anchor="middle" fill="#8fd8ab">tool-call loop, bounded concurrency</text>
   </g>
 
   <g>
-    <rect class="box" x="330" y="300" width="110" height="60" rx="6" fill="#173323" stroke="#4fae76"/>
-    <text class="label" x="385" y="322" text-anchor="middle" fill="#8fd8ab">Router</text>
-    <text class="mono sub" x="385" y="337" text-anchor="middle" fill="#8fd8ab">router.ts</text>
-    <text class="mono sub" x="385" y="349" text-anchor="middle" fill="#8fd8ab">keyword-routed, Groq only</text>
+    <rect class="box" x="330" y="292" width="110" height="60" rx="6" fill="#173323" stroke="#4fae76"/>
+    <text class="label" x="385" y="314" text-anchor="middle" fill="#8fd8ab">Router</text>
+    <text class="mono sub" x="385" y="329" text-anchor="middle" fill="#8fd8ab">router.ts</text>
+    <text class="mono sub" x="385" y="341" text-anchor="middle" fill="#8fd8ab">keyword-routed, Groq only</text>
   </g>
 
   <g>
-    <rect class="box" x="560" y="296" width="200" height="70" rx="6" fill="#3a2e13" stroke="#d1a447"/>
-    <text class="label" x="660" y="316" text-anchor="middle" fill="#eccd8a">LLM providers</text>
-    <line x1="660" y1="323" x2="660" y2="358" stroke="#d1a447" stroke-width="1" opacity="0.5"/>
-    <text class="mono sub" x="610" y="336" text-anchor="middle" fill="#eccd8a">Groq</text>
-    <text class="mono sub" x="610" y="349" text-anchor="middle" fill="#eccd8a">gpt-oss-20b/120b</text>
-    <text class="mono sub" x="610" y="360" text-anchor="middle" fill="#eccd8a">default</text>
-    <text class="mono sub" x="710" y="336" text-anchor="middle" fill="#eccd8a">Anthropic</text>
-    <text class="mono sub" x="710" y="349" text-anchor="middle" fill="#eccd8a">Claude Sonnet 5</text>
-    <text class="mono sub" x="710" y="360" text-anchor="middle" fill="#eccd8a">if key set</text>
+    <rect class="box" x="560" y="288" width="200" height="70" rx="6" fill="#3a2e13" stroke="#d1a447"/>
+    <text class="label" x="660" y="308" text-anchor="middle" fill="#eccd8a">LLM providers</text>
+    <line x1="660" y1="315" x2="660" y2="352" stroke="#d1a447" stroke-width="1" opacity="0.5"/>
+    <text class="mono sub" x="610" y="328" text-anchor="middle" fill="#eccd8a">Groq</text>
+    <text class="mono sub" x="610" y="341" text-anchor="middle" fill="#eccd8a">gpt-oss-20b/120b</text>
+    <text class="mono sub" x="610" y="352" text-anchor="middle" fill="#eccd8a">default</text>
+    <text class="mono sub" x="710" y="328" text-anchor="middle" fill="#eccd8a">Anthropic</text>
+    <text class="mono sub" x="710" y="341" text-anchor="middle" fill="#eccd8a">Claude Sonnet 5</text>
+    <text class="mono sub" x="710" y="352" text-anchor="middle" fill="#eccd8a">replaces Groq entirely</text>
   </g>
 
-  <text class="edge" x="620" y="288">escalates simple→complex if a "simple" turn needs too many tool calls</text>
+  <text class="edge" x="620" y="280">escalates simple→complex if a "simple" turn needs too many tool calls</text>
+  <text class="edge" x="660" y="373" text-anchor="middle">env-var switch: exclusive once ANTHROPIC_API_KEY is set — not per-query routing</text>
 
+  <!-- Logger, standalone — a cross-cutting sink for auth rejections, rate-limit -->
+  <!-- rejections, and the agent loop, not a member of the agent loop itself -->
   <g>
-    <rect class="box" x="90" y="400" width="120" height="50" rx="6" fill="#182c42" stroke="#5c96d6"/>
-    <text class="label" x="150" y="422" text-anchor="middle" fill="#a9cdf2">Logger</text>
-    <text class="mono sub" x="150" y="437" text-anchor="middle" fill="#a9cdf2">logger.ts · JSON lines</text>
+    <rect class="box" x="90" y="425" width="150" height="50" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="165" y="447" text-anchor="middle" fill="#a9cdf2">Logger</text>
+    <text class="mono sub" x="165" y="462" text-anchor="middle" fill="#a9cdf2">logger.ts · JSON lines</text>
   </g>
+  <text class="edge" x="20" y="418">cross-cutting — every gate + the tool loop log here, it isn't part of the agent loop</text>
 
   <g>
-    <rect class="box" x="330" y="422" width="120" height="52" rx="6" fill="#182c42" stroke="#5c96d6"/>
-    <text class="label" x="390" y="444" text-anchor="middle" fill="#a9cdf2">MCP client</text>
-    <text class="mono sub" x="390" y="459" text-anchor="middle" fill="#a9cdf2">mcp-client.ts</text>
-    <text class="mono sub" x="390" y="470" text-anchor="middle" fill="#a9cdf2">JSON-RPC 2.0</text>
-  </g>
-
-  <g>
-    <rect class="box" x="560" y="422" width="190" height="58" rx="6" fill="#182c42" stroke="#5c96d6"/>
-    <text class="label" x="655" y="444" text-anchor="middle" fill="#a9cdf2">portfolio-mcp-server</text>
-    <text class="mono sub" x="655" y="459" text-anchor="middle" fill="#a9cdf2">Streamable HTTP endpoint</text>
-    <text class="mono sub" x="655" y="471" text-anchor="middle" fill="#a9cdf2">hand-rolled, no SDK transport</text>
+    <rect class="box" x="330" y="432" width="120" height="52" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="390" y="454" text-anchor="middle" fill="#a9cdf2">MCP client</text>
+    <text class="mono sub" x="390" y="469" text-anchor="middle" fill="#a9cdf2">mcp-client.ts</text>
+    <text class="mono sub" x="390" y="480" text-anchor="middle" fill="#a9cdf2">JSON-RPC 2.0</text>
   </g>
 
   <g>
-    <rect class="box" x="480" y="520" width="350" height="40" rx="6" fill="#26282a" stroke="#6f716c"/>
-    <text class="label" x="655" y="536" text-anchor="middle" fill="#c7c5bc">mcp-tools.ts registry</text>
-    <text class="mono sub" x="655" y="550" text-anchor="middle" fill="#c7c5bc">get_portfolio_summary · list_holdings · get_exposure_by_* · get_risk_metrics · run_stress_test · check_limit_breaches · compare_to_benchmark · get_period_performance · list_transactions</text>
+    <rect class="box" x="560" y="418" width="190" height="56" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="655" y="439" text-anchor="middle" fill="#a9cdf2">portfolio-mcp-server</text>
+    <text class="mono sub" x="655" y="453" text-anchor="middle" fill="#a9cdf2">Streamable HTTP endpoint</text>
+    <text class="mono sub" x="655" y="465" text-anchor="middle" fill="#a9cdf2">hand-rolled, no SDK transport</text>
+  </g>
+
+  <!-- mcp-tools.ts registry, vertical list -->
+  <g>
+    <rect class="box" x="545" y="500" width="220" height="200" rx="6" fill="#26282a" stroke="#6f716c"/>
+    <text class="label" x="655" y="518" text-anchor="middle" fill="#c7c5bc">mcp-tools.ts registry</text>
+    <text class="mono sub" x="655" y="533" fill="#c7c5bc" text-anchor="middle">dispatched by name</text>
+    <g class="mono sub" fill="#c7c5bc">
+      <text x="565" y="549">· get_portfolio_summary</text>
+      <text x="565" y="562">· list_holdings</text>
+      <text x="565" y="575">· list_transactions</text>
+      <text x="565" y="588">· get_exposure_by_geography</text>
+      <text x="565" y="601">· get_exposure_by_category</text>
+      <text x="565" y="614">· get_concentration_risk</text>
+      <text x="565" y="627">· get_risk_metrics</text>
+      <text x="565" y="640">· run_stress_test</text>
+      <text x="565" y="653">· check_limit_breaches</text>
+      <text x="565" y="666">· compare_to_benchmark</text>
+      <text x="565" y="679">· get_period_performance</text>
+      <text x="565" y="692">· get_exposure_drift</text>
+    </g>
   </g>
 
   <g>
-    <rect class="box" x="565" y="600" width="180" height="34" rx="6" fill="#182c42" stroke="#5c96d6"/>
-    <text class="label" x="655" y="621" text-anchor="middle" fill="#a9cdf2">RLS — authenticated only</text>
+    <rect class="box" x="565" y="736" width="180" height="34" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="655" y="757" text-anchor="middle" fill="#a9cdf2">RLS — authenticated only</text>
   </g>
 
   <g>
-    <path d="M 570 690 v -40 a85,10 0 0 1 170,0 v 40 a85,10 0 0 1 -170,0 z" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
-    <ellipse cx="655" cy="650" rx="85" ry="10" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
-    <text class="label" x="655" y="672" text-anchor="middle" fill="#c7c5bc">Postgres</text>
-    <text class="mono sub" x="655" y="686" text-anchor="middle" fill="#c7c5bc">transactions · cash_settings</text>
-    <text class="mono sub" x="655" y="697" text-anchor="middle" fill="#c7c5bc">current_prices · symbol_metadata</text>
+    <path d="M 570 866 v -40 a85,10 0 0 1 170,0 v 40 a85,10 0 0 1 -170,0 z" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
+    <ellipse cx="655" cy="826" rx="85" ry="10" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
+    <text class="label" x="655" y="848" text-anchor="middle" fill="#c7c5bc">Postgres</text>
+    <text class="mono sub" x="655" y="862" text-anchor="middle" fill="#c7c5bc">transactions · cash_settings · symbol_metadata</text>
+    <text class="mono sub" x="655" y="873" text-anchor="middle" fill="#c7c5bc">current_prices · historical_prices</text>
+    <text class="mono sub" x="655" y="884" text-anchor="middle" fill="#c7c5bc">benchmark_history · fx_rates</text>
   </g>
 
   <g>
@@ -156,27 +183,127 @@
   <line x1="940" y1="170" x2="940" y2="212" stroke="#c9c8c0" stroke-width="1.3" opacity="0.8" marker-end="url(#arrow)"/>
   <line x1="850" y1="145" x2="750" y2="145" stroke="#c9c8c0" stroke-width="1.3" stroke-dasharray="3 3" opacity="0.65" marker-end="url(#arrow)"/>
   <text class="edge" x="797" y="138" text-anchor="middle">same RLS, no MCP hop</text>
-  <path d="M 940 258 C 940 500, 745 660, 745 660" stroke="#c9c8c0" stroke-width="1.3" fill="none" stroke-dasharray="3 3" opacity="0.65" marker-end="url(#arrow)"/>
+  <path d="M 940 258 C 940 500, 745 810, 745 816" stroke="#c9c8c0" stroke-width="1.3" fill="none" stroke-dasharray="3 3" opacity="0.65" marker-end="url(#arrow)"/>
 
   <text class="edge mono" x="10" y="325" transform="rotate(-90 10 325)">SSE stream</text>
   <text class="edge mono" x="212" y="141">verify JWT</text>
   <text class="edge mono" x="212" y="230">per-user, per-minute</text>
-  <text class="edge mono" x="260" y="325">simple / complex?</text>
-  <text class="edge mono" x="185" y="405">structured JSON, per call</text>
-  <text class="edge mono" x="435" y="435">tools/call</text>
-  <text class="edge mono" x="490" y="447">tools/list, tools/call</text>
-  <text class="edge mono" x="660" y="514">dispatches by name</text>
-  <text class="edge mono" x="660" y="595">SQL query</text>
+  <text class="edge mono" x="260" y="317">simple / complex?</text>
+  <text class="edge mono" x="435" y="429">tools/call</text>
+  <text class="edge mono" x="490" y="441">tools/list, tools/call</text>
+  <text class="edge mono" x="660" y="491">dispatches per call</text>
+  <text class="edge mono" x="660" y="722">SQL query</text>
 
-  <text class="mono group" x="70" y="725">legend</text>
+  <!-- ================= DATA-INGESTION ZONE ================= -->
+  <rect x="40" y="928" width="1100" height="256" rx="10" fill="none" stroke="#5c96d6" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.55"/>
+  <text class="mono group" x="50" y="921">Data ingestion — on-demand, browser-triggered, no cron</text>
+  <text class="edge" x="50" y="944">PriceRefreshButton · auto-refresh on homepage load · Benchmark / Reports / RollingReturns / Updates pages — each fetch-* function independently gates on auth.ts requireUser</text>
+
+  <!-- fan-in bus: the 4 persisting fetchers converge on one arrow up into Postgres -->
+  <g stroke="#c9c8c0" stroke-width="1.1" fill="none" opacity="0.7">
+    <line x1="125" y1="978" x2="655" y2="1006" />
+    <line x1="311" y1="978" x2="655" y2="1006" />
+    <line x1="497" y1="978" x2="655" y2="1006" />
+    <line x1="683" y1="978" x2="655" y2="1006" />
+    <line x1="655" y1="1006" x2="655" y2="920" marker-end="url(#arrow)"/>
+  </g>
+  <text class="edge" x="700" y="1000">upsert: current_prices / historical_prices / benchmark_history / fx_rates</text>
+
+  <!-- live-proxy fetchers: no DB write, response goes straight back to the caller -->
+  <g stroke="#c9c8c0" stroke-width="1.1" fill="none" opacity="0.6" stroke-dasharray="2 3">
+    <path d="M 869 978 C 869 1000, 940 1006, 940 978" marker-end="url(#arrow)"/>
+    <path d="M 1055 978 C 1055 1000, 1010 1006, 1010 978" marker-end="url(#arrow)"/>
+  </g>
+  <text class="edge" x="820" y="1000">returned straight to the caller, not persisted</text>
+
+  <g>
+    <rect class="box" x="50" y="978" width="150" height="70" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="125" y="998" text-anchor="middle" fill="#a9cdf2">fetch-prices</text>
+    <text class="mono sub" x="125" y="1013" text-anchor="middle" fill="#a9cdf2">→ current_prices</text>
+    <text class="mono sub" x="125" y="1026" text-anchor="middle" fill="#a9cdf2">price-diff.ts skips</text>
+    <text class="mono sub" x="125" y="1038" text-anchor="middle" fill="#a9cdf2">no-op writes</text>
+  </g>
+
+  <g>
+    <rect class="box" x="236" y="978" width="150" height="70" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="311" y="998" text-anchor="middle" fill="#a9cdf2">fetch-historical-prices</text>
+    <text class="mono sub" x="311" y="1013" text-anchor="middle" fill="#a9cdf2">→ historical_prices</text>
+    <text class="mono sub" x="311" y="1026" text-anchor="middle" fill="#a9cdf2">upsert(symbol,date)</text>
+    <text class="mono sub" x="311" y="1038" text-anchor="middle" fill="#a9cdf2">batched, 500/chunk</text>
+  </g>
+
+  <g>
+    <rect class="box" x="422" y="978" width="150" height="70" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="497" y="998" text-anchor="middle" fill="#a9cdf2">fetch-benchmark-prices</text>
+    <text class="mono sub" x="497" y="1013" text-anchor="middle" fill="#a9cdf2">→ benchmark_history</text>
+    <text class="mono sub" x="497" y="1026" text-anchor="middle" fill="#a9cdf2">NIFTY50/500, SPX</text>
+    <text class="mono sub" x="497" y="1038" text-anchor="middle" fill="#a9cdf2">no auto-backfill</text>
+  </g>
+
+  <g>
+    <rect class="box" x="608" y="978" width="150" height="70" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="683" y="998" text-anchor="middle" fill="#a9cdf2">fetch-fx-rates</text>
+    <text class="mono sub" x="683" y="1013" text-anchor="middle" fill="#a9cdf2">→ fx_rates (USDINR)</text>
+    <text class="mono sub" x="683" y="1026" text-anchor="middle" fill="#a9cdf2">① ② ③ fallback chain</text>
+    <text class="mono sub" x="683" y="1038" text-anchor="middle" fill="#a9cdf2">④ last stored row</text>
+  </g>
+
+  <g>
+    <rect class="box" x="794" y="978" width="150" height="70" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="869" y="998" text-anchor="middle" fill="#a9cdf2">fetch-pe-ratio</text>
+    <text class="mono sub" x="869" y="1013" text-anchor="middle" fill="#a9cdf2">no write · live proxy</text>
+    <text class="mono sub" x="869" y="1026" text-anchor="middle" fill="#a9cdf2">crumb/cookie auth,</text>
+    <text class="mono sub" x="869" y="1038" text-anchor="middle" fill="#a9cdf2">replicates yfinance</text>
+  </g>
+
+  <g>
+    <rect class="box" x="980" y="978" width="150" height="70" rx="6" fill="#182c42" stroke="#5c96d6"/>
+    <text class="label" x="1055" y="998" text-anchor="middle" fill="#a9cdf2">fetch-ticker-cape</text>
+    <text class="mono sub" x="1055" y="1013" text-anchor="middle" fill="#a9cdf2">no write · live proxy</text>
+    <text class="mono sub" x="1055" y="1026" text-anchor="middle" fill="#a9cdf2">annual EPS + CPI-</text>
+    <text class="mono sub" x="1055" y="1038" text-anchor="middle" fill="#a9cdf2">adjusted Shiller PE</text>
+  </g>
+
+  <!-- external sources, below the fetchers -->
+  <g stroke="#c9c8c0" stroke-width="1.1" fill="none" opacity="0.7">
+    <line x1="270" y1="1120" x2="125" y2="1048" marker-end="url(#arrow)"/>
+    <line x1="330" y1="1120" x2="311" y2="1048" marker-end="url(#arrow)"/>
+    <line x1="390" y1="1120" x2="497" y2="1048" marker-end="url(#arrow)"/>
+    <line x1="470" y1="1120" x2="683" y2="1048" marker-end="url(#arrow)"/>
+    <text class="edge" x="240" y="1112">①</text>
+    <line x1="620" y1="1120" x2="683" y2="1048" marker-end="url(#arrow)"/>
+    <text class="edge" x="602" y="1112">②</text>
+    <line x1="800" y1="1120" x2="683" y2="1048" marker-end="url(#arrow)"/>
+    <text class="edge" x="782" y="1112">③</text>
+    <line x1="200" y1="1120" x2="869" y2="1048" marker-end="url(#arrow)"/>
+    <line x1="250" y1="1120" x2="1055" y2="1048" marker-end="url(#arrow)"/>
+  </g>
+
+  <g>
+    <rect class="box" x="130" y="1120" width="380" height="50" rx="6" fill="#3a2e13" stroke="#d1a447"/>
+    <text class="label" x="320" y="1140" text-anchor="middle" fill="#eccd8a">Yahoo Finance</text>
+    <text class="mono sub" x="320" y="1155" text-anchor="middle" fill="#eccd8a">query1/query2.finance.yahoo.com · fc.yahoo.com (crumb auth)</text>
+  </g>
+  <g>
+    <rect class="box" x="540" y="1120" width="200" height="50" rx="6" fill="#3a2e13" stroke="#d1a447"/>
+    <text class="label" x="640" y="1140" text-anchor="middle" fill="#eccd8a">Frankfurter (ECB)</text>
+    <text class="mono sub" x="640" y="1155" text-anchor="middle" fill="#eccd8a">api.frankfurter.app</text>
+  </g>
+  <g>
+    <rect class="box" x="770" y="1120" width="200" height="50" rx="6" fill="#3a2e13" stroke="#d1a447"/>
+    <text class="label" x="870" y="1140" text-anchor="middle" fill="#eccd8a">open.er-api.com</text>
+    <text class="mono sub" x="870" y="1155" text-anchor="middle" fill="#eccd8a">free tier, latest only</text>
+  </g>
+
+  <text class="mono group" x="50" y="1198">legend</text>
   <g class="mono sub">
-    <rect x="70" y="733" width="10" height="10" rx="2" fill="#173323" stroke="#4fae76"/>
-    <text x="86" y="742" fill="#c7c5bc">agentic — reasons, decides, calls tools</text>
-    <rect x="330" y="733" width="10" height="10" rx="2" fill="#182c42" stroke="#5c96d6"/>
-    <text x="346" y="742" fill="#c7c5bc">software — deterministic app/infra code</text>
-    <rect x="640" y="733" width="10" height="10" rx="2" fill="#3a2e13" stroke="#d1a447"/>
-    <text x="656" y="742" fill="#c7c5bc">third-party LLM providers</text>
-    <rect x="890" y="733" width="10" height="10" rx="2" fill="#26282a" stroke="#6f716c"/>
-    <text x="906" y="742" fill="#c7c5bc">data store / leaf endpoint</text>
+    <rect x="50" y="1204" width="10" height="10" rx="2" fill="#173323" stroke="#4fae76"/>
+    <text x="66" y="1213" fill="#c7c5bc">agentic — reasons, decides, calls tools</text>
+    <rect x="330" y="1204" width="10" height="10" rx="2" fill="#182c42" stroke="#5c96d6"/>
+    <text x="346" y="1213" fill="#c7c5bc">software — deterministic app/infra code</text>
+    <rect x="640" y="1204" width="10" height="10" rx="2" fill="#3a2e13" stroke="#d1a447"/>
+    <text x="656" y="1213" fill="#c7c5bc">third-party API (LLM or market data)</text>
+    <rect x="920" y="1204" width="10" height="10" rx="2" fill="#26282a" stroke="#6f716c"/>
+    <text x="936" y="1213" fill="#c7c5bc">data store / leaf endpoint</text>
   </g>
 </svg>

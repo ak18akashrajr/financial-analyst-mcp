@@ -55,13 +55,16 @@ hosted product for others to sign up to.
 ## Architecture
 
 Color key: 🟢 **green** = agentic components (reason, decide, call tools) · 🔵 **blue** = deterministic
-software/infra components · 🟠 **amber** = third-party LLM providers · ⚪ **gray** = data stores and leaf
-endpoints.
+software/infra components · 🟠 **amber** = third-party APIs (LLM providers and market-data sources) ·
+⚪ **gray** = data stores and leaf endpoints.
 
 <img src="docs/architecture.svg" alt="Portfolio AI architecture: chat UI through Supabase auth and rate
 limiting into the portfolio-ai coordinator agent, which routes between Groq and Claude, calls MCP tools
 over JSON-RPC against portfolio-mcp-server and Postgres under RLS, and streams the response back over
-SSE; dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop." width="100%" />
+SSE; dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop. Below,
+a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX rates, and
+fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX) into the
+same Postgres tables." width="100%" />
 
 There is exactly one Supabase Auth account for this application. Row Level Security policies gate
 on `auth.role() = 'authenticated'` only; there is no `user_id`/`auth.uid()` partitioning, because
@@ -106,7 +109,25 @@ isn't.
 Edge functions log through [`_shared/logger.ts`](supabase/functions/_shared/logger.ts) — one JSON
 line per call (timestamp, level, function name, message, context) — rather than raw
 `console.log`/`console.error`, so failures are filterable in Supabase's log explorer. See
-[`docs/logging-monitoring.md`](docs/logging-monitoring.md).
+[`docs/logging-monitoring.md`](docs/logging-monitoring.md). This is a cross-cutting sink, not part of
+the agent loop itself — auth rejections, rate-limit rejections, and tool-call failures all log through
+it independently of whether the coordinator agent ever runs.
+
+Market data has no ingestion schedule — there is no `pg_cron` job anywhere in this project. Six edge
+functions (`fetch-prices`, `fetch-historical-prices`, `fetch-benchmark-prices`, `fetch-fx-rates`,
+`fetch-pe-ratio`, `fetch-ticker-cape`) are invoked on demand — from `PriceRefreshButton`, an
+auto-refresh on homepage load, or specific pages (Benchmark, Reports, RollingReturns, Updates) — and
+each independently gates on `auth.ts`'s `requireUser`, same as `portfolio-ai`. All six pull from Yahoo
+Finance; `fetch-pe-ratio` and `fetch-ticker-cape` additionally replicate `yfinance`'s crumb/cookie auth
+flow to reach quote-summary and fundamentals-timeseries endpoints, and don't persist anything — they
+return straight to the caller. The other four upsert into Postgres (`current_prices`,
+`historical_prices`, `benchmark_history`, `fx_rates`), which is what makes those tables usable as a
+cache: `fetch-prices` skips no-op writes via
+[`_shared/price-diff.ts`](supabase/functions/_shared/price-diff.ts), and `current_prices`/
+`benchmark_history` are read back by both the frontend and `portfolio-data.ts` (the same data layer
+`portfolio-mcp-server`'s tools query). `fetch-fx-rates` is the one function with genuine multi-vendor
+fallback — Yahoo Finance → Frankfurter (ECB reference rates) → open.er-api.com → the last rate already
+stored in `fx_rates` — since a stale FX rate is a much smaller problem than a failed page load.
 
 ## Technology Stack
 
