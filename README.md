@@ -54,6 +54,10 @@ hosted product for others to sign up to.
 
 ## Architecture
 
+Color key: 🟢 **green** = agentic components (reason, decide, call tools) · 🔵 **blue** = deterministic
+software/infra components · 🟠 **amber** = third-party LLM providers · ⚪ **gray** = data stores and leaf
+endpoints.
+
 ```mermaid
 flowchart TB
     subgraph Browser["Browser (React SPA)"]
@@ -69,17 +73,18 @@ flowchart TB
         DB[("PostgreSQL<br/>transactions, cash_settings,<br/>current_prices, symbol_metadata, ..<br/>RLS: auth.role() = 'authenticated'")]
 
         subgraph EdgeFunctions["Edge Functions (Deno)"]
-            MCP["portfolio-mcp-server<br/>JSON-RPC 2.0 / MCP<br/>Streamable HTTP"]
-            Tools["_shared/mcp-tools.ts<br/>get_portfolio_summary, list_holdings,<br/>get_exposure_by_*, get_risk_metrics,<br/>run_stress_test, compare_to_benchmark"]
-            AI["portfolio-ai<br/>agent tool-use loop"]
-            Client["_shared/mcp-client.ts"]
+            AI["portfolio-ai<br/>coordinator agent,<br/>tool-use loop"]
             Router["_shared/router.ts<br/>keyword routing (Groq path only)"]
+            Concurrency["_shared/concurrency.ts<br/>mapWithConcurrency — 3-worker pool<br/>bounded fan-out per turn"]
+            Client["_shared/mcp-client.ts"]
+            MCP["portfolio-mcp-server<br/>JSON-RPC 2.0 / MCP<br/>Streamable HTTP"]
+            Tools["_shared/mcp-tools.ts<br/>get_portfolio_summary, list_holdings,<br/>list_transactions, get_exposure_by_*,<br/>get_risk_metrics, run_stress_test,<br/>compare_to_benchmark, ..."]
             Logger["_shared/logger.ts<br/>structured JSON logs"]
             Fetchers["fetch-prices, fetch-fx-rates, ..."]
         end
     end
 
-    subgraph Providers["LLM Providers"]
+    subgraph Providers["LLM Providers (third-party)"]
         Groq["Groq<br/>gpt-oss-20b / gpt-oss-120b<br/>(default)"]
         Claude["Claude Sonnet 5<br/>(used exclusively once<br/>ANTHROPIC_API_KEY is set)"]
     end
@@ -88,23 +93,33 @@ flowchart TB
     Pages -. "sign in" .-> Auth
     Auth -- "gates via RLS" --> DB
 
-    AI --> Client
+    Pages -- "chat, SSE stream" --> AI
+    AI --> Router
+    Router -. "escalates if a 'simple' turn<br/>needs too many tool calls" .-> AI
+    AI -- "env-var provider switch" --> Groq
+    AI -- "env-var provider switch" --> Claude
+    AI -- "one turn's tool calls,<br/>announced to client before any run" --> Concurrency
+    Concurrency -- "≤3 concurrent,<br/>results kept in call order" --> Client
     Client -- "JSON-RPC calls" --> MCP
     MCP --> Tools
     Tools -- "SQL query per tool" --> DB
-    AI --> Router
-    Router --> Groq
-    AI -- "env-var provider switch" --> Groq
-    AI -- "env-var provider switch" --> Claude
     EdgeFunctions -.-> Logger
-
-    Pages -- "chat" --> AI
     Fetchers --> DB
 
-    style Browser fill:#1f2937,color:#fff,stroke:#4b5563
-    style Supabase fill:#0f172a,color:#fff,stroke:#334155
-    style EdgeFunctions fill:#111827,color:#fff,stroke:#374151
-    style Providers fill:#1f2937,color:#fff,stroke:#4b5563
+    classDef agentic fill:#173323,color:#8fd8ab,stroke:#4fae76,stroke-width:1px
+    classDef software fill:#182c42,color:#a9cdf2,stroke:#5c96d6,stroke-width:1px
+    classDef llm fill:#3a2e13,color:#eccd8a,stroke:#d1a447,stroke-width:1px
+    classDef data fill:#26282a,color:#c7c5bc,stroke:#6f716c,stroke-width:1px
+
+    class AI,Router agentic
+    class Pages,Hook,Auth,Client,MCP,Logger,Fetchers,Concurrency software
+    class Groq,Claude llm
+    class Lib,Tools,DB data
+
+    style Browser fill:#111318,color:#eceae4,stroke:#3a3c3e
+    style Supabase fill:#111318,color:#eceae4,stroke:#3a3c3e
+    style EdgeFunctions fill:#0d0f12,color:#eceae4,stroke:#2b2d2f
+    style Providers fill:#111318,color:#eceae4,stroke:#3a3c3e
 ```
 
 There is exactly one Supabase Auth account for this application. Row Level Security policies gate
@@ -136,6 +151,16 @@ is used instead, exclusively, once `ANTHROPIC_API_KEY` is set — both implement
 performs zero-cost keyword-based routing between `gpt-oss-20b`/`gpt-oss-120b`, with an escalation
 safety net if a query classified as "simple" ends up needing too many tool calls. Full design
 rationale: [`docs/llm-mcp-agent-plan.md`](docs/llm-mcp-agent-plan.md).
+
+When a single LLM turn requests several independent tool calls at once,
+[`_shared/concurrency.ts`](supabase/functions/_shared/concurrency.ts)'s `mapWithConcurrency` runs at
+most 3 of them at a time (a shared cursor hands each free worker the next unclaimed call) instead of
+firing them all simultaneously with `Promise.all`, so one turn can't burst
+`portfolio-mcp-server`/Postgres with a large batch. Every call in the turn is still announced to the
+client immediately, before any of them run; a failed call is caught and turned into an
+`{ error }`-shaped result rather than aborting the batch; and results are written back at their
+original index, so ordering into the LLM's context stays deterministic even though completion order
+isn't.
 
 Edge functions log through [`_shared/logger.ts`](supabase/functions/_shared/logger.ts) — one JSON
 line per call (timestamp, level, function name, message, context) — rather than raw
