@@ -58,69 +58,10 @@ Color key: 🟢 **green** = agentic components (reason, decide, call tools) · �
 software/infra components · 🟠 **amber** = third-party LLM providers · ⚪ **gray** = data stores and leaf
 endpoints.
 
-```mermaid
-flowchart TB
-    subgraph Browser["Browser (React SPA)"]
-        Pages["src/pages/*<br/>(Holdings, Exposure, Taxes,<br/>Projections, Benchmark, AI, Reports)"]
-        Lib["src/lib/*<br/>(xirr, taxCalculator,<br/>projectionEngine, monteCarloAdvanced,<br/>periodReports)"]
-        Hook["usePortfolio.ts"]
-        Pages --> Lib
-        Pages --> Hook
-    end
-
-    subgraph Supabase["Supabase Project"]
-        Auth["Supabase Auth<br/>(single account, email+password,<br/>sessionStorage session)"]
-        DB[("PostgreSQL<br/>transactions, cash_settings,<br/>current_prices, symbol_metadata, ..<br/>RLS: auth.role() = 'authenticated'")]
-
-        subgraph EdgeFunctions["Edge Functions (Deno)"]
-            AI["portfolio-ai<br/>coordinator agent,<br/>tool-use loop"]
-            Router["_shared/router.ts<br/>keyword routing (Groq path only)"]
-            Concurrency["_shared/concurrency.ts<br/>mapWithConcurrency — 3-worker pool<br/>bounded fan-out per turn"]
-            Client["_shared/mcp-client.ts"]
-            MCP["portfolio-mcp-server<br/>JSON-RPC 2.0 / MCP<br/>Streamable HTTP"]
-            Tools["_shared/mcp-tools.ts<br/>get_portfolio_summary, list_holdings,<br/>list_transactions, get_exposure_by_*,<br/>get_risk_metrics, run_stress_test,<br/>compare_to_benchmark, ..."]
-            Logger["_shared/logger.ts<br/>structured JSON logs"]
-            Fetchers["fetch-prices, fetch-fx-rates, ..."]
-        end
-    end
-
-    subgraph Providers["LLM Providers (third-party)"]
-        Groq["Groq<br/>gpt-oss-20b / gpt-oss-120b<br/>(default)"]
-        Claude["Claude Sonnet 5<br/>(used exclusively once<br/>ANTHROPIC_API_KEY is set)"]
-    end
-
-    Hook -- "anon key, direct SQL<br/>(no backend API layer)" --> DB
-    Pages -. "sign in" .-> Auth
-    Auth -- "gates via RLS" --> DB
-
-    Pages -- "chat, SSE stream" --> AI
-    AI --> Router
-    Router -. "escalates if a 'simple' turn<br/>needs too many tool calls" .-> AI
-    AI -- "env-var provider switch" --> Groq
-    AI -- "env-var provider switch" --> Claude
-    AI -- "one turn's tool calls,<br/>announced to client before any run" --> Concurrency
-    Concurrency -- "≤3 concurrent,<br/>results kept in call order" --> Client
-    Client -- "JSON-RPC calls" --> MCP
-    MCP --> Tools
-    Tools -- "SQL query per tool" --> DB
-    EdgeFunctions -.-> Logger
-    Fetchers --> DB
-
-    classDef agentic fill:#173323,color:#8fd8ab,stroke:#4fae76,stroke-width:1px
-    classDef software fill:#182c42,color:#a9cdf2,stroke:#5c96d6,stroke-width:1px
-    classDef llm fill:#3a2e13,color:#eccd8a,stroke:#d1a447,stroke-width:1px
-    classDef data fill:#26282a,color:#c7c5bc,stroke:#6f716c,stroke-width:1px
-
-    class AI,Router agentic
-    class Pages,Hook,Auth,Client,MCP,Logger,Fetchers,Concurrency software
-    class Groq,Claude llm
-    class Lib,Tools,DB data
-
-    style Browser fill:#111318,color:#eceae4,stroke:#3a3c3e
-    style Supabase fill:#111318,color:#eceae4,stroke:#3a3c3e
-    style EdgeFunctions fill:#0d0f12,color:#eceae4,stroke:#2b2d2f
-    style Providers fill:#111318,color:#eceae4,stroke:#3a3c3e
-```
+<img src="docs/architecture.svg" alt="Portfolio AI architecture: chat UI through Supabase auth and rate
+limiting into the portfolio-ai coordinator agent, which routes between Groq and Claude, calls MCP tools
+over JSON-RPC against portfolio-mcp-server and Postgres under RLS, and streams the response back over
+SSE; dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop." width="100%" />
 
 There is exactly one Supabase Auth account for this application. Row Level Security policies gate
 on `auth.role() = 'authenticated'` only; there is no `user_id`/`auth.uid()` partitioning, because
