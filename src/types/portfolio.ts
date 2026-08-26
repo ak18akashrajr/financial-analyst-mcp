@@ -47,6 +47,13 @@ export interface CashSettings {
   creditCardDebt: number;
 }
 
+// Current calendar month's auto-tracked income/expense totals, derived from
+// Operating Cash / Cash Reserve balance deltas — see src/lib/expenseIncomeRatio.ts.
+export interface MonthlyCashflow {
+  totalIncome: number;
+  totalExpense: number;
+}
+
 
 export interface CurrentPrices {
   [symbol: string]: number;

@@ -1,10 +1,11 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import type { Transaction, DerivedHolding, PortfolioSummary, CashSettings, CurrentPrices, SymbolMetadata, ExposureBreakdown } from '@/types/portfolio';
+import type { Transaction, DerivedHolding, PortfolioSummary, CashSettings, CurrentPrices, SymbolMetadata, ExposureBreakdown, MonthlyCashflow } from '@/types/portfolio';
 import { toast } from 'sonner';
 import { calculateXIRR } from '@/lib/xirr';
 import { computeFifoPosition } from '@/lib/costBasis';
 import { isSameIstCalendarDay, shouldSkipNetWorthSnapshot, type NetWorthSnapshotFields } from '@/lib/netWorthSnapshot';
+import { classifyBalanceDelta, getIstYearMonth } from '@/lib/expenseIncomeRatio';
 
 function formatIstTimestamp(date: Date): string {
   return date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
@@ -13,6 +14,7 @@ function formatIstTimestamp(date: Date): string {
 export function usePortfolio() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cash, setCash] = useState<CashSettings>({ liquidCash: 0, vaultCash: 0, pfBalance: 0, creditCardDebt: 0 });
+  const [monthlyCashflow, setMonthlyCashflow] = useState<MonthlyCashflow>({ totalIncome: 0, totalExpense: 0 });
   const [currentPrices, setCurrentPrices] = useState<CurrentPrices>({});
   const [symbolMetadata, setSymbolMetadata] = useState<Record<string, SymbolMetadata>>({});
   const [loading, setLoading] = useState(true);
@@ -30,11 +32,12 @@ export function usePortfolio() {
     async function loadData() {
       setLoading(true);
       try {
-        const [txnRes, cashRes, priceRes, metaRes] = await Promise.all([
+        const [txnRes, cashRes, priceRes, metaRes, cashflowRes] = await Promise.all([
           supabase.from('transactions').select('*').order('date', { ascending: false }),
           supabase.from('cash_settings').select('*').limit(1).single(),
           supabase.from('current_prices').select('*'),
           supabase.from('symbol_metadata').select('*'),
+          supabase.from('monthly_cashflow').select('total_income, total_expense').eq('year_month', getIstYearMonth()).maybeSingle(),
         ]);
 
         if (txnRes.data) {
@@ -81,6 +84,13 @@ export function usePortfolio() {
             meta[m.symbol] = { symbol: m.symbol, geography: m.geography as SymbolMetadata['geography'], category: m.sector as SymbolMetadata['category'] };
           }
           setSymbolMetadata(meta);
+        }
+
+        if (cashflowRes.data) {
+          setMonthlyCashflow({
+            totalIncome: Number((cashflowRes.data as any).total_income ?? 0),
+            totalExpense: Number((cashflowRes.data as any).total_expense ?? 0),
+          });
         }
       } catch (err) {
         console.error('Error loading portfolio data:', err);
@@ -215,7 +225,41 @@ export function usePortfolio() {
     await recordNetWorthSnapshot();
   }, [recordNetWorthSnapshot]);
 
-  const updateCash = useCallback(async (newCash: Partial<CashSettings>) => {
+  // Adds a signed income/expense delta to the current IST calendar month's
+  // monthly_cashflow row (creating it if this is the first update this
+  // month — a new month simply has no row yet, so tracking "resets"
+  // automatically with no cron job). No-ops if both deltas are zero, so
+  // callers don't need to guard the call themselves.
+  const recordCashflowDelta = useCallback(async (deltaIncome: number, deltaExpense: number) => {
+    if (deltaIncome === 0 && deltaExpense === 0) return;
+
+    const yearMonth = getIstYearMonth();
+    const { data: existing } = await supabase
+      .from('monthly_cashflow')
+      .select('total_income, total_expense')
+      .eq('year_month', yearMonth)
+      .maybeSingle();
+
+    const newIncome = Number((existing as any)?.total_income ?? 0) + deltaIncome;
+    const newExpense = Number((existing as any)?.total_expense ?? 0) + deltaExpense;
+
+    const { error } = await supabase
+      .from('monthly_cashflow')
+      .upsert({ year_month: yearMonth, total_income: newIncome, total_expense: newExpense } as any, { onConflict: 'year_month' });
+
+    if (error) {
+      console.error('Failed to record income/expense delta:', error);
+      return;
+    }
+    setMonthlyCashflow({ totalIncome: newIncome, totalExpense: newExpense });
+  }, []);
+
+  // `excludeFromCashflow` opts a balance edit out of income/expense tracking
+  // — for corrections, transfers between the user's own accounts, or any
+  // other update that isn't real new income or spending. Credit-card-debt
+  // settlement (payCreditCardBill below) and the bulk data reset always pass
+  // this, since neither represents genuine cash flow either.
+  const updateCash = useCallback(async (newCash: Partial<CashSettings>, options?: { excludeFromCashflow?: boolean }) => {
     const dbUpdates: {
       liquid_cash?: number;
       vault_cash?: number;
@@ -227,6 +271,24 @@ export function usePortfolio() {
     if (newCash.pfBalance !== undefined) dbUpdates.pf_balance = newCash.pfBalance;
     if (newCash.creditCardDebt !== undefined) dbUpdates.credit_card_debt = newCash.creditCardDebt;
 
+    // Only Operating Cash (liquidCash) and Cash Reserve (vaultCash) are real
+    // bank balances for income/expense purposes — PF and credit-card-debt
+    // never feed the ratio. Computed against the pre-update `cash` closure,
+    // before the DB write, so it reflects the actual delta being applied.
+    let deltaIncome = 0;
+    let deltaExpense = 0;
+    if (!options?.excludeFromCashflow) {
+      if (newCash.liquidCash !== undefined) {
+        const d = classifyBalanceDelta(cash.liquidCash, newCash.liquidCash);
+        deltaIncome += d.income;
+        deltaExpense += d.expense;
+      }
+      if (newCash.vaultCash !== undefined) {
+        const d = classifyBalanceDelta(cash.vaultCash, newCash.vaultCash);
+        deltaIncome += d.income;
+        deltaExpense += d.expense;
+      }
+    }
 
     const { error } = await supabase
       .from('cash_settings')
@@ -244,7 +306,8 @@ export function usePortfolio() {
 
     // Record net worth snapshot with updated cash
     await recordNetWorthSnapshot(newCash);
-  }, [cash, recordNetWorthSnapshot]);
+    await recordCashflowDelta(deltaIncome, deltaExpense);
+  }, [cash, recordNetWorthSnapshot, recordCashflowDelta]);
 
   const payCreditCardBill = useCallback(async () => {
     const debt = cash.creditCardDebt;
@@ -257,7 +320,10 @@ export function usePortfolio() {
       return;
     }
     const newVault = cash.vaultCash - debt;
-    await updateCash({ vaultCash: newVault, creditCardDebt: 0 });
+    // Excluded from income/expense tracking: the real spending already
+    // happened when the card was charged, so counting the bill payment too
+    // would double-count it as an expense.
+    await updateCash({ vaultCash: newVault, creditCardDebt: 0 }, { excludeFromCashflow: true });
     toast.success(`Liability settled — ₹${debt.toLocaleString('en-IN')} deducted from Cash Reserve`);
   }, [cash, updateCash]);
 
@@ -491,6 +557,7 @@ export function usePortfolio() {
     topMovers,
     exposure,
     cash,
+    monthlyCashflow,
     currentPrices,
     symbolMetadata,
     loading,

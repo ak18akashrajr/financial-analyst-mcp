@@ -59,6 +59,12 @@ vi.mock('@/integrations/supabase/client', () => ({
           insert: insertMock,
         };
       }
+      if (table === 'monthly_cashflow') {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+          upsert: () => Promise.resolve({ data: null, error: null }),
+        };
+      }
       return { select: () => Promise.resolve({ data: [], error: null }) };
     },
   },

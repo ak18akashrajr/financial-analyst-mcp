@@ -8,6 +8,7 @@ import { CashSection } from '@/components/CashSection';
 import { AddTransactionForm } from '@/components/AddTransactionForm';
 import { ExposureSection } from '@/components/ExposureSection';
 import { DollarReturnsCard } from '@/components/DollarReturnsCard';
+import { ExpenseIncomeRatioCard } from '@/components/ExpenseIncomeRatioCard';
 
 
 import { DebtChart } from '@/components/DebtChart';
@@ -29,6 +30,7 @@ const IndexContent = () => {
     topMovers,
     exposure,
     cash,
+    monthlyCashflow,
     loading,
     fetchingPrices,
     lastPriceCheckTime,
@@ -62,8 +64,8 @@ const IndexContent = () => {
     await deleteTransaction(id); bumpRefresh();
   }, [deleteTransaction, bumpRefresh]);
 
-  const handleUpdateCash = useCallback(async (newCash: any) => {
-    await updateCash(newCash); bumpRefresh();
+  const handleUpdateCash = useCallback(async (newCash: any, options?: { excludeFromCashflow?: boolean }) => {
+    await updateCash(newCash, options); bumpRefresh();
   }, [updateCash, bumpRefresh]);
 
   if (loading) {
@@ -125,6 +127,9 @@ const IndexContent = () => {
 
         {/* Cash Management — image-2 inspired card grid */}
         <CashSection cash={cash} onUpdate={handleUpdateCash} onPayCreditCard={payCreditCardBill} />
+
+        {/* Expense-to-Income Ratio — auto-tracked from bank balance changes */}
+        <ExpenseIncomeRatioCard cashflow={monthlyCashflow} />
 
         {/* Debt % vs Net Worth */}
         <DebtChart refreshKey={0} />

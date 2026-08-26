@@ -89,3 +89,23 @@ _(none currently — see Archive at the bottom for resolved items)_
       [retry.test.ts](supabase/functions/_shared/retry.test.ts) for the backoff/retry mechanics in
       isolation, plus updated coverage in provider-error.test.ts and mcp-client.test.ts for the
       actual fetch-call-count behavior.
+
+- [x] **Expense-to-Income Ratio, auto-tracked from bank balance updates.** New
+      [`monthly_cashflow`](supabase/migrations/20260826120000_add_monthly_cashflow.sql) table
+      (one row per IST calendar month — a new month simply has no row yet, so tracking resets
+      automatically with no cron job). `usePortfolio.ts`'s `updateCash` now classifies every
+      Operating Cash / Cash Reserve delta as income (increase) or expense (decrease) — see
+      [`classifyBalanceDelta`](src/lib/expenseIncomeRatio.ts) — unless the edit is marked
+      `excludeFromCashflow` (a new checkbox on those two cards in
+      [CashSection.tsx](src/components/CashSection.tsx), for corrections/transfers). PF and
+      credit-card-debt edits never feed it; `payCreditCardBill` always excludes itself (the real
+      spending already happened when the card was charged) so settling a bill doesn't double-count
+      as an expense. New [ExpenseIncomeRatioCard.tsx](src/components/ExpenseIncomeRatioCard.tsx)
+      on the dashboard shows this month's ratio with the requested tiered bands (&lt;50% Ideal,
+      50–75% Manageable, &gt;75% High Risk). Also relocated the "Settle Now" liability button off
+      the Cash Management section header and onto the Credit Card box itself, per feedback that its
+      old position was disconnected from the debt it settles. Tests:
+      [expense-income-ratio.test.ts](src/test/expense-income-ratio.test.ts),
+      [use-portfolio-cashflow-tracking.test.tsx](src/test/use-portfolio-cashflow-tracking.test.tsx),
+      [cash-section.test.tsx](src/test/cash-section.test.tsx),
+      [expense-income-ratio-card.test.tsx](src/test/expense-income-ratio-card.test.tsx).
