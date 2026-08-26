@@ -807,6 +807,65 @@ export async function getPeriodPerformance(
   };
 }
 
+/**
+ * Point-in-time total portfolio valuation as of a specific date — as opposed to
+ * getCurrentPortfolio's always-live snapshot, which has no date parameter at all, and
+ * getPeriodPerformance's FY-quarter/half/year-only granularity. Holdings are priced at the closest
+ * historical_prices close on or before asOfDate (never live, even when asOfDate is today); cash/PF/
+ * credit-card-debt come from the closest net_worth_history snapshot at or before asOfDate, or ₹0 if
+ * none exists yet (never today's live cash, which would blend a past date with present-day figures).
+ * Calling this once per date and diffing the results is how to answer "what was my portfolio worth
+ * in <month/year>" or "compare valuation on date A vs date B".
+ */
+export async function getPortfolioValueAsOf(sb: SupabaseClient, asOfDate: string) {
+  const [txns, meta, priceMap] = await Promise.all([
+    fetchTxns(sb),
+    fetchMetaMap(sb),
+    fetchPriceMapAsOf(sb, asOfDate),
+  ]);
+  const { priced: holdings, missingSymbols: missingPriceSymbols } = splitByPriceAvailability(
+    computeHoldingsFromTxns(txns, priceMap, meta, asOfDate),
+  );
+  const { cash, source: cashSource } = await fetchCashAsOf(
+    sb,
+    asOfDate,
+    { liquid: 0, vault: 0, pf: 0, creditCardDebt: 0 },
+    false, // never fall back to today's live cash for a past-date valuation
+  );
+
+  const equityValue = holdings.reduce((s, h) => s + h.currentValue, 0);
+  const portfolioValue = equityValue + cash.liquid + cash.vault + cash.pf - cash.creditCardDebt;
+
+  const notes: string[] = [
+    "Holdings priced at the closest historical_prices close on or before asOfDate; cash/PF/credit-card-debt " +
+      "from the closest net_worth_history snapshot at or before asOfDate — never today's live values, even if " +
+      "asOfDate is today.",
+  ];
+  if (missingPriceSymbols.length > 0) {
+    notes.push(
+      `No historical_prices row on or before ${asOfDate} for ${missingPriceSymbols.join(", ")} — excluded ` +
+        "from portfolioValue, not counted as ₹0.",
+    );
+  }
+  if (cashSource === "none") {
+    notes.push(
+      "No net_worth_history snapshot on or before asOfDate — cash/PF/credit-card-debt assumed ₹0 rather than today's live values.",
+    );
+  }
+
+  return {
+    asOfDate,
+    equityValue: Math.round(equityValue),
+    liquidCash: Math.round(cash.liquid),
+    vaultCash: Math.round(cash.vault),
+    pfBalance: Math.round(cash.pf),
+    creditCardDebt: Math.round(cash.creditCardDebt),
+    portfolioValue: Math.round(portfolioValue),
+    holdingsCount: holdings.length,
+    note: notes.join(" "),
+  };
+}
+
 /** Compares current geography/category exposure % vs. exposure % as of `asOfDate`. */
 export async function getExposureDrift(sb: SupabaseClient, asOfDate: string) {
   const [txns, prices, meta] = await Promise.all([fetchTxns(sb), fetchCurrentPriceMap(sb), fetchMetaMap(sb)]);

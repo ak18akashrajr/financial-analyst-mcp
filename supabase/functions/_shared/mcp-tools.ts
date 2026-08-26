@@ -18,6 +18,7 @@ import {
   getCurrentPortfolio,
   getExposureDrift,
   getPeriodPerformance,
+  getPortfolioValueAsOf,
   getRiskMetrics,
   listTransactions,
   runStressTest,
@@ -343,6 +344,39 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       const fyStartYear = typeof args.fyStartYear === "number" ? args.fyStartYear : undefined;
       const periodIndex = typeof args.periodIndex === "number" ? args.periodIndex : undefined;
       return getPeriodPerformance(sb, p.holdings, p.cash, periodType, fyStartYear, periodIndex, new Date(), p.missingPriceSymbols);
+    },
+  },
+  {
+    name: "get_portfolio_value_at_date",
+    description:
+      "Total portfolio valuation as of a specific past (or present) date — holdings priced at the " +
+      "closest historical_prices close on/before that date, cash/PF/credit-card-debt from the closest " +
+      "net_worth_history snapshot on/before it. As opposed to get_portfolio_summary's always-current " +
+      "snapshot (no date parameter at all) and get_period_performance's FY-quarter/half/year-only " +
+      "granularity, this takes an arbitrary calendar date. To compare two dates or months (e.g. " +
+      "\"July 2025 vs. July 2026\"), call this once per date and diff the returned portfolioValue " +
+      "figures yourself — never decline a historical-valuation question by claiming no access to " +
+      "past data, since historical_prices/net_worth_history make this genuinely available. For a " +
+      "month name, pass that month's last day as asOfDate to get the month-end valuation.",
+    complexity: "complex",
+    inputSchema: {
+      type: "object",
+      properties: {
+        asOfDate: {
+          type: "string",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+          description: "Date to value the portfolio as of, format YYYY-MM-DD",
+        },
+      },
+      required: ["asOfDate"],
+      additionalProperties: false,
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+    handler: async (args, sb) => {
+      // asOfDate is already validated against the pattern above by the time it reaches here — see
+      // validateArgs in mcp-schema-validate.ts.
+      const asOfDate = args.asOfDate as string;
+      return getPortfolioValueAsOf(sb, asOfDate);
     },
   },
   {
