@@ -38,6 +38,27 @@ check items off (`- [x]`) when merged, and note the PR number.
       2026-08-26.
       </details>
 
+## Backlog
+
+- [ ] **Wire A2UI into AI Agent frontend response.** Scope: purely how the `portfolio-ai` chat
+      response *renders* on the frontend — reformat it to look visually good (structured
+      components instead of raw markdown/prose), not a server-side protocol change. Research
+      best practice for integrating [A2UI](https://a2ui.org/) client-side rendering before
+      implementing (check whether it's a renderer library that consumes a JSON/schema payload,
+      and whether that payload can be derived from the existing chat response shape or needs
+      the response format changed).
+
+- [ ] **AUM target: ₹50L by March 2028, on the net-worth chart.**
+      [NetWorthChart.tsx](src/components/NetWorthChart.tsx) — "AUM" = total net worth
+      (holdings + cash − liabilities), confirmed same definition the chart already uses. Add a
+      ₹50L goal line for March 2028, and show % of target hit as of today. Still open: static
+      goal line + current-%-of-goal number, or also a projected pace-to-target line — default
+      to the simpler static version unless told otherwise.
+
+- [ ] **XIRR → time-to-double.** Show next to every XIRR figure in
+      [XirrDetailsCard.tsx](src/components/XirrDetailsCard.tsx)'s breakdown (Overall, ex-PF,
+      per-benchmark) — Rule of 72 / `ln(2)/ln(1+xirr)` style calculation per figure.
+
 ## Portfolio AI / MCP tools
 
 - [ ] Overlap % MCP agent tool to be added
