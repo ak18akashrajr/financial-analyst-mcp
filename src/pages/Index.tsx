@@ -118,7 +118,7 @@ const IndexContent = () => {
         )}
 
         {/* Summary */}
-        <SummaryBar summary={summary} />
+        <SummaryBar summary={summary} transactions={transactions} />
 
         {/* Dollar-Adjusted Returns overview */}
         <DollarReturnsCard holdings={holdings} summary={summary} />

@@ -52,7 +52,7 @@ function baseHookValue(overrides: {
   const summary: PortfolioSummary = {
     investedValue: 0, currentValue: 0, totalPnl: 0, totalPnlPercent: 0,
     liquidCash: 0, vaultCash: 0, pfBalance: 0, creditCardDebt: 0,
-    totalPortfolioValue: 0, xirr: 0.12,
+    totalPortfolioValue: 0, xirr: 0.12, xirrExPf: 0.12,
   };
   const cash: CashSettings = { liquidCash: 0, vaultCash: 0, pfBalance: 0, creditCardDebt: 0 };
   return {

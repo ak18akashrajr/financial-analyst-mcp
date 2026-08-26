@@ -401,7 +401,10 @@ export function usePortfolio() {
     const totalPortfolioValue = currentValue + cash.liquidCash + cash.vaultCash + cash.pfBalance - cash.creditCardDebt;
     
 
-    // XIRR: build cash flows from all transactions + current portfolio value as terminal flow
+    // XIRR: build cash flows from all transactions + current portfolio value as terminal flow.
+    // Note: this never includes the manual PF (PPF/EPF) balance in cash_settings — it has no
+    // dated contribution history, so there are no cash flows to build for it. See the note on
+    // PortfolioSummary.xirrExPf in src/types/portfolio.ts.
     const cashFlows = transactions.map(t => ({
       amount: t.type === 'BUY' ? -(t.quantity * t.price) : (t.quantity * t.price),
       date: new Date(t.date),
@@ -410,6 +413,26 @@ export function usePortfolio() {
       cashFlows.push({ amount: currentValue, date: new Date() });
     }
     const xirr = calculateXIRR(cashFlows);
+
+    // xirrExPf: identical to `xirr` today (no transaction-backed holding is tagged PPF/EPF), but
+    // computed independently so it automatically diverges the moment one is — rather than silently
+    // staying wrong if that ever changes. See src/types/portfolio.ts.
+    const isPfTagged = (symbol: string) => symbolMetadata[symbol]?.category === 'PPF / EPF';
+    const hasPfHoldings = transactions.some(t => isPfTagged(t.symbol));
+    let xirrExPf = xirr;
+    if (hasPfHoldings) {
+      const exPfCashFlows = transactions
+        .filter(t => !isPfTagged(t.symbol))
+        .map(t => ({
+          amount: t.type === 'BUY' ? -(t.quantity * t.price) : (t.quantity * t.price),
+          date: new Date(t.date),
+        }));
+      const exPfCurrentValue = holdings.filter(h => !isPfTagged(h.symbol)).reduce((s, h) => s + h.currentValue, 0);
+      if (exPfCurrentValue > 0) {
+        exPfCashFlows.push({ amount: exPfCurrentValue, date: new Date() });
+      }
+      xirrExPf = calculateXIRR(exPfCashFlows);
+    }
 
     return {
       investedValue,
@@ -422,8 +445,9 @@ export function usePortfolio() {
       creditCardDebt: cash.creditCardDebt,
       totalPortfolioValue,
       xirr,
+      xirrExPf,
     };
-  }, [holdings, cash, transactions]);
+  }, [holdings, cash, transactions, symbolMetadata]);
 
   const topMovers = useMemo(() => {
     const valid = holdings.filter(h => h.totalQuantity > 0 && h.avgPrice > 0 && h.currentPrice > 0);

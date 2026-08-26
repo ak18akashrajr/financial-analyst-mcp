@@ -1,6 +1,7 @@
-import type { PortfolioSummary } from '@/types/portfolio';
+import type { PortfolioSummary, Transaction } from '@/types/portfolio';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { TrendingUp, TrendingDown, ArrowUpRight, Wallet, Vault, CreditCard, Landmark } from 'lucide-react';
+import { XirrDetailsCard } from '@/components/XirrDetailsCard';
 
 function fmtRaw(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -8,14 +9,14 @@ function fmtRaw(n: number): string {
 
 interface Props {
   summary: PortfolioSummary;
+  transactions: Transaction[];
 }
 
-export function SummaryBar({ summary }: Props) {
+export function SummaryBar({ summary, transactions }: Props) {
   const { mask } = usePrivacy();
   const fmt = (n: number) => mask(fmtRaw(n));
 
   const pnlPositive = summary.totalPnl >= 0;
-  const xirrPct = summary.xirr != null ? summary.xirr * 100 : null;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -55,15 +56,8 @@ export function SummaryBar({ summary }: Props) {
         valueClass={pnlPositive ? 'text-gain' : 'text-loss'}
       />
 
-      {/* XIRR */}
-      <StatCard
-        icon={<TrendingUp className="w-4 h-4" />}
-        accent="bg-foreground/5 text-foreground"
-        label="XIRR"
-        value={xirrPct != null ? `${xirrPct.toFixed(2)}%` : '—'}
-        sub="Annualized return"
-        valueClass={xirrPct != null ? (xirrPct >= 0 ? 'text-gain' : 'text-loss') : ''}
-      />
+      {/* XIRR — click for Overall / ex-PF / benchmark breakdown */}
+      <XirrDetailsCard overallXirr={summary.xirr} portfolioXirr={summary.xirrExPf} transactions={transactions} />
 
       {/* Cash row */}
       <div className="lg:col-span-12 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
