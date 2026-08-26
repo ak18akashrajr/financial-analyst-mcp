@@ -2,6 +2,7 @@
 // (instead of Groq) whenever ANTHROPIC_API_KEY is set; see portfolio-ai/index.ts.
 import type { McpToolDef } from "../mcp-client.ts";
 import { HttpCallError } from "../http-call-error.ts";
+import { withRetry } from "../retry.ts";
 import type { LlmProvider, ToolCallRequest, ToolResultForProvider, TurnResult } from "./types.ts";
 
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -48,19 +49,21 @@ export class AnthropicProvider implements LlmProvider {
   }
 
   async runTurn(model: string, systemPrompt: string, tools: McpToolDef[]): Promise<TurnResult> {
-    const res = await fetch(ANTHROPIC_ENDPOINT, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({
-        model,
-        max_tokens: MAX_TOKENS,
-        system: systemPrompt,
-        messages: this.messages,
-        tools: this.toAnthropicTools(tools),
-      }),
-    });
-    if (!res.ok) throw new HttpCallError("Anthropic", res.status, await res.text());
-    const data = await res.json();
+    const data = await withRetry(async () => {
+      const res = await fetch(ANTHROPIC_ENDPOINT, {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({
+          model,
+          max_tokens: MAX_TOKENS,
+          system: systemPrompt,
+          messages: this.messages,
+          tools: this.toAnthropicTools(tools),
+        }),
+      });
+      if (!res.ok) throw new HttpCallError("Anthropic", res.status, await res.text());
+      return res.json();
+    }, { label: "Anthropic" });
     const blocks: ContentBlock[] = data.content;
 
     const toolUseBlocks = blocks.filter((b): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use");

@@ -47,7 +47,16 @@ check items off (`- [x]`) when merged, and note the PR number.
       (bounded by `MAX_CONCURRENT_TOOL_CALLS = 3`) via a new
       [`mapWithConcurrency`](supabase/functions/_shared/concurrency.ts) helper, instead of
       awaiting them one at a time.
-- [ ] Retries with backoff
+- [x] Retries with backoff — [`withRetry`](supabase/functions/_shared/retry.ts): wraps the outbound
+      fetch in `GroqProvider.runTurn`, `AnthropicProvider.runTurn`, and `McpClient`'s `rpc()`
+      (used by `initialize`/`listTools`/`callTool`) with exponential backoff + full jitter, up to
+      3 attempts by default. Only retries what's actually transient — a 429/5xx/529 status, a
+      timeout, or a fetch()-level network failure — a genuinely bad request (400/401/403/404/
+      413/422) fails immediately, same as before. Safe because every wrapped call is read-only
+      (every MCP tool is a SELECT; an LLM chat-completion call has no side effect). Tests:
+      [retry.test.ts](supabase/functions/_shared/retry.test.ts) for the backoff/retry mechanics in
+      isolation, plus updated coverage in provider-error.test.ts and mcp-client.test.ts for the
+      actual fetch-call-count behavior.
 - [ ] Time series forecasting
 - [ ] Evaluate OpenRouter + Nemotron plan — see
       [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)
