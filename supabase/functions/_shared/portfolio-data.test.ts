@@ -12,6 +12,7 @@ import {
   getCurrentPortfolio,
   getExposureDrift,
   getPeriodPerformance,
+  getPortfolioValueAsOf,
   getRiskMetrics,
   listTransactions,
   resolveFYPeriod,
@@ -423,6 +424,56 @@ describe("getExposureDrift", () => {
     expect(techDrift.pastPercent).toBe(100);
     expect(result.note).toContain("HDFC");
     expect(result.note).toContain("excluded from past-side exposure");
+  });
+});
+
+describe("getPortfolioValueAsOf", () => {
+  const meta = { rows: [{ symbol: "TCS", geography: "India", sector: "Tech" }] };
+
+  it("prices holdings at the closest historical close on/before asOfDate and pulls cash from the closest net_worth_history snapshot, never live values", async () => {
+    const sb = makeFakeSb({
+      transactions: {
+        rows: [{ symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2025-06-01" }],
+      },
+      symbol_metadata: meta,
+      historical_prices: {
+        rows: [
+          { symbol: "TCS", date: "2025-07-31", close: 120 }, // closest close on/before asOfDate
+          { symbol: "TCS", date: "2026-08-20", close: 999 }, // must NOT leak into a 2025 valuation
+        ],
+      },
+      net_worth_history: {
+        rows: [
+          { recorded_at: "2025-07-31", liquid_cash: 500, vault_cash: 0, pf_balance: 1000, credit_card_debt: 0 },
+          { recorded_at: "2026-08-20", liquid_cash: 999999, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 },
+        ],
+      },
+    });
+
+    const result = await getPortfolioValueAsOf(sb, "2025-07-31");
+
+    expect(result.equityValue).toBe(1200); // 10 * 120
+    expect(result.liquidCash).toBe(500);
+    expect(result.pfBalance).toBe(1000);
+    expect(result.portfolioValue).toBe(2700); // 1200 + 500 + 1000
+  });
+
+  it("excludes a symbol with no historical_prices row on/before asOfDate rather than pricing it at ₹0, and flags absent net_worth_history", async () => {
+    const sb = makeFakeSb({
+      transactions: {
+        rows: [{ symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2025-06-01" }],
+      },
+      symbol_metadata: meta,
+      historical_prices: { rows: [] }, // no history at all
+      net_worth_history: { rows: [] },
+    });
+
+    const result = await getPortfolioValueAsOf(sb, "2025-07-31");
+
+    expect(result.equityValue).toBe(0); // TCS excluded, not counted as a ₹0/full loss
+    expect(result.portfolioValue).toBe(0);
+    expect(result.note).toContain("TCS");
+    expect(result.note).toContain("No net_worth_history snapshot");
   });
 });
 

@@ -54,6 +54,7 @@ describe("portfolio-mcp-server", () => {
         "check_limit_breaches",
         "compare_to_benchmark",
         "get_exposure_drift",
+        "get_portfolio_value_at_date",
       ]),
     );
     for (const tool of body.result.tools) {
