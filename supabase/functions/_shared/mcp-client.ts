@@ -5,6 +5,7 @@
 // header comment). Every tool execution is a real network round trip.
 
 import { HttpCallError } from "./http-call-error.ts";
+import { withRetry } from "./retry.ts";
 
 export interface McpToolDef {
   name: string;
@@ -24,19 +25,21 @@ export class McpClient {
 
   private async rpc(method: string, params?: Record<string, unknown>): Promise<unknown> {
     const id = this.nextId++;
-    const res = await fetch(this.serverUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: this.authHeader,
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new HttpCallError(`MCP server ${method}`, res.status, text);
-    }
-    const body = await res.json();
+    const body = await withRetry(async () => {
+      const res = await fetch(this.serverUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: this.authHeader,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new HttpCallError(`MCP server ${method}`, res.status, text);
+      }
+      return res.json();
+    }, { label: `MCP server ${method}` });
     if (body.error) throw new Error(`MCP error (${method}): ${body.error.message}`);
     return body.result;
   }

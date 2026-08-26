@@ -2,6 +2,7 @@
 // default/primary provider (see router.ts for the gpt-oss-20b/120b tiering).
 import type { McpToolDef } from "../mcp-client.ts";
 import { HttpCallError } from "../http-call-error.ts";
+import { withRetry } from "../retry.ts";
 import type { LlmProvider, ToolCallRequest, ToolResultForProvider, TurnResult } from "./types.ts";
 
 interface GroqToolCall {
@@ -45,18 +46,20 @@ export class GroqProvider implements LlmProvider {
   }
 
   async runTurn(model: string, systemPrompt: string, tools: McpToolDef[]): Promise<TurnResult> {
-    const res = await fetch(GROQ_ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "system", content: systemPrompt }, ...this.messages],
-        tools: this.toGroqTools(tools),
-        stream: false,
-      }),
-    });
-    if (!res.ok) throw new HttpCallError("Groq", res.status, await res.text());
-    const data = await res.json();
+    const data = await withRetry(async () => {
+      const res = await fetch(GROQ_ENDPOINT, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "system", content: systemPrompt }, ...this.messages],
+          tools: this.toGroqTools(tools),
+          stream: false,
+        }),
+      });
+      if (!res.ok) throw new HttpCallError("Groq", res.status, await res.text());
+      return res.json();
+    }, { label: "Groq" });
     const message = data.choices[0].message;
 
     if (message.tool_calls && message.tool_calls.length > 0) {

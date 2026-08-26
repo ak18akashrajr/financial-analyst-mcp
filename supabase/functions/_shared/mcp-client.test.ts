@@ -52,24 +52,32 @@ describe("McpClient.callTool", () => {
 describe("McpClient non-ok HTTP response", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
-  it("throws a typed HttpCallError carrying the real status, instead of an untyped Error", async () => {
+  it("retries a retryable status (503) up to the default attempt cap, then throws HttpCallError", async () => {
+    vi.useFakeTimers();
     // A fresh Response per call — a Response body can only be read once,
     // and rpc() awaits res.text() when building the error.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation(() => Promise.resolve(new Response("service unavailable", { status: 503 }))),
-    );
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response("service unavailable", { status: 503 })));
+    vi.stubGlobal("fetch", fetchMock);
     const client = new McpClient("https://example.com/portfolio-mcp-server", "Bearer test-key");
 
-    let caught: unknown;
-    try {
-      await client.initialize();
-    } catch (err) {
-      caught = err;
-    }
+    const pending = client.initialize().catch((err) => err);
+    await vi.runAllTimersAsync();
+    const caught = await pending;
+
     expect(caught).toBeInstanceOf(HttpCallError);
     expect((caught as HttpCallError).status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry a non-retryable status (400) — fails on the first attempt", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response("bad request", { status: 400 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new McpClient("https://example.com/portfolio-mcp-server", "Bearer test-key");
+
+    await expect(client.initialize()).rejects.toBeInstanceOf(HttpCallError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
