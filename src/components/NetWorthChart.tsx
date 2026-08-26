@@ -7,7 +7,6 @@ import {
   Tooltip,
   AreaChart,
   Area,
-  ReferenceLine,
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
@@ -111,6 +110,27 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
           {hidden ? '•••' : `${percentOfGoal.toFixed(1)}%`} of ₹50L goal ({AUM_GOAL_LABEL})
         </span>
       </div>
+      {/* Separate progress bar for the ₹50L goal, rather than a ReferenceLine on the trend chart
+          itself — plotting a goal ~14x the current AUM on the same Y-axis forces the axis to
+          stretch that high, which flattens the real month-to-month growth into an invisible line
+          near the bottom. Keeping the trend chart auto-scaled to actual data preserves the growth
+          signal; the goal lives here instead. */}
+      <div
+        className="h-1.5 rounded-full bg-muted overflow-hidden mb-3"
+        role="progressbar"
+        aria-label="Progress toward ₹50L AUM goal"
+        aria-valuenow={hidden ? undefined : Math.round(Math.min(percentOfGoal, 100))}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div
+          className="h-full rounded-full transition-all"
+          style={{
+            width: `${Math.min(percentOfGoal, 100)}%`,
+            backgroundColor: 'hsl(38, 92%, 50%)',
+          }}
+        />
+      </div>
       <div className="relative rounded-lg border border-border bg-card p-4">
         <ResponsiveContainer width="100%" height={250}>
           <AreaChart data={data} {...handlers}>
@@ -122,13 +142,7 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
             </defs>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
             <XAxis dataKey="label" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
-            <YAxis
-              tickFormatter={yAxisFormatter}
-              tick={{ fontSize: 11 }}
-              className="fill-muted-foreground"
-              width={60}
-              domain={[0, (max: number) => Math.max(max, AUM_GOAL) * 1.05]}
-            />
+            <YAxis tickFormatter={yAxisFormatter} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={60} />
             <Tooltip content={<CustomTooltip />} />
             <ChartRangeReferenceArea selection={selection} data={data} labelKey="label" />
             <Area
@@ -138,18 +152,6 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
               stroke="hsl(213, 75%, 55%)"
               fill="url(#gradNetWorth)"
               strokeWidth={2}
-            />
-            <ReferenceLine
-              y={AUM_GOAL}
-              stroke="hsl(38, 92%, 50%)"
-              strokeDasharray="6 4"
-              strokeWidth={1.5}
-              label={{
-                value: hidden ? `Goal (${AUM_GOAL_LABEL})` : `Goal: ₹50L (${AUM_GOAL_LABEL})`,
-                position: 'insideTopRight',
-                fill: 'hsl(38, 92%, 50%)',
-                fontSize: 11,
-              }}
             />
           </AreaChart>
         </ResponsiveContainer>

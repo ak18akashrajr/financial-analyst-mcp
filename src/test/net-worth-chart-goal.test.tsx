@@ -64,6 +64,21 @@ describe('NetWorthChart — AUM goal line (₹50L by Mar 2028)', () => {
     expect(screen.getByText(/of ₹50L goal \(Mar 2028\)/)).toBeInTheDocument();
   });
 
+  it('fills the goal progress bar to match the % of target', async () => {
+    mockedUsePrivacy.mockReturnValue({ hidden: false, toggle: vi.fn(), mask: (v: string) => v });
+    render(<NetWorthChart {...baseProps} currentNetWorth={2500000} />);
+    const bar = await screen.findByRole('progressbar', { name: /progress toward ₹50L aum goal/i });
+    expect(bar).toHaveAttribute('aria-valuenow', '50');
+  });
+
+  it('caps the progress bar fill at 100% once AUM exceeds the goal', async () => {
+    mockedUsePrivacy.mockReturnValue({ hidden: false, toggle: vi.fn(), mask: (v: string) => v });
+    render(<NetWorthChart {...baseProps} currentNetWorth={6000000} />);
+    const bar = await screen.findByRole('progressbar', { name: /progress toward ₹50L aum goal/i });
+    // Actual AUM is 120% of goal, but the bar fill (and its ARIA value) caps at 100.
+    expect(bar).toHaveAttribute('aria-valuenow', '100');
+  });
+
   it('masks the % figure when privacy mode hides values', async () => {
     mockedUsePrivacy.mockReturnValue({ hidden: true, toggle: vi.fn(), mask: () => '••••••' });
     render(<NetWorthChart {...baseProps} currentNetWorth={2500000} />);
