@@ -34,6 +34,12 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (table === 'symbol_metadata') {
         return { select: () => Promise.resolve({ data: [], error: null }) };
       }
+      if (table === 'monthly_cashflow') {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+          upsert: () => Promise.resolve({ data: null, error: null }),
+        };
+      }
       return { select: () => Promise.resolve({ data: [], error: null }) };
     },
   },

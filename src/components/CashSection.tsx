@@ -9,11 +9,16 @@ function fmtRaw(n: number): string {
 
 interface Props {
   cash: CashSettings;
-  onUpdate: (updates: Partial<CashSettings>) => void;
+  onUpdate: (updates: Partial<CashSettings>, options?: { excludeFromCashflow?: boolean }) => void;
   onPayCreditCard?: () => void;
 }
 
 type Field = 'liquid' | 'vault' | 'pf' | 'debt';
+
+// Only these two are real bank balances for income/expense tracking purposes
+// (see src/lib/expenseIncomeRatio.ts) — PF and credit-card-debt edits never
+// show the "exclude from tracking" toggle.
+const CASHFLOW_TRACKED_FIELDS: Field[] = ['liquid', 'vault'];
 
 export function CashSection({ cash, onUpdate, onPayCreditCard }: Props) {
   const { mask } = usePrivacy();
@@ -21,6 +26,7 @@ export function CashSection({ cash, onUpdate, onPayCreditCard }: Props) {
 
   const [editing, setEditing] = useState<Field | null>(null);
   const [inputVal, setInputVal] = useState('');
+  const [excludeFromCashflow, setExcludeFromCashflow] = useState(false);
 
   const startEdit = (field: Field) => {
     setEditing(field);
@@ -30,6 +36,7 @@ export function CashSection({ cash, onUpdate, onPayCreditCard }: Props) {
       field === 'pf' ? cash.pfBalance :
       cash.creditCardDebt;
     setInputVal(v.toString());
+    setExcludeFromCashflow(false);
   };
 
   const save = () => {
@@ -40,7 +47,8 @@ export function CashSection({ cash, onUpdate, onPayCreditCard }: Props) {
         editing === 'vault' ? 'vaultCash' :
         editing === 'pf' ? 'pfBalance' :
         'creditCardDebt';
-      onUpdate({ [key]: val } as Partial<CashSettings>);
+      const options = CASHFLOW_TRACKED_FIELDS.includes(editing) ? { excludeFromCashflow } : undefined;
+      onUpdate({ [key]: val } as Partial<CashSettings>, options);
     }
     setEditing(null);
   };
@@ -49,28 +57,19 @@ export function CashSection({ cash, onUpdate, onPayCreditCard }: Props) {
     <div>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-medium text-muted-foreground">Cash Management</h2>
-        {cash.creditCardDebt > 0 && onPayCreditCard && (
-          <button
-            onClick={onPayCreditCard}
-            disabled={cash.vaultCash < cash.creditCardDebt}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-foreground text-background hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed"
-            title={cash.vaultCash < cash.creditCardDebt ? 'Insufficient Cash Reserve' : 'Settle outstanding liability from Cash Reserve'}
-          >
-            <CreditCard className="w-3.5 h-3.5" />
-            Liability Settlement
-          </button>
-        )}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Credit Card – visa style */}
         <DebtCard
           value={cash.creditCardDebt}
+          vaultCash={cash.vaultCash}
           editing={editing === 'debt'}
           inputVal={inputVal}
           setInputVal={setInputVal}
           onEdit={() => startEdit('debt')}
           onSave={save}
           fmt={fmt}
+          onPayCreditCard={onPayCreditCard}
         />
 
         {/* Liquid */}
@@ -85,6 +84,9 @@ export function CashSection({ cash, onUpdate, onPayCreditCard }: Props) {
           onEdit={() => startEdit('liquid')}
           onSave={save}
           fmt={fmt}
+          showExcludeToggle
+          excludeChecked={excludeFromCashflow}
+          onExcludeChange={setExcludeFromCashflow}
         />
 
         {/* Vault */}
@@ -99,6 +101,9 @@ export function CashSection({ cash, onUpdate, onPayCreditCard }: Props) {
           onEdit={() => startEdit('vault')}
           onSave={save}
           fmt={fmt}
+          showExcludeToggle
+          excludeChecked={excludeFromCashflow}
+          onExcludeChange={setExcludeFromCashflow}
         />
 
         {/* PF — long-term retirement savings */}
@@ -131,9 +136,13 @@ interface CardProps {
   onEdit: () => void;
   onSave: () => void;
   fmt: (n: number) => string;
+  /** Shown only for balances that feed the expense-to-income ratio (Operating Cash / Cash Reserve). */
+  showExcludeToggle?: boolean;
+  excludeChecked?: boolean;
+  onExcludeChange?: (checked: boolean) => void;
 }
 
-function CashCard({ icon, label, subtitle, value, editing, inputVal, setInputVal, onEdit, onSave, fmt }: CardProps) {
+function CashCard({ icon, label, subtitle, value, editing, inputVal, setInputVal, onEdit, onSave, fmt, showExcludeToggle, excludeChecked, onExcludeChange }: CardProps) {
   return (
     <div className="rounded-2xl border border-border bg-card p-5 hover:border-foreground/30 transition-colors">
       <div className="flex items-center justify-between">
@@ -154,18 +163,31 @@ function CashCard({ icon, label, subtitle, value, editing, inputVal, setInputVal
       </div>
       <div className="mt-5">
         {editing ? (
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              className="flex-1 px-3 py-2 border border-input rounded-md text-base bg-background text-foreground"
-              value={inputVal}
-              onChange={(e) => setInputVal(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && onSave()}
-              autoFocus
-            />
-            <button onClick={onSave} className="p-2 rounded-md bg-foreground text-background">
-              <Check className="w-4 h-4" />
-            </button>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                className="flex-1 px-3 py-2 border border-input rounded-md text-base bg-background text-foreground"
+                value={inputVal}
+                onChange={(e) => setInputVal(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && onSave()}
+                autoFocus
+              />
+              <button onClick={onSave} className="p-2 rounded-md bg-foreground text-background">
+                <Check className="w-4 h-4" />
+              </button>
+            </div>
+            {showExcludeToggle && (
+              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={excludeChecked ?? false}
+                  onChange={(e) => onExcludeChange?.(e.target.checked)}
+                  className="rounded border-input"
+                />
+                Transfer or correction — exclude from income/expense
+              </label>
+            )}
           </div>
         ) : (
           <p className="text-2xl font-semibold tracking-tight text-foreground">{fmt(value)}</p>
@@ -177,15 +199,18 @@ function CashCard({ icon, label, subtitle, value, editing, inputVal, setInputVal
 
 interface DebtCardProps {
   value: number;
+  /** Cash Reserve balance — settling the liability is disabled if it can't cover `value`. */
+  vaultCash: number;
   editing: boolean;
   inputVal: string;
   setInputVal: (v: string) => void;
   onEdit: () => void;
   onSave: () => void;
   fmt: (n: number) => string;
+  onPayCreditCard?: () => void;
 }
 
-function DebtCard({ value, editing, inputVal, setInputVal, onEdit, onSave, fmt }: DebtCardProps) {
+function DebtCard({ value, vaultCash, editing, inputVal, setInputVal, onEdit, onSave, fmt, onPayCreditCard }: DebtCardProps) {
   // Visa-style card from image-2
   return (
     <div className="relative overflow-hidden rounded-2xl p-5 bg-gradient-to-br from-foreground via-foreground to-foreground/85 text-background shadow-lg min-h-[180px] flex flex-col justify-between">
@@ -222,19 +247,31 @@ function DebtCard({ value, editing, inputVal, setInputVal, onEdit, onSave, fmt }
             </button>
           </div>
         ) : (
-          <div className="flex items-end justify-between">
+          <div className="flex items-end justify-between gap-2">
             <div>
               <p className="text-[10px] uppercase tracking-[0.18em] opacity-60 mb-0.5">Outstanding</p>
               <p className={`text-2xl font-semibold tracking-tight ${value > 0 ? '' : 'opacity-70'}`}>
                 {value > 0 ? '−' : ''}{fmt(value)}
               </p>
             </div>
-            <button
-              onClick={onEdit}
-              className="text-xs px-2.5 py-1.5 rounded-md bg-background/10 hover:bg-background/20 transition flex items-center gap-1"
-            >
-              <Pencil className="w-3 h-3" /> Edit
-            </button>
+            <div className="flex flex-col items-end gap-1.5">
+              <button
+                onClick={onEdit}
+                className="text-xs px-2.5 py-1.5 rounded-md bg-background/10 hover:bg-background/20 transition flex items-center gap-1"
+              >
+                <Pencil className="w-3 h-3" /> Edit
+              </button>
+              {value > 0 && onPayCreditCard && (
+                <button
+                  onClick={onPayCreditCard}
+                  disabled={vaultCash < value}
+                  className="text-xs px-2.5 py-1.5 rounded-md bg-background text-foreground hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  title={vaultCash < value ? 'Insufficient Cash Reserve' : 'Settle outstanding liability from Cash Reserve'}
+                >
+                  <CreditCard className="w-3 h-3" /> Settle Now
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

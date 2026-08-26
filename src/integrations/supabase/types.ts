@@ -220,6 +220,30 @@ export type Database = {
         }
         Relationships: []
       }
+      monthly_cashflow: {
+        Row: {
+          id: string
+          total_expense: number
+          total_income: number
+          updated_at: string
+          year_month: string
+        }
+        Insert: {
+          id?: string
+          total_expense?: number
+          total_income?: number
+          updated_at?: string
+          year_month: string
+        }
+        Update: {
+          id?: string
+          total_expense?: number
+          total_income?: number
+          updated_at?: string
+          year_month?: string
+        }
+        Relationships: []
+      }
       net_worth_history: {
         Row: {
           credit_card_debt: number
