@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { TrendingUp, Loader2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/integrations/supabase/client';
@@ -133,6 +134,11 @@ export function XirrDetailsCard({ overallXirr, portfolioXirr, transactions }: Pr
           {BENCHMARKS.map(b => (
             <BenchmarkRow key={b.symbol} label={b.label} state={benchmarks[b.symbol]} />
           ))}
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            Whole-history XIRR from replaying every transaction into the index on the same date/amount — a different
+            question from the <Link to="/benchmark" className="underline hover:text-foreground">Benchmark page</Link>'s
+            windowed (30–365d) simple return. Different methodology and window, not a discrepancy.
+          </p>
         </div>
       </PopoverContent>
     </Popover>
