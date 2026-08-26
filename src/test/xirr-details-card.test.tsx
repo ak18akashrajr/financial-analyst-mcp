@@ -23,10 +23,10 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-function renderCard(transactions: Transaction[] = []) {
+function renderCard(transactions: Transaction[] = [], overallXirr = 0.0772, portfolioXirr = 0.0772) {
   return render(
     <MemoryRouter>
-      <XirrDetailsCard overallXirr={0.0772} portfolioXirr={0.0772} transactions={transactions} />
+      <XirrDetailsCard overallXirr={overallXirr} portfolioXirr={portfolioXirr} transactions={transactions} />
     </MemoryRouter>,
   );
 }
@@ -39,6 +39,22 @@ describe('XirrDetailsCard', () => {
     expect(screen.getByText('Overall Portfolio XIRR')).toBeInTheDocument();
     expect(screen.getByText('Portfolio XIRR (ex-PF holdings)')).toBeInTheDocument();
     expect(screen.getAllByText('+7.72%').length).toBeGreaterThan(0);
+  });
+
+  it('shows time-to-double next to a positive XIRR figure', () => {
+    renderCard();
+    fireEvent.click(screen.getByRole('button', { name: /xirr/i }));
+
+    // 7.72% annualized -> ln(2)/ln(1.0772) ≈ 9.33 years, shown next to both rows.
+    expect(screen.getAllByText('9.3y to double').length).toBe(2);
+  });
+
+  it('shows "—" for time-to-double when XIRR is null or non-positive', () => {
+    renderCard([], null, -0.02);
+    fireEvent.click(screen.getByRole('button', { name: /xirr/i }));
+
+    // Overall (null) and ex-PF (-2%) both never double.
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 
   it('states that this is a whole-history cash-flow XIRR, distinct from the /benchmark page, with a link there', () => {
