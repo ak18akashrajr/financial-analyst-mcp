@@ -32,6 +32,12 @@ export interface PortfolioSummary {
   creditCardDebt: number;
   totalPortfolioValue: number;
   xirr: number | null; // annualized return %, null if not calculable
+  // Same calculation as `xirr`, but excludes any symbol tagged category
+  // 'PPF / EPF' in symbol_metadata. Distinct from `xirr` only if a real,
+  // transaction-backed holding is tagged PPF/EPF — the manual PF balance in
+  // cash_settings never affects either number, since it has no dated
+  // contribution history to build cash flows from. See docs/xirr-breakdown.md.
+  xirrExPf: number | null;
 }
 
 export interface CashSettings {
