@@ -5,6 +5,39 @@ check items off (`- [x]`) when merged, and note the PR number.
 
 ## Dashboard / Benchmark (HIGH PRIORITY)
 
+_(none currently — see Archive at the bottom for resolved items)_
+
+## Backlog
+
+- [ ] **Wire A2UI into AI Agent frontend response.** Scope: purely how the `portfolio-ai` chat
+      response *renders* on the frontend — reformat it to look visually good (structured
+      components instead of raw markdown/prose), not a server-side protocol change. Research
+      best practice for integrating [A2UI](https://a2ui.org/) client-side rendering before
+      implementing (check whether it's a renderer library that consumes a JSON/schema payload,
+      and whether that payload can be derived from the existing chat response shape or needs
+      the response format changed).
+
+- [ ] **AUM target: ₹50L by March 2028, on the net-worth chart.**
+      [NetWorthChart.tsx](src/components/NetWorthChart.tsx) — "AUM" = total net worth
+      (holdings + cash − liabilities), confirmed same definition the chart already uses. Add a
+      ₹50L goal line for March 2028, and show % of target hit as of today. Still open: static
+      goal line + current-%-of-goal number, or also a projected pace-to-target line — default
+      to the simpler static version unless told otherwise.
+
+- [ ] **XIRR → time-to-double.** Show next to every XIRR figure in
+      [XirrDetailsCard.tsx](src/components/XirrDetailsCard.tsx)'s breakdown (Overall, ex-PF,
+      per-benchmark) — Rule of 72 / `ln(2)/ln(1+xirr)` style calculation per figure.
+
+## Portfolio AI / MCP tools
+
+- [ ] Overlap % MCP agent tool to be added
+- [ ] All risk ratios to be added
+- [ ] Time series forecasting
+- [ ] Evaluate OpenRouter + Nemotron plan — see
+      [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)
+
+## Archive (completed)
+
 - [x] **#1 — Reconcile dashboard XIRR-breakdown benchmark numbers with the `/benchmark` page.**
       Resolved by labeling, not unifying (option 2 of the two below) — the user picked this over
       replicating the cash-flow-replay methodology on `/benchmark`, since the two numbers answer
@@ -38,36 +71,12 @@ check items off (`- [x]`) when merged, and note the PR number.
       2026-08-26.
       </details>
 
-## Backlog
-
-- [ ] **Wire A2UI into AI Agent frontend response.** Scope: purely how the `portfolio-ai` chat
-      response *renders* on the frontend — reformat it to look visually good (structured
-      components instead of raw markdown/prose), not a server-side protocol change. Research
-      best practice for integrating [A2UI](https://a2ui.org/) client-side rendering before
-      implementing (check whether it's a renderer library that consumes a JSON/schema payload,
-      and whether that payload can be derived from the existing chat response shape or needs
-      the response format changed).
-
-- [ ] **AUM target: ₹50L by March 2028, on the net-worth chart.**
-      [NetWorthChart.tsx](src/components/NetWorthChart.tsx) — "AUM" = total net worth
-      (holdings + cash − liabilities), confirmed same definition the chart already uses. Add a
-      ₹50L goal line for March 2028, and show % of target hit as of today. Still open: static
-      goal line + current-%-of-goal number, or also a projected pace-to-target line — default
-      to the simpler static version unless told otherwise.
-
-- [ ] **XIRR → time-to-double.** Show next to every XIRR figure in
-      [XirrDetailsCard.tsx](src/components/XirrDetailsCard.tsx)'s breakdown (Overall, ex-PF,
-      per-benchmark) — Rule of 72 / `ln(2)/ln(1+xirr)` style calculation per figure.
-
-## Portfolio AI / MCP tools
-
-- [ ] Overlap % MCP agent tool to be added
-- [ ] All risk ratios to be added
 - [x] Async / bounded concurrency — [PR #TBD](https://github.com/ak18akashrajr/financial-analyst-mcp/pulls):
       `portfolio-ai`'s tool-call loop now runs a turn's independent tool calls concurrently
       (bounded by `MAX_CONCURRENT_TOOL_CALLS = 3`) via a new
       [`mapWithConcurrency`](supabase/functions/_shared/concurrency.ts) helper, instead of
       awaiting them one at a time.
+
 - [x] Retries with backoff — [`withRetry`](supabase/functions/_shared/retry.ts): wraps the outbound
       fetch in `GroqProvider.runTurn`, `AnthropicProvider.runTurn`, and `McpClient`'s `rpc()`
       (used by `initialize`/`listTools`/`callTool`) with exponential backoff + full jitter, up to
@@ -78,6 +87,3 @@ check items off (`- [x]`) when merged, and note the PR number.
       [retry.test.ts](supabase/functions/_shared/retry.test.ts) for the backoff/retry mechanics in
       isolation, plus updated coverage in provider-error.test.ts and mcp-client.test.ts for the
       actual fetch-call-count behavior.
-- [ ] Time series forecasting
-- [ ] Evaluate OpenRouter + Nemotron plan — see
-      [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)
