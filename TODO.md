@@ -5,7 +5,18 @@ check items off (`- [x]`) when merged, and note the PR number.
 
 ## Dashboard / Benchmark (HIGH PRIORITY)
 
-- [ ] **#1 — Reconcile dashboard XIRR-breakdown benchmark numbers with the `/benchmark` page.**
+- [x] **#1 — Reconcile dashboard XIRR-breakdown benchmark numbers with the `/benchmark` page.**
+      Resolved by labeling, not unifying (option 2 of the two below) — the user picked this over
+      replicating the cash-flow-replay methodology on `/benchmark`, since the two numbers answer
+      genuinely different questions. `XirrDetailsCard`'s benchmark section now states on-screen
+      that it's a whole-history cash-flow-replay XIRR, distinct from `/benchmark`'s windowed
+      simple return, with a link to that page; `/benchmark`'s header `InfoHint` caveat now says
+      the same in the other direction. See [docs/xirr-breakdown.md](docs/xirr-breakdown.md)'s new
+      "Why this contradicts the `/benchmark` page, and why that's fine" section for the full
+      writeup, and [src/test/xirr-details-card.test.tsx](src/test/xirr-details-card.test.tsx) for
+      coverage. Branch: `docs/reconcile-xirr-benchmark-labels` (PR not yet opened).
+      <details><summary>Original item</summary>
+
       The dashboard's XIRR stat card ([XirrDetailsCard.tsx](src/components/XirrDetailsCard.tsx),
       added in [feat/xirr-breakdown](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/new/feat/xirr-breakdown))
       shows NIFTY 500 / S&P 500 XIRR computed by replaying every real transaction as a buy/sell of
@@ -25,6 +36,7 @@ check items off (`- [x]`) when merged, and note the PR number.
            difference reads as "different question," not "bug."
       Flagged by the user after reviewing the dashboard XIRR breakdown — see chat history around
       2026-08-26.
+      </details>
 
 ## Portfolio AI / MCP tools
 

@@ -61,3 +61,19 @@ added for that benchmark — mirroring how the real `xirr` calculation only appe
 when `currentValue > 0`. `calculateXIRR` then either returns a rate from the historical flows alone
 or `null` if the resulting cash-flow series can't converge to a sane rate; either way, no
 fabricated number is shown.
+
+## Why this contradicts the `/benchmark` page, and why that's fine
+
+[Benchmark.tsx](../src/pages/Benchmark.tsx) computes a *different* metric over a *different* scope:
+`(last snapshot ÷ first snapshot − 1)` on `net_worth_history`/`benchmark_history`, independently per
+series, restricted to a selected 30/90/180/365-day window, and explicitly holdings-value-only
+(excludes cash, PF and liabilities). This dashboard breakdown instead replays the full transaction
+history as dated cash flows and solves XIRR. Different methodology (windowed simple return vs.
+whole-history cash-flow XIRR) plus a different window means the two pages will disagree for the same
+symbol — e.g. NIFTY 500 showing one figure here and a different one on `/benchmark` — and that's
+expected, not a bug. Both surfaces now say so on-screen (`XirrDetailsCard`'s benchmark caveat here,
+and the `InfoHint` caveat on `/benchmark`'s header) rather than leaving the reader to notice the
+mismatch and wonder. See TODO.md's now-closed "Reconcile dashboard XIRR-breakdown benchmark numbers"
+item for the decision history — labeling was chosen over unifying the two metrics, since they answer
+genuinely different questions ("what if this money had gone into the index, timed exactly as
+invested" vs. "how has my holdings' value tracked the index lately").

@@ -201,7 +201,7 @@ const BenchmarkContent = () => {
             <div>
               <div className="text-xl font-bold text-foreground flex items-center gap-2">
                 <h1 className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Benchmark Comparison</h1>
-                <InfoHint title="Benchmark Comparison" side="right" caveat="Uses holdings value only — excludes cash, PF and liabilities, unlike the AUM figure shown elsewhere in the app.">
+                <InfoHint title="Benchmark Comparison" side="right" caveat="Uses holdings value only — excludes cash, PF and liabilities, unlike the AUM figure shown elsewhere in the app. Also a different question from the dashboard's XIRR breakdown: this page compares windowed (30–365d) simple returns, not a whole-history, cash-flow-timed XIRR — the two numbers aren't meant to match.">
                   Tracks how your portfolio's holdings have grown compared to a market index, so you can tell whether being invested the way you are has actually beaten just holding the index. Matches what the portfolio AI reports for the same question.
                 </InfoHint>
               </div>
