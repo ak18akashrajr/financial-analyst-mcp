@@ -26,10 +26,6 @@ _(none currently — see Archive at the bottom for resolved items)_
       cash − liabilities). Both the goal label and the % figure respect privacy-hide mode. Tests:
       [net-worth-chart-goal.test.tsx](src/test/net-worth-chart-goal.test.tsx).
 
-- [ ] **XIRR → time-to-double.** Show next to every XIRR figure in
-      [XirrDetailsCard.tsx](src/components/XirrDetailsCard.tsx)'s breakdown (Overall, ex-PF,
-      per-benchmark) — Rule of 72 / `ln(2)/ln(1+xirr)` style calculation per figure.
-
 ## Portfolio AI / MCP tools
 
 - [ ] Overlap % MCP agent tool to be added
@@ -117,5 +113,13 @@ _(none currently — see Archive at the bottom for resolved items)_
       [use-portfolio-cashflow-tracking.test.tsx](src/test/use-portfolio-cashflow-tracking.test.tsx),
       [cash-section.test.tsx](src/test/cash-section.test.tsx),
       [expense-income-ratio-card.test.tsx](src/test/expense-income-ratio-card.test.tsx).
+
+- [x] **XIRR → time-to-double.** [XirrDetailsCard.tsx](src/components/XirrDetailsCard.tsx)'s
+      breakdown rows (Overall, ex-PF, and each benchmark) now show years-to-double next to the XIRR
+      figure — exact `ln(2) / ln(1+xirr)`, not the rough Rule-of-72 mental-math shortcut (see
+      [timeToDouble.ts](src/lib/timeToDouble.ts)). Sub-year durations render in months (e.g.
+      "6.0mo to double"); a zero or negative XIRR renders "—" since it never doubles. Tests:
+      [time-to-double.test.ts](src/test/time-to-double.test.ts) for the formula, plus new coverage
+      in [xirr-details-card.test.tsx](src/test/xirr-details-card.test.tsx).
 
 </details>
