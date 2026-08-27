@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Send, Bot, User, Zap, MessageSquare, Check, Loader2 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { AssistantMarkdown } from '@/components/portfolio-ai/AssistantMarkdown';
 import { supabase } from '@/integrations/supabase/client';
 
 // `toolTrace` records every real MCP tool this specific answer was grounded
@@ -342,11 +341,7 @@ const PortfolioAI = () => {
                       : 'bg-card border border-border text-foreground shadow-sm'
                   }`}>
                     {msg.role === 'assistant' ? (
-                      <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1.5 prose-li:my-0.5 prose-headings:mb-2 prose-headings:mt-3 prose-ul:my-1.5 prose-strong:text-foreground prose-table:my-3 prose-th:border prose-th:border-border prose-th:bg-muted/50 prose-th:px-2.5 prose-th:py-1.5 prose-td:border prose-td:border-border prose-td:px-2.5 prose-td:py-1.5">
-                        <div className="overflow-x-auto">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                        </div>
-                      </div>
+                      <AssistantMarkdown content={msg.content} />
                     ) : (
                       <span className="whitespace-pre-wrap">{msg.content}</span>
                     )}

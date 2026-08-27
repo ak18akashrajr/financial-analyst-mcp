@@ -5,14 +5,6 @@ check items off (`- [x]`) when merged, and note the PR number.
 
 ## Backlog
 
-- [ ] **Wire A2UI into AI Agent frontend response.** Scope: purely how the `portfolio-ai` chat
-      response *renders* on the frontend — reformat it to look visually good (structured
-      components instead of raw markdown/prose), not a server-side protocol change. Research
-      best practice for integrating [A2UI](https://a2ui.org/) client-side rendering before
-      implementing (check whether it's a renderer library that consumes a JSON/schema payload,
-      and whether that payload can be derived from the existing chat response shape or needs
-      the response format changed).
-
 - [ ] **Wire Claude Agent SDK into the codebase.** So that users with Claude Agent SDK support can
       get the most out of the application. Needs scoping before implementation — how this relates
       to the existing `portfolio-ai` agent loop / MCP-tools setup
@@ -115,5 +107,21 @@ check items off (`- [x]`) when merged, and note the PR number.
       heading, computed from the same `currentNetWorth` prop the chart already uses (holdings +
       cash − liabilities). Both the goal label and the % figure respect privacy-hide mode. Tests:
       [net-worth-chart-goal.test.tsx](src/test/net-worth-chart-goal.test.tsx).
+
+- [x] **Wire A2UI into AI Agent frontend response.** Resolved as a frontend-only,
+      A2UI-inspired restyle, not the real [A2UI](https://a2ui.org/) protocol — confirmed via
+      `google/A2UI`/a2ui.org that a genuine A2UI renderer (`@a2ui/react`) consumes a structured
+      JSON envelope (`createSurface`/`updateComponents`/`updateDataModel` against a component
+      catalog) that has to originate server-side, which `portfolio-ai`'s SSE stream doesn't emit
+      (`delta` chunks are plain Markdown, `tool_call` only carries `{name, args}`). Rather than
+      change the SSE contract, added
+      [`AssistantMarkdown`](src/components/portfolio-ai/AssistantMarkdown.tsx) as a drop-in
+      replacement for the bare `<ReactMarkdown remarkPlugins={[remarkGfm]}>` in
+      [PortfolioAI.tsx](src/pages/PortfolioAI.tsx): GFM tables render as bordered card containers
+      with zebra rows, right-aligned/`tabular-nums` numeric columns, and sign-colored gain/loss
+      cells (`+2.3%` → emerald, `-1.1%` → rose, based on the leading `+`/`-`); blockquotes render
+      as a left-accented callout card; inline code gets a pill background. Tests:
+      [portfolio-ai-markdown.test.tsx](src/test/portfolio-ai-markdown.test.tsx). Branch:
+      `feat/portfolio-ai-a2ui-markdown-rendering`.
 
 </details>
