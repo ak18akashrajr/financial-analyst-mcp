@@ -3,10 +3,6 @@
 Running list of action items for this repo. Add new items to the bottom of the relevant section;
 check items off (`- [x]`) when merged, and note the PR number.
 
-## Dashboard / Benchmark (HIGH PRIORITY)
-
-_(none currently — see Archive at the bottom for resolved items)_
-
 ## Backlog
 
 - [ ] **Wire A2UI into AI Agent frontend response.** Scope: purely how the `portfolio-ai` chat
@@ -17,29 +13,18 @@ _(none currently — see Archive at the bottom for resolved items)_
       and whether that payload can be derived from the existing chat response shape or needs
       the response format changed).
 
-- [x] **AUM target: ₹50L by March 2028, on the net-worth chart.**
-      [NetWorthChart.tsx](src/components/NetWorthChart.tsx) — added the simpler static version
-      (no projected pace-to-target line): a dashed `ReferenceLine` at ₹50L labeled
-      "Goal: ₹50L (Mar 2028)", the Y-axis domain extended so the goal line is always visible even
-      while AUM is well below it, and a "`X.X`% of ₹50L goal (Mar 2028)" line next to the chart
-      heading, computed from the same `currentNetWorth` prop the chart already uses (holdings +
-      cash − liabilities). Both the goal label and the % figure respect privacy-hide mode. Tests:
-      [net-worth-chart-goal.test.tsx](src/test/net-worth-chart-goal.test.tsx).
+- [ ] **Wire Claude Agent SDK into the codebase.** So that users with Claude Agent SDK support can
+      get the most out of the application. Needs scoping before implementation — how this relates
+      to the existing `portfolio-ai` agent loop / MCP-tools setup
+      ([supabase/functions/portfolio-ai/](supabase/functions/portfolio-ai/index.ts),
+      [_shared/mcp-client.ts](supabase/functions/_shared/mcp-client.ts)) is still an open question.
 
 ## Portfolio AI / MCP tools
 
-- [ ] Overlap % MCP agent tool to be added
 - [ ] All risk ratios to be added
 - [ ] Time series forecasting
 - [ ] Evaluate OpenRouter + Nemotron plan — see
       [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)
-
-## Repo tooling
-
-- [ ] Explore and implement [CodeRabbit.ai](https://coderabbit.ai) on GitHub — automated PR review
-      bot to complement the existing required checks (Vitest, typecheck, Gitleaks). Evaluate free
-      tier vs. paid, review-comment noise on this repo's size, and whether it should be required
-      or advisory before merge.
 
 <details>
 <summary>Archive (completed)</summary>
@@ -121,5 +106,14 @@ _(none currently — see Archive at the bottom for resolved items)_
       "6.0mo to double"); a zero or negative XIRR renders "—" since it never doubles. Tests:
       [time-to-double.test.ts](src/test/time-to-double.test.ts) for the formula, plus new coverage
       in [xirr-details-card.test.tsx](src/test/xirr-details-card.test.tsx).
+
+- [x] **AUM target: ₹50L by March 2028, on the net-worth chart.**
+      [NetWorthChart.tsx](src/components/NetWorthChart.tsx) — added the simpler static version
+      (no projected pace-to-target line): a dashed `ReferenceLine` at ₹50L labeled
+      "Goal: ₹50L (Mar 2028)", the Y-axis domain extended so the goal line is always visible even
+      while AUM is well below it, and a "`X.X`% of ₹50L goal (Mar 2028)" line next to the chart
+      heading, computed from the same `currentNetWorth` prop the chart already uses (holdings +
+      cash − liabilities). Both the goal label and the % figure respect privacy-hide mode. Tests:
+      [net-worth-chart-goal.test.tsx](src/test/net-worth-chart-goal.test.tsx).
 
 </details>
