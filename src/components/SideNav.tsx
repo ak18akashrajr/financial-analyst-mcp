@@ -16,6 +16,7 @@ import {
   ChevronsRight,
   DollarSign,
   TrendingUp,
+  Terminal,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
@@ -32,6 +33,7 @@ const tabs = [
   { to: '/goal-track', label: 'Goals', icon: Flag },
   { to: '/rolling-returns', label: 'Rolling', icon: Activity },
   { to: '/ai', label: 'AI', icon: Bot },
+  { to: '/dev-zone', label: 'Dev Zone', icon: Terminal },
 ];
 
 const EXPANDED = '16rem';

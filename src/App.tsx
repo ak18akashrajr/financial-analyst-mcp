@@ -10,6 +10,7 @@ import { SideNav } from "@/components/SideNav";
 import { MobileTopNav } from "@/components/MobileTopNav";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Lazy — several of these (Charts, Projections, RollingReturns, Benchmark,
 // GoalTrack via GoalProjection) pull in recharts, so eagerly importing all
@@ -29,6 +30,7 @@ const RollingReturns = lazy(() => import("./pages/RollingReturns.tsx"));
 const Reports = lazy(() => import("./pages/Reports.tsx"));
 const DollarAdjustedReturns = lazy(() => import("./pages/DollarAdjustedReturns.tsx"));
 const Benchmark = lazy(() => import("./pages/Benchmark.tsx"));
+const DevZone = lazy(() => import("./pages/DevZone.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -42,44 +44,47 @@ const RouteFallback = () => (
 );
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <Analytics />
-        <BrowserRouter>
-          <SideNav />
-          <MobileTopNav />
-          <div className="md:pl-[calc(var(--sidenav-w,16rem)+1.25rem)] transition-[padding] duration-300 ease-out">
-            <Suspense fallback={<RouteFallback />}>
-              <Routes>
-                {/* Single centralized auth gate — every route below requires a real
-                    Supabase Auth session. Adding a new page here automatically
-                    inherits protection; nothing extra to remember per-page. */}
-                <Route element={<ProtectedRoute />}>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/taxes" element={<Taxes />} />
-                  <Route path="/charts" element={<Charts />} />
-                  <Route path="/projections" element={<Projections />} />
-                  <Route path="/deployment-plan" element={<DeploymentPlan />} />
-                  <Route path="/ai" element={<PortfolioAI />} />
-                  <Route path="/goal-track" element={<GoalTrack />} />
-                  <Route path="/updates" element={<Updates />} />
-                  <Route path="/rolling-returns" element={<RollingReturns />} />
-                  <Route path="/reports" element={<Reports />} />
-                  <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
-                  <Route path="/benchmark" element={<Benchmark />} />
-                </Route>
-                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </Suspense>
-          </div>
-        </BrowserRouter>
-      </TooltipProvider>
-    </AuthProvider>
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <Analytics />
+          <BrowserRouter>
+            <SideNav />
+            <MobileTopNav />
+            <div className="md:pl-[calc(var(--sidenav-w,16rem)+1.25rem)] transition-[padding] duration-300 ease-out">
+              <Suspense fallback={<RouteFallback />}>
+                <Routes>
+                  {/* Single centralized auth gate — every route below requires a real
+                      Supabase Auth session. Adding a new page here automatically
+                      inherits protection; nothing extra to remember per-page. */}
+                  <Route element={<ProtectedRoute />}>
+                    <Route path="/" element={<Index />} />
+                    <Route path="/taxes" element={<Taxes />} />
+                    <Route path="/charts" element={<Charts />} />
+                    <Route path="/projections" element={<Projections />} />
+                    <Route path="/deployment-plan" element={<DeploymentPlan />} />
+                    <Route path="/ai" element={<PortfolioAI />} />
+                    <Route path="/goal-track" element={<GoalTrack />} />
+                    <Route path="/updates" element={<Updates />} />
+                    <Route path="/rolling-returns" element={<RollingReturns />} />
+                    <Route path="/reports" element={<Reports />} />
+                    <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
+                    <Route path="/benchmark" element={<Benchmark />} />
+                    <Route path="/dev-zone" element={<DevZone />} />
+                  </Route>
+                  {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
+            </div>
+          </BrowserRouter>
+        </TooltipProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

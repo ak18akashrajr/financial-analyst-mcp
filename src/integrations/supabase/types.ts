@@ -14,6 +14,74 @@ export type Database = {
   }
   public: {
     Tables: {
+      // app_logs and audit_logs are hand-added (matching their migrations'
+      // schemas exactly) rather than from `supabase gen types` — this repo
+      // checkout has no linked live project to regenerate against. Re-run
+      // `npx supabase@1.190.0 gen types typescript --project-id <ref> --schema public`
+      // next time this file is regenerated and these should come out identical.
+      app_logs: {
+        Row: {
+          context: Json
+          fn: string
+          id: string
+          level: string
+          logged_at: string
+          message: string
+          source: string
+        }
+        Insert: {
+          context?: Json
+          fn: string
+          id?: string
+          level: string
+          logged_at?: string
+          message: string
+          source: string
+        }
+        Update: {
+          context?: Json
+          fn?: string
+          id?: string
+          level?: string
+          logged_at?: string
+          message?: string
+          source?: string
+        }
+        Relationships: []
+      }
+      audit_logs: {
+        Row: {
+          actor: string | null
+          arguments: Json
+          called_at: string
+          duration_ms: number
+          error: string | null
+          id: string
+          success: boolean
+          tool_name: string
+        }
+        Insert: {
+          actor?: string | null
+          arguments?: Json
+          called_at?: string
+          duration_ms: number
+          error?: string | null
+          id?: string
+          success: boolean
+          tool_name: string
+        }
+        Update: {
+          actor?: string | null
+          arguments?: Json
+          called_at?: string
+          duration_ms?: number
+          error?: string | null
+          id?: string
+          success?: boolean
+          tool_name?: string
+        }
+        Relationships: []
+      }
       cash_settings: {
         Row: {
           credit_card_debt: number
