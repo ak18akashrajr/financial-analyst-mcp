@@ -34,7 +34,15 @@ _(none currently — see Archive at the bottom for resolved items)_
 - [ ] Evaluate OpenRouter + Nemotron plan — see
       [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)
 
-## Archive (completed)
+## Repo tooling
+
+- [ ] Explore and implement [CodeRabbit.ai](https://coderabbit.ai) on GitHub — automated PR review
+      bot to complement the existing required checks (Vitest, typecheck, Gitleaks). Evaluate free
+      tier vs. paid, review-comment noise on this repo's size, and whether it should be required
+      or advisory before merge.
+
+<details>
+<summary>Archive (completed)</summary>
 
 - [x] **#1 — Reconcile dashboard XIRR-breakdown benchmark numbers with the `/benchmark` page.**
       Resolved by labeling, not unifying (option 2 of the two below) — the user picked this over
@@ -113,3 +121,5 @@ _(none currently — see Archive at the bottom for resolved items)_
       "6.0mo to double"); a zero or negative XIRR renders "—" since it never doubles. Tests:
       [time-to-double.test.ts](src/test/time-to-double.test.ts) for the formula, plus new coverage
       in [xirr-details-card.test.tsx](src/test/xirr-details-card.test.tsx).
+
+</details>
