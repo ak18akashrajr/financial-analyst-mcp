@@ -428,7 +428,7 @@ One concise paragraph (3-4 sentences) summarising the period.
         {/* Header */}
         <div className="flex items-center justify-between print:hidden">
           <div className="flex items-center gap-3">
-            <Link to="/" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /></Link>
+            <Link to="/overview" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /></Link>
             <div>
               <h1 className="text-xl font-bold text-foreground flex items-center gap-2"><FileSpreadsheet className="w-5 h-5" /> Periodic Reports</h1>
               <p className="text-xs text-muted-foreground">{active.fy} · Board-style earnings & projection reports</p>

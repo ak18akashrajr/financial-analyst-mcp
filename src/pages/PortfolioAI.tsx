@@ -233,7 +233,7 @@ const PortfolioAI = () => {
         <div className="max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
-              to="/"
+              to="/overview"
               className="text-muted-foreground hover:text-foreground transition-colors rounded-md p-1 -ml-1 hover:bg-muted/60"
             >
               <ArrowLeft className="w-4 h-4" />

@@ -1,6 +1,10 @@
 // LoginForm now calls real Supabase Auth via useAuth().signIn() instead of
 // comparing hardcoded strings. useAuth() is mocked so this stays a unit test.
+// Wrapped in a MemoryRouter because LoginForm now navigates on success (see
+// the redirect-after-login tests below) — useNavigate()/useLocation() throw
+// outside a Router.
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { LoginForm } from '@/components/LoginForm';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,12 +15,24 @@ vi.mock('@/contexts/AuthContext', () => ({
 
 const mockedUseAuth = vi.mocked(useAuth);
 
+function renderLoginForm(initialEntries: Array<string | { pathname: string; state?: unknown }> = ['/login']) {
+  return render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <Routes>
+        <Route path="/login" element={<LoginForm />} />
+        <Route path="/overview" element={<div>Dashboard</div>} />
+        <Route path="/reports" element={<div>Reports Page</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe('LoginForm', () => {
   it('calls signIn with the entered email/password on submit', async () => {
     const signIn = vi.fn().mockResolvedValue({ error: null });
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
-    render(<LoginForm />);
+    renderLoginForm();
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'correct-password' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
@@ -28,7 +44,7 @@ describe('LoginForm', () => {
     const signIn = vi.fn().mockResolvedValue({ error: 'Invalid login credentials' });
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
-    render(<LoginForm />);
+    renderLoginForm();
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
@@ -46,7 +62,7 @@ describe('LoginForm', () => {
     const signIn = vi.fn().mockResolvedValue({ error: 'Invalid login credentials' });
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
-    render(<LoginForm />);
+    renderLoginForm();
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'ak18@old-exploit.test' } });
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: '2003' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
@@ -55,5 +71,29 @@ describe('LoginForm', () => {
     // The old hardcoded password must now always go through the real auth call
     // (which is mocked to fail here) rather than being accepted locally.
     expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
+  });
+
+  it('redirects to the dashboard after a successful sign-in with no prior destination', async () => {
+    const signIn = vi.fn().mockResolvedValue({ error: null });
+    mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
+
+    renderLoginForm(['/login']);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'correct-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    expect(await screen.findByText('Dashboard')).toBeInTheDocument();
+  });
+
+  it('redirects back to the page the user originally tried to reach, via ProtectedRoute\'s state.from', async () => {
+    const signIn = vi.fn().mockResolvedValue({ error: null });
+    mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
+
+    renderLoginForm([{ pathname: '/login', state: { from: { pathname: '/reports' } } }]);
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'correct-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    expect(await screen.findByText('Reports Page')).toBeInTheDocument();
   });
 });

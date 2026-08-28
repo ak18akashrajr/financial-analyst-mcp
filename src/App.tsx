@@ -6,8 +6,9 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "./pages/NotFound.tsx";
-import { SideNav } from "@/components/SideNav";
-import { MobileTopNav } from "@/components/MobileTopNav";
+import Landing from "./pages/Landing.tsx";
+import Login from "./pages/Login.tsx";
+import { AppLayout } from "@/components/AppLayout";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -52,16 +53,20 @@ const App = () => (
           <Sonner />
           <Analytics />
           <BrowserRouter>
-            <SideNav />
-            <MobileTopNav />
-            <div className="md:pl-[calc(var(--sidenav-w,16rem)+1.25rem)] transition-[padding] duration-300 ease-out">
-              <Suspense fallback={<RouteFallback />}>
-                <Routes>
-                  {/* Single centralized auth gate — every route below requires a real
-                      Supabase Auth session. Adding a new page here automatically
-                      inherits protection; nothing extra to remember per-page. */}
-                  <Route element={<ProtectedRoute />}>
-                    <Route path="/" element={<Index />} />
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
+                {/* Public — no session required, and neither renders the sidebar/nav. */}
+                <Route path="/" element={<Landing />} />
+                <Route path="/login" element={<Login />} />
+
+                {/* Single centralized auth gate — every route below requires a real
+                    Supabase Auth session. Adding a new page here automatically
+                    inherits protection; nothing extra to remember per-page. AppLayout
+                    (sidebar + mobile nav) is nested inside the gate so it only ever
+                    renders once a session exists. */}
+                <Route element={<ProtectedRoute />}>
+                  <Route element={<AppLayout />}>
+                    <Route path="/overview" element={<Index />} />
                     <Route path="/taxes" element={<Taxes />} />
                     <Route path="/charts" element={<Charts />} />
                     <Route path="/projections" element={<Projections />} />
@@ -75,11 +80,11 @@ const App = () => (
                     <Route path="/benchmark" element={<Benchmark />} />
                     <Route path="/dev-zone" element={<DevZone />} />
                   </Route>
-                  {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </Suspense>
-            </div>
+                </Route>
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
           </BrowserRouter>
         </TooltipProvider>
       </AuthProvider>

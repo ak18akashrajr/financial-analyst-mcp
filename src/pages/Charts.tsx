@@ -38,7 +38,7 @@ const ChartsContent = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">
+            <Link to="/overview" className="text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="w-4 h-4" />
             </Link>
             <div>
