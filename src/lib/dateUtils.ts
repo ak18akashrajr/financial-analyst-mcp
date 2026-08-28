@@ -30,3 +30,22 @@ export function parseLocalDate(dateStr: string): Date {
   // trust the standard parser rather than reinterpreting part of it as a local date.
   return new Date(dateStr);
 }
+
+/**
+ * Today's calendar date as a bare 'YYYY-MM-DD' string, in the LOCAL timezone — the same
+ * shape `transactions.date` (and this app's own `t.date.split('T')[0]` timeline keys, e.g.
+ * PortfolioCharts.tsx) already use.
+ *
+ * NOT the same as `new Date().toISOString().split('T')[0]`, which gives the *UTC* calendar
+ * date. In a timezone ahead of UTC (e.g. IST, UTC+5:30), the UTC calendar date is still
+ * "yesterday" for the first few hours after local midnight (00:00–05:29 IST) — comparing
+ * that against a locally-dated transaction key would misjudge whether today already has a
+ * data point.
+ */
+export function todayLocalDateString(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}

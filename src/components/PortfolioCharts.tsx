@@ -15,6 +15,7 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn, computeRangeXIRR } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
+import { todayLocalDateString } from '@/lib/dateUtils';
 
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -105,7 +106,11 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
       });
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    // Local calendar date, not new Date().toISOString()'s UTC one — timeline points above are
+    // keyed by t.date.split('T')[0] (the transaction's own, locally-meant calendar date), so
+    // comparing against the UTC date would misjudge "is today already a point?" for the first
+    // few hours after local midnight (see dateUtils.ts#todayLocalDateString).
+    const today = todayLocalDateString();
     const lastPoint = points[points.length - 1];
     if (lastPoint && lastPoint.date !== today) {
       let invested = 0;

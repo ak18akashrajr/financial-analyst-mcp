@@ -26,26 +26,35 @@ misclassifies a row whose date exactly matches the comparison boundary.
 | [`src/lib/benchmarkXirr.ts:36-40`](src/lib/benchmarkXirr.ts) (`priceOnOrBefore`) | Same pattern for benchmark price lookups. | Benchmark comparison XIRR. |
 | [`src/pages/GoalTrack.tsx:509,684`](src/pages/GoalTrack.tsx) | `goal.target_date` (DATE column) compared via `.getTime()` against `Date.now()`/local `today` for "days remaining." | Goal progress display only — lower stakes. |
 
-**Inconclusive** — pattern present, not confirmed as an actual mixed comparison (flagging so it
-isn't lost, not claiming it's broken):
+**Traced 2026-08-28** — both of the previously-"inconclusive" spots, resolved:
 
-- [`src/lib/chartRange.ts:94-95`](src/lib/chartRange.ts) — depends on whether the `dateKey` values
-  passed in by each caller are real date strings or short chart-axis labels; needs tracing per
-  call site before concluding either way.
-- [`src/components/PortfolioCharts.tsx:108`](src/components/PortfolioCharts.tsx) — builds "today"
-  via `new Date().toISOString().split('T')[0]` (UTC calendar date, not local — wrong for part of
-  every IST day, 00:00–05:29 IST); looked self-consistent against how the rest of that timeline is
-  keyed, but wasn't traced all the way through.
+- [x] **`src/lib/chartRange.ts:94-95` — cleared, not a bug.** Traced `computeRangeXIRR`'s only
+      DATE-only-column caller (`PortfolioCharts.tsx`'s `dateKey='date'` usage): its chart points are
+      keyed by `t.date.split('T')[0]` (the raw transaction date string, untouched), and the
+      transactions compared against them are parsed via bare `new Date(t.date)` — both sides use
+      the identical (UTC) parse of the identical kind of string, so the skew is applied uniformly
+      to both sides and cancels out. `NetWorthChart.tsx`'s other call site uses `recorded_at`, a
+      `timestamptz` column (a real instant, not a bare DATE) — also not affected. No fix needed.
+- [x] **`src/components/PortfolioCharts.tsx:108` — confirmed and fixed**, in
+      [fix/timezone-date-boundary-bug](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/new/fix/timezone-date-boundary-bug).
+      `new Date().toISOString().split('T')[0]` gave the *UTC* calendar date to decide "does the
+      timeline already have a point for today," while every other point on that timeline is keyed
+      by the transaction's own (locally-meant) date string — wrong for the ~5.5 hours after local
+      midnight (00:00–05:29 IST), where the UTC date is still "yesterday." Fixed with a new
+      [`todayLocalDateString`](src/lib/dateUtils.ts) helper (local calendar date, zero-padded to the
+      same `'YYYY-MM-DD'` shape). Cosmetic-only impact (a stale/missing "as of now" chart point
+      during that window, never a wrong money figure) — fixed anyway since it was low-effort once
+      traced. Tests: [dateUtils.test.ts](src/test/dateUtils.test.ts).
 
-**Decision needed from the user before starting on the confirmed bugs**: fix all four now (each on
-its own branch/tests, same rigor as the `periodReports.ts` fix), or hold `taxCalculator.ts` back
-for a separate, more careful pass/review since it changes reported tax numbers.
+**Still needs a decision from the user before starting** — the 4 confirmed bugs below all remain
+unfixed: fix all four now (each on its own branch/tests, same rigor as the `periodReports.ts` fix),
+or hold `taxCalculator.ts` back for a separate, more careful pass/review since it changes reported
+tax numbers.
 
 - [ ] Fix the `taxCalculator.ts` LTCG/STCG threshold day-count bug (see table above)
 - [ ] Fix the `RollingReturns.tsx` window-boundary bug (see table above)
 - [ ] Fix the `benchmarkXirr.ts` price-lookup bug (see table above)
 - [ ] Fix the `GoalTrack.tsx` days-remaining bug (see table above)
-- [ ] Trace `chartRange.ts:94-95` and `PortfolioCharts.tsx:108` to confirm or rule out a bug
 
 ## Backlog
 
