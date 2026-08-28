@@ -59,11 +59,13 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-// System Status tab pings every edge function with a raw `fetch(..., {method:
-// 'OPTIONS'})` — stub it so those tests (which exercise the App Logs / Audit
-// Trail tabs, not Status) don't hit the network.
+// System Status tab pings every edge function with a raw, deliberately
+// unauthenticated POST and treats a 401 back as "reachable" (see
+// pingEdgeFunction's comment in DevZone.tsx) — stub fetch to return that by
+// default so tests that don't care about Status (App Logs / Audit Trail)
+// don't hit the network, and Status tests default to all-healthy.
 beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(null, { status: 200 }))));
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(null, { status: 401 }))));
 });
 
 function renderPage() {
@@ -181,19 +183,19 @@ describe('DevZone', () => {
       expect(screen.getByText('connection refused')).toBeInTheDocument();
     });
 
-    it('flags an edge function as failing when its OPTIONS ping fails', async () => {
+    it('flags an edge function as failing when its reachability ping returns an unexpected status', async () => {
       vi.stubGlobal('fetch', vi.fn((url: string) => {
         if (url.includes('fetch-fx-rates')) return Promise.resolve(new Response(null, { status: 503 }));
-        return Promise.resolve(new Response(null, { status: 200 }));
+        return Promise.resolve(new Response(null, { status: 401 }));
       }));
 
       renderPage();
       await waitFor(() => expect(screen.getByText(/check.*failing/i)).toBeInTheDocument());
-      expect(screen.getByText('HTTP 503')).toBeInTheDocument();
+      expect(screen.getByText('Unexpected HTTP 503')).toBeInTheDocument();
     });
 
-    it('sends the anon apikey header on the OPTIONS ping (the gateway 400s a request without one)', async () => {
-      const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 200 })));
+    it('sends the anon apikey header on the reachability ping', async () => {
+      const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 401 })));
       vi.stubGlobal('fetch', fetchMock);
 
       renderPage();
@@ -201,7 +203,11 @@ describe('DevZone', () => {
 
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining('/functions/v1/fetch-prices'),
-        expect.objectContaining({ headers: { apikey: 'test-anon-key' } }),
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: 'test-anon-key' },
+          body: '{}',
+        }),
       );
     });
 
@@ -213,7 +219,7 @@ describe('DevZone', () => {
       await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
     });
 
-    it('does not call any edge function beyond the OPTIONS ping until Run Deep Checks is clicked', async () => {
+    it('does not call any edge function beyond the reachability ping until Run Deep Checks is clicked', async () => {
       renderPage();
       await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
       expect(invokeMock).not.toHaveBeenCalled();

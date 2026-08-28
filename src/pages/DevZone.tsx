@@ -106,15 +106,17 @@ function useExpandable() {
 // went wrong. Two kinds of check:
 //   - Core checks make a real round-trip (a PostgREST query, a GoTrue call)
 //     and so prove the thing actually works, not just that it's deployed.
-//   - Edge function checks only send a CORS preflight (OPTIONS) request —
-//     every function in this repo answers OPTIONS before touching the DB or
-//     an external API (see e.g. supabase/functions/fetch-prices/index.ts),
-//     so this proves the function is deployed and the Deno runtime is
-//     responding, not that its internal logic succeeds. Good enough as a
-//     first signal without spending real quota/rate-limit budget on every
-//     page load, and safe to call with just the anon key even for the
-//     internal-only portfolio-mcp-server function (verify_jwt is bypassed
-//     for preflight requests at the platform gateway).
+//   - Edge function checks send a deliberately unauthenticated POST — every
+//     function's requireUser()/service-role check runs before touching the
+//     DB or an external API (see e.g.
+//     supabase/functions/fetch-prices/index.ts), so a 401 back proves the
+//     function is deployed and responding, not that its internal logic
+//     succeeds. Good enough as a first signal without spending real
+//     quota/rate-limit budget on every page load, and safe to call with just
+//     the anon key even for the internal-only portfolio-mcp-server function
+//     (it 401s the same way, before ever checking for the service-role key).
+//     Deliberately not a raw OPTIONS request — see pingEdgeFunction's own
+//     comment for why that doesn't work from a browser.
 type CheckStatus = 'checking' | 'ok' | 'error';
 type DeepStatus = 'idle' | 'checking' | 'ok' | 'error';
 
@@ -188,23 +190,33 @@ async function pingEdgeFunction(id: string): Promise<CheckResult> {
   const timer = setTimeout(() => controller.abort(), EDGE_FN_TIMEOUT_MS);
   const start = performance.now();
   try {
-    // The Supabase edge gateway requires an `apikey` on every request it
-    // routes — including a manually-fired OPTIONS like this one — and
-    // rejects one without it before the request ever reaches our function's
-    // own CORS handling, in a response that carries no CORS headers itself.
-    // The browser can't expose that to JS, so it surfaces as a generic
-    // "Failed to fetch" TypeError rather than a readable status. A real
-    // browser CORS preflight and supabase.functions.invoke() both attach
-    // this automatically; a raw fetch has to add it explicitly.
+    // A manually-fired OPTIONS doesn't work here: OPTIONS isn't one of the
+    // three CORS-safelisted methods (GET/HEAD/POST), so the browser itself
+    // needs to preflight our own OPTIONS request before sending it — and
+    // that preflight's response (this same function, since it answers every
+    // OPTIONS identically) has no Access-Control-Allow-Methods header, so
+    // the browser refuses to send the actual request at all. It surfaces as
+    // a generic "Failed to fetch", indistinguishable from the function
+    // actually being down.
+    //
+    // A POST doesn't have this problem — POST *is* CORS-safelisted, so a
+    // preflight is only needed for the non-simple headers below, and only
+    // Access-Control-Allow-Headers is checked for those, which every
+    // function already sends (see buildCorsHeaders). This is the same
+    // request shape the app already makes in production, just deliberately
+    // unauthenticated: every function's requireUser()/service-role check
+    // runs first and rejects with 401 before touching the DB or an external
+    // API, so a 401 here means "deployed and responding", not "broken".
     const res = await fetch(`${SUPABASE_URL}/functions/v1/${id}`, {
-      method: 'OPTIONS',
-      headers: SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : undefined,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY ?? '' },
+      body: '{}',
       signal: controller.signal,
     });
     const latencyMs = Math.round(performance.now() - start);
-    return res.ok
-      ? { status: 'ok', detail: 'Reachable', latencyMs }
-      : { status: 'error', detail: `HTTP ${res.status}`, latencyMs };
+    return res.ok || res.status === 401
+      ? { status: 'ok', detail: res.status === 401 ? 'Reachable (401 expected without a session)' : 'Reachable', latencyMs }
+      : { status: 'error', detail: `Unexpected HTTP ${res.status}`, latencyMs };
   } catch (err) {
     const latencyMs = Math.round(performance.now() - start);
     const isAbort = err instanceof DOMException && err.name === 'AbortError';
@@ -494,8 +506,8 @@ function SystemStatusTab() {
       <div className="flex items-start justify-between gap-3">
         <p className="text-[11px] text-muted-foreground">
           Database and Auth checks make a real round-trip. Edge function checks only confirm the function
-          is deployed and answers a CORS preflight — not that its internal logic (DB writes, external
-          price sources) is working.
+          is deployed and responding (a 401 to a deliberately unauthenticated request) — not that its
+          internal logic (DB writes, external price sources) is working.
         </p>
         <button
           onClick={runAll}
