@@ -175,6 +175,38 @@ describe('buildSnapshot — period-only P&L (Reports.tsx "Unrealized P&L by Peri
   });
 });
 
+describe('buildSnapshot — timezone-boundary regression (see src/lib/dateUtils.ts)', () => {
+  // Reproduces the actual bug: historical_prices.date / transactions.date are Postgres
+  // DATE columns (no time component). Before the fix, they were parsed with
+  // `new Date(dateString)`, which the ISO-8601 spec parses as UTC midnight — a different
+  // instant from the local midnight `asOf` (and every other Date in this app) is built
+  // with. In a positive-UTC-offset timezone (this suite runs under Asia/Calcutta,
+  // UTC+5:30) that skew placed a same-day historical close "after" a local-midnight
+  // `asOf`, so it was silently dropped in favor of a stale earlier close.
+  const symbolMeta = { SYM: { category: 'Equity', geography: 'India' } };
+
+  it('marks to a historical close dated exactly on the asOf day, not a stale earlier one', () => {
+    const transactions = [txn({ type: 'BUY', quantity: 10, price: 100, date: new Date(2026, 3, 15).toISOString() })];
+    const historical: HistoricalPriceMap = {
+      SYM: [
+        { date: '2026-06-30', close: 118 },
+        { date: '2026-07-01', close: 120 }, // exactly Q1's period-end date
+      ],
+    };
+    const snap = buildSnapshot(new Date(2026, 6, 1), transactions, {}, symbolMeta, [], ZERO_CASH, { historicalPrices: historical });
+    expect(snap.priceSources.SYM).toBe('historical');
+    expect(snap.priceDates.SYM).toBe('2026-07-01');
+    expect(snap.currentValue).toBe(1200); // 10 * 120, not the stale 10 * 118
+  });
+
+  it('includes a transaction dated exactly on the snapshot asOf day', () => {
+    const transactions = [txn({ type: 'BUY', quantity: 10, price: 100, date: '2026-07-01' })]; // period-start date
+    const snap = buildSnapshot(new Date(2026, 6, 1), transactions, { SYM: 150 }, symbolMeta, [], ZERO_CASH, { useLive: true });
+    expect(snap.holdings).toHaveLength(1);
+    expect(snap.holdings[0].totalQuantity).toBe(10);
+  });
+});
+
 describe('buildSnapshot — cash resolution', () => {
   const netWorthHistory: NetWorthHistoryRow[] = [
     { recorded_at: '2024-01-01', net_worth: 0, portfolio_value: 0, liquid_cash: 1000, vault_cash: 2000, pf_balance: 500, credit_card_debt: 0 },
