@@ -99,7 +99,17 @@ Deno.serve(async (req) => {
 
     if (eps.length < 5 || price == null) {
       const reason = eps.length < 5 ? "insufficient EPS history (<5Y)" : "no price";
-      logger.warn("Could not compute CAPE", { symbol, reason, epsYears: eps.length, price });
+      // Missing EPS history is the expected, anticipated outcome for MFs/ETFs
+      // (see this file's header comment) — not a failure worth surfacing in
+      // App Logs, just the normal shape of the data for that symbol type.
+      // Missing price, on the other hand, usually does mean something's
+      // actually wrong (bad symbol, Yahoo Finance hiccup), so that still
+      // warrants a warn.
+      if (eps.length < 5) {
+        logger.info("Could not compute CAPE", { symbol, reason, epsYears: eps.length, price });
+      } else {
+        logger.warn("Could not compute CAPE", { symbol, reason, epsYears: eps.length, price });
+      }
       return new Response(JSON.stringify({
         symbol, cape: null, eps_10y: eps, price, reason,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
