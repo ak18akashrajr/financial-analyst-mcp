@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft, Terminal, RefreshCw, AlertTriangle, OctagonAlert, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Search,
+  CheckCircle2, XCircle, Search, Loader2, Activity,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { supabase } from '@/integrations/supabase/client';
@@ -41,7 +41,7 @@ interface AuditLogRow {
   error: string | null;
 }
 
-type Tab = 'app-logs' | 'audit-trail';
+type Tab = 'status' | 'app-logs' | 'audit-trail';
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
@@ -97,6 +97,430 @@ function useExpandable() {
     });
   }, []);
   return { expanded, toggle };
+}
+
+// ---------------------------------------------------------------------------
+// System Status — a live view of whether this app's actual dependencies
+// (Postgres, Auth, and every edge function) are up and reachable, distinct
+// from the App Logs tab above which is a passive history of what already
+// went wrong. Two kinds of check:
+//   - Core checks make a real round-trip (a PostgREST query, a GoTrue call)
+//     and so prove the thing actually works, not just that it's deployed.
+//   - Edge function checks only send a CORS preflight (OPTIONS) request —
+//     every function in this repo answers OPTIONS before touching the DB or
+//     an external API (see e.g. supabase/functions/fetch-prices/index.ts),
+//     so this proves the function is deployed and the Deno runtime is
+//     responding, not that its internal logic succeeds. Good enough as a
+//     first signal without spending real quota/rate-limit budget on every
+//     page load, and safe to call with just the anon key even for the
+//     internal-only portfolio-mcp-server function (verify_jwt is bypassed
+//     for preflight requests at the platform gateway).
+type CheckStatus = 'checking' | 'ok' | 'error';
+type DeepStatus = 'idle' | 'checking' | 'ok' | 'error';
+
+interface CheckResult {
+  status: 'ok' | 'error';
+  detail: string;
+  latencyMs?: number;
+}
+
+interface CheckRow {
+  id: string;
+  label: string;
+  group: 'Core' | 'Edge Functions';
+  status: CheckStatus;
+  detail: string;
+  latencyMs?: number;
+  deepStatus?: DeepStatus;
+  deepDetail?: string;
+}
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const EDGE_FN_TIMEOUT_MS = 6000;
+
+const CORE_CHECKS: { id: string; label: string; run: () => Promise<CheckResult> }[] = [
+  {
+    id: 'frontend',
+    label: 'Frontend (this app)',
+    run: async () => ({ status: 'ok', detail: `Rendering · ${import.meta.env.MODE} build` }),
+  },
+  {
+    id: 'database',
+    label: 'Database (Postgres via PostgREST)',
+    run: async () => {
+      const start = performance.now();
+      const { error } = await supabase.from('cash_settings').select('id', { count: 'exact', head: true });
+      const latencyMs = Math.round(performance.now() - start);
+      return error
+        ? { status: 'error', detail: error.message, latencyMs }
+        : { status: 'ok', detail: 'Query round-trip succeeded', latencyMs };
+    },
+  },
+  {
+    id: 'auth',
+    label: 'Auth (GoTrue)',
+    run: async () => {
+      const start = performance.now();
+      const { error } = await supabase.auth.getUser();
+      const latencyMs = Math.round(performance.now() - start);
+      return error
+        ? { status: 'error', detail: error.message, latencyMs }
+        : { status: 'ok', detail: 'Session token verified', latencyMs };
+    },
+  },
+];
+
+const EDGE_FUNCTIONS: { id: string; label: string }[] = [
+  { id: 'portfolio-ai', label: 'Portfolio AI (chat agent)' },
+  { id: 'portfolio-mcp-server', label: 'Portfolio MCP Server' },
+  { id: 'fetch-prices', label: 'Fetch Prices' },
+  { id: 'fetch-fx-rates', label: 'Fetch FX Rates' },
+  { id: 'fetch-benchmark-prices', label: 'Fetch Benchmark Prices' },
+  { id: 'fetch-historical-prices', label: 'Fetch Historical Prices' },
+  { id: 'fetch-pe-ratio', label: 'Fetch P/E Ratio' },
+  { id: 'fetch-ticker-cape', label: 'Fetch Ticker CAPE' },
+];
+
+async function pingEdgeFunction(id: string): Promise<CheckResult> {
+  if (!SUPABASE_URL) return { status: 'error', detail: 'VITE_SUPABASE_URL is not set' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), EDGE_FN_TIMEOUT_MS);
+  const start = performance.now();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/${id}`, { method: 'OPTIONS', signal: controller.signal });
+    const latencyMs = Math.round(performance.now() - start);
+    return res.ok
+      ? { status: 'ok', detail: 'Reachable', latencyMs }
+      : { status: 'error', detail: `HTTP ${res.status}`, latencyMs };
+  } catch (err) {
+    const latencyMs = Math.round(performance.now() - start);
+    const isAbort = err instanceof DOMException && err.name === 'AbortError';
+    const detail = isAbort
+      ? `Timed out after ${EDGE_FN_TIMEOUT_MS / 1000}s`
+      : err instanceof Error ? err.message : 'Network error';
+    return { status: 'error', detail, latencyMs };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Deep checks — opt-in only, never run automatically. Unlike the OPTIONS
+// ping above, these make a real authenticated call into each function so
+// they actually exercise its logic (a live Yahoo Finance round-trip, a real
+// LLM turn), not just "is it deployed". That means they cost real quota
+// (Yahoo rate limits, portfolio-ai's own rate limiter, LLM tokens) and, for
+// the price/historical functions, write real (correct) data back to the
+// same tables the app already relies on — so they're gated behind an
+// explicit "Run Deep Checks" click, not folded into the page-load checks.
+//
+// portfolio-mcp-server has no separate deep check: it requires the
+// service-role secret (see its requestHasServiceRole() gate), which must
+// never reach the browser, so it can only be exercised indirectly —
+// portfolio-ai's own deep check calls initialize/listTools/tools-call on it
+// as part of a real chat turn.
+interface DeepResult {
+  status: 'ok' | 'error';
+  detail: string;
+}
+
+const CHAT_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/portfolio-ai` : '';
+const DEEP_CHECK_TIMEOUT_MS = 20000;
+
+/** One transaction's symbol, used as a realistic probe for the price/valuation
+ * functions below — deep-checking with real portfolio data instead of an
+ * arbitrary ticker, so any data written back is data the app already wants. */
+async function getProbeSymbol(): Promise<string | null> {
+  const { data, error } = await supabase.from('transactions').select('symbol').limit(1);
+  if (error || !data || data.length === 0) return null;
+  return (data[0] as { symbol: string }).symbol;
+}
+
+async function deepCheckFetchPrices(symbol: string | null): Promise<DeepResult> {
+  if (!symbol) return { status: 'error', detail: 'No portfolio symbol to test with' };
+  const { data, error } = await supabase.functions.invoke('fetch-prices', { body: { symbols: [symbol] } });
+  if (error) return { status: 'error', detail: error.message };
+  const price = data?.prices?.[symbol];
+  return price != null
+    ? { status: 'ok', detail: `Live price for ${symbol}: ${price}` }
+    : { status: 'error', detail: `No price returned for ${symbol}` };
+}
+
+async function deepCheckHistoricalPrices(symbol: string | null): Promise<DeepResult> {
+  if (!symbol) return { status: 'error', detail: 'No portfolio symbol to test with' };
+  // Small range/interval — this is a reachability probe, not a real backfill.
+  const { data, error } = await supabase.functions.invoke('fetch-historical-prices', {
+    body: { symbols: [symbol], range: '5d', interval: '1d' },
+  });
+  if (error) return { status: 'error', detail: error.message };
+  const points = data?.prices?.[symbol];
+  return Array.isArray(points) && points.length > 0
+    ? { status: 'ok', detail: `${points.length} recent close(s) for ${symbol}` }
+    : { status: 'error', detail: `No historical data returned for ${symbol}` };
+}
+
+async function deepCheckFxRates(): Promise<DeepResult> {
+  const { data, error } = await supabase.functions.invoke('fetch-fx-rates', { body: {} });
+  if (error) return { status: 'error', detail: error.message };
+  return typeof data?.rate === 'number'
+    ? { status: 'ok', detail: `USDINR ${data.rate} as of ${data.date} (${data.source})` }
+    : { status: 'error', detail: 'No rate returned' };
+}
+
+async function deepCheckBenchmarkPrices(): Promise<DeepResult> {
+  const { data, error } = await supabase.functions.invoke('fetch-benchmark-prices', { body: { symbols: ['NIFTY50'] } });
+  if (error) return { status: 'error', detail: error.message };
+  const points = data?.benchmarks?.NIFTY50;
+  if (points?.error) return { status: 'error', detail: points.error };
+  return Array.isArray(points) && points.length > 0
+    ? { status: 'ok', detail: `${points.length} recent NIFTY50 close(s)` }
+    : { status: 'error', detail: 'No benchmark data returned' };
+}
+
+async function deepCheckPeRatio(symbol: string | null): Promise<DeepResult> {
+  if (!symbol) return { status: 'error', detail: 'No portfolio symbol to test with' };
+  const { data, error } = await supabase.functions.invoke('fetch-pe-ratio', { body: { symbol } });
+  if (error) return { status: 'error', detail: error.message };
+  return data?.symbol === symbol
+    ? { status: 'ok', detail: `Trailing P/E for ${symbol}: ${data.trailing_pe ?? 'n/a'}` }
+    : { status: 'error', detail: 'Unexpected response shape' };
+}
+
+async function deepCheckTickerCape(symbol: string | null): Promise<DeepResult> {
+  if (!symbol) return { status: 'error', detail: 'No portfolio symbol to test with' };
+  const { data, error } = await supabase.functions.invoke('fetch-ticker-cape', { body: { symbol } });
+  if (error) return { status: 'error', detail: error.message };
+  if (data?.symbol !== symbol) return { status: 'error', detail: 'Unexpected response shape' };
+  return data.cape != null
+    ? { status: 'ok', detail: `CAPE for ${symbol}: ${Number(data.cape).toFixed(2)}` }
+    : { status: 'ok', detail: `Reachable — no CAPE for ${symbol} (${data.reason ?? 'insufficient data'})` };
+}
+
+/** Sends one real (short) chat turn so the full path — auth, rate limiter,
+ * portfolio-mcp-server's initialize/listTools, and the LLM provider itself —
+ * actually runs, not just the function's own deployment. Stops reading the
+ * stream as soon as the first event arrives; it doesn't need the whole reply. */
+async function deepCheckPortfolioAi(): Promise<DeepResult> {
+  if (!CHAT_URL) return { status: 'error', detail: 'VITE_SUPABASE_URL is not set' };
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { status: 'error', detail: 'No active session to authenticate with' };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEEP_CHECK_TIMEOUT_MS);
+  try {
+    const resp = await fetch(CHAT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'Reply with only the word "pong".' }] }),
+      signal: controller.signal,
+    });
+    if (resp.status === 429) return { status: 'error', detail: 'Rate limited — try again in a moment' };
+    if (!resp.ok || !resp.body) {
+      const body = await resp.json().catch(() => null);
+      return { status: 'error', detail: body?.error || `HTTP ${resp.status}` };
+    }
+    const reader = resp.body.getReader();
+    const { done, value } = await reader.read();
+    reader.cancel().catch(() => {});
+    if (done || !value) return { status: 'error', detail: 'Stream closed with no data' };
+    return { status: 'ok', detail: 'Received a live response from the agent (auth, MCP server and LLM all reachable)' };
+  } catch (err) {
+    const isAbort = err instanceof DOMException && err.name === 'AbortError';
+    return { status: 'error', detail: isAbort ? `Timed out after ${DEEP_CHECK_TIMEOUT_MS / 1000}s` : err instanceof Error ? err.message : 'Network error' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const DEEP_CHECKS: Record<string, (symbol: string | null) => Promise<DeepResult>> = {
+  'fetch-prices': deepCheckFetchPrices,
+  'fetch-historical-prices': deepCheckHistoricalPrices,
+  'fetch-fx-rates': deepCheckFxRates,
+  'fetch-benchmark-prices': deepCheckBenchmarkPrices,
+  'fetch-pe-ratio': deepCheckPeRatio,
+  'fetch-ticker-cape': deepCheckTickerCape,
+  'portfolio-ai': deepCheckPortfolioAi,
+};
+
+function buildInitialRows(): CheckRow[] {
+  return [
+    ...CORE_CHECKS.map((c) => ({ id: c.id, label: c.label, group: 'Core' as const, status: 'checking' as const, detail: '' })),
+    ...EDGE_FUNCTIONS.map((f) => ({
+      id: f.id, label: f.label, group: 'Edge Functions' as const, status: 'checking' as const, detail: '',
+      deepStatus: (f.id in DEEP_CHECKS ? 'idle' : undefined) as DeepStatus | undefined,
+    })),
+  ];
+}
+
+function StatusDot({ status }: { status: CheckStatus }) {
+  if (status === 'checking') return <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-muted-foreground" />;
+  if (status === 'ok') return <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-500" />;
+  return <XCircle className="w-3.5 h-3.5 shrink-0 text-rose-500" />;
+}
+
+function StatusRow({ row }: { row: CheckRow }) {
+  return (
+    <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-card px-3 py-2.5">
+      <div className="flex items-center gap-2.5">
+        <StatusDot status={row.status} />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-foreground/90">{row.label}</p>
+          <p className={`truncate text-[11px] ${row.status === 'error' ? 'text-rose-500' : 'text-muted-foreground'}`}>
+            {row.status === 'checking' ? 'Checking…' : row.detail}
+          </p>
+        </div>
+        {row.latencyMs != null && (
+          <span className="shrink-0 text-[10px] font-mono text-muted-foreground">{row.latencyMs}ms</span>
+        )}
+      </div>
+      {row.deepStatus && row.deepStatus !== 'idle' && (
+        <div className="flex items-center gap-2 border-t border-border/60 pt-1.5 pl-6">
+          {row.deepStatus === 'checking' ? (
+            <Loader2 className="w-3 h-3 shrink-0 animate-spin text-sky-500" />
+          ) : row.deepStatus === 'ok' ? (
+            <CheckCircle2 className="w-3 h-3 shrink-0 text-sky-500" />
+          ) : (
+            <XCircle className="w-3 h-3 shrink-0 text-rose-500" />
+          )}
+          <p className={`truncate text-[10px] ${row.deepStatus === 'error' ? 'text-rose-500' : 'text-sky-500'}`}>
+            Deep: {row.deepStatus === 'checking' ? 'Checking…' : row.deepDetail}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusGroup({ title, rows }: { title: string; rows: CheckRow[] }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {rows.map((row) => <StatusRow key={row.id} row={row} />)}
+      </div>
+    </div>
+  );
+}
+
+function OverallBanner({ rows, lastRun }: { rows: CheckRow[]; lastRun: Date | null }) {
+  const stillChecking = rows.some((r) => r.status === 'checking');
+  const errorCount = rows.filter((r) => r.status === 'error').length;
+
+  if (stillChecking) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
+        <Loader2 className="w-4 h-4 animate-spin" /> Running checks…
+      </div>
+    );
+  }
+  if (errorCount === 0) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-xs font-medium text-emerald-500">
+        <span className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> All systems operational</span>
+        {lastRun && <span className="text-[10px] font-normal text-emerald-500/80">Checked {fmtTime(lastRun.toISOString())}</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-xs font-medium text-rose-500">
+      <span className="flex items-center gap-2">
+        <OctagonAlert className="w-4 h-4" /> {errorCount} of {rows.length} check{errorCount === 1 ? '' : 's'} failing
+      </span>
+      {lastRun && <span className="text-[10px] font-normal text-rose-500/80">Checked {fmtTime(lastRun.toISOString())}</span>}
+    </div>
+  );
+}
+
+function SystemStatusTab() {
+  const [rows, setRows] = useState<CheckRow[]>(buildInitialRows);
+  const [running, setRunning] = useState(true);
+  const [lastRun, setLastRun] = useState<Date | null>(null);
+  const [deepRunning, setDeepRunning] = useState(false);
+
+  const runAll = useCallback(() => {
+    setRunning(true);
+    setLastRun(null);
+    setRows(buildInitialRows());
+
+    const jobs = [
+      ...CORE_CHECKS.map((c) => c.run().then((result) => {
+        setRows((prev) => prev.map((r) => (r.id === c.id ? { ...r, ...result } : r)));
+      })),
+      ...EDGE_FUNCTIONS.map((f) => pingEdgeFunction(f.id).then((result) => {
+        setRows((prev) => prev.map((r) => (r.id === f.id ? { ...r, ...result } : r)));
+      })),
+    ];
+
+    Promise.all(jobs).then(() => {
+      setRunning(false);
+      setLastRun(new Date());
+    });
+  }, []);
+
+  const runDeepChecks = useCallback(async () => {
+    setDeepRunning(true);
+    const deepIds = Object.keys(DEEP_CHECKS);
+    setRows((prev) => prev.map((r) => (deepIds.includes(r.id) ? { ...r, deepStatus: 'checking', deepDetail: undefined } : r)));
+
+    const symbol = await getProbeSymbol();
+    const jobs = deepIds.map((id) =>
+      DEEP_CHECKS[id](symbol).then((result) => {
+        setRows((prev) => prev.map((r) => (r.id === id ? { ...r, deepStatus: result.status, deepDetail: result.detail } : r)));
+      }),
+    );
+    await Promise.all(jobs);
+    setDeepRunning(false);
+  }, []);
+
+  useEffect(() => { runAll(); }, [runAll]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <OverallBanner rows={rows} lastRun={lastRun} />
+
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[11px] text-muted-foreground">
+          Database and Auth checks make a real round-trip. Edge function checks only confirm the function
+          is deployed and answers a CORS preflight — not that its internal logic (DB writes, external
+          price sources) is working.
+        </p>
+        <button
+          onClick={runAll}
+          disabled={running}
+          className="flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${running ? 'animate-spin' : ''}`} />
+          Recheck
+        </button>
+      </div>
+
+      <StatusGroup title="Core" rows={rows.filter((r) => r.group === 'Core')} />
+
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Edge Functions</h2>
+          <button
+            onClick={runDeepChecks}
+            disabled={deepRunning}
+            title="Makes real calls into each function — live Yahoo Finance lookups and one real Portfolio AI chat turn, counting against its own rate limit and LLM usage."
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-xs font-medium text-sky-500 hover:bg-sky-500/20 transition-colors disabled:opacity-50"
+          >
+            <Loader2 className={`w-3.5 h-3.5 ${deepRunning ? 'animate-spin' : 'hidden'}`} />
+            {deepRunning ? 'Running deep checks…' : 'Run Deep Checks'}
+          </button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Deep checks send real requests — live Yahoo Finance lookups for a symbol from your own
+          portfolio, and one real chat turn to Portfolio AI (which counts toward its rate limit and
+          LLM usage). Portfolio MCP Server has no separate deep check — it's exercised indirectly by
+          Portfolio AI's, since only that function is allowed to hold the service-role key it requires.
+        </p>
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {rows.filter((r) => r.group === 'Edge Functions').map((row) => <StatusRow key={row.id} row={row} />)}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function AppLogsTab() {
@@ -319,7 +743,7 @@ function EmptyState({ text }: { text: string }) {
 }
 
 const DevZone = () => {
-  const [tab, setTab] = useState<Tab>('app-logs');
+  const [tab, setTab] = useState<Tab>('status');
 
   return (
     <div className="min-h-screen bg-background">
@@ -338,7 +762,7 @@ const DevZone = () => {
               </div>
               <div>
                 <h1 className="text-sm font-bold text-foreground tracking-tight">Dev Zone</h1>
-                <p className="text-[10px] text-muted-foreground">Application logs &amp; MCP audit trail</p>
+                <p className="text-[10px] text-muted-foreground">System status, application logs &amp; MCP audit trail</p>
               </div>
             </div>
           </div>
@@ -348,6 +772,15 @@ const DevZone = () => {
 
       <div className="max-w-5xl mx-auto px-4 py-5">
         <div className="mb-4 flex gap-1 rounded-lg border border-border bg-card p-1 w-fit">
+          <button
+            onClick={() => setTab('status')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              tab === 'status' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5" />
+            System Status
+          </button>
           <button
             onClick={() => setTab('app-logs')}
             className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
@@ -366,13 +799,15 @@ const DevZone = () => {
           </button>
         </div>
 
-        <p className="mb-4 text-[11px] text-muted-foreground">
-          Showing the latest {ROW_LIMIT} rows. Info-level edge-function logs aren't persisted here —
-          use <code className="rounded bg-muted px-1 py-0.5 font-mono">supabase functions logs &lt;fn&gt;</code> for
-          full stdout output.
-        </p>
+        {tab !== 'status' && (
+          <p className="mb-4 text-[11px] text-muted-foreground">
+            Showing the latest {ROW_LIMIT} rows. Info-level edge-function logs aren't persisted here —
+            use <code className="rounded bg-muted px-1 py-0.5 font-mono">supabase functions logs &lt;fn&gt;</code> for
+            full stdout output.
+          </p>
+        )}
 
-        {tab === 'app-logs' ? <AppLogsTab /> : <AuditTrailTab />}
+        {tab === 'status' ? <SystemStatusTab /> : tab === 'app-logs' ? <AppLogsTab /> : <AuditTrailTab />}
       </div>
     </div>
   );
