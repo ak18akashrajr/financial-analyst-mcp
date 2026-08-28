@@ -245,6 +245,11 @@ const ReportsContent = () => {
       const st = periodStatus(p);
       const asOf = st === 'upcoming' ? p.start : (st === 'in-progress' ? new Date() : p.end);
       const snap = buildSnapshot(asOf, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: st === 'in-progress' });
+      // Period-only (incremental) unrealized P&L — resets each period, unlike `pnl`
+      // below which is the all-time cumulative figure. Always marked historically at
+      // p.start since a period's start is never in the future.
+      const startOfPeriodSnap = buildSnapshot(p.start, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
+      const periodPnl = st === 'upcoming' ? 0 : snap.pnl - startOfPeriodSnap.pnl;
       return {
         label: p.shortLabel,
         status: st,
@@ -252,6 +257,7 @@ const ReportsContent = () => {
         current: Math.round(snap.currentValue),
         netWorth: Math.round(snap.netWorth),
         pnl: Math.round(snap.pnl),
+        periodPnl: Math.round(periodPnl),
       };
     });
   }, [periods, transactions, currentPrices, symbolMetaLite, history, cash, historicalPrices]);
@@ -636,6 +642,9 @@ One concise paragraph (3-4 sentences) summarising the period.
         {/* P&L per period bar */}
         <div className="rounded-2xl border border-border bg-card p-5">
           <h3 className="text-sm font-semibold text-foreground mb-3">Unrealized P&L by Period</h3>
+          <p className="text-[11px] text-muted-foreground -mt-2 mb-3">
+            Change in unrealized P&amp;L within each period only (resets to 0 at the start of every bar) — not the all-time cumulative total.
+          </p>
           <div className="h-56">
             <ResponsiveContainer>
               <BarChart data={trend}>
@@ -643,8 +652,8 @@ One concise paragraph (3-4 sentences) summarising the period.
                 <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={11} />
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v: any) => fmt(Number(v), hidden)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', fontSize: 12 }} />
-                <Bar dataKey="pnl" name="P&L">
-                  {trend.map((d, i) => <Cell key={i} fill={d.pnl >= 0 ? '#22c55e' : '#ef4444'} />)}
+                <Bar dataKey="periodPnl" name="P&L (this period)">
+                  {trend.map((d, i) => <Cell key={i} fill={d.periodPnl >= 0 ? '#22c55e' : '#ef4444'} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
