@@ -12,6 +12,22 @@ vi.mock('@/contexts/PrivacyContext', () => ({
   usePrivacy: vi.fn(),
 }));
 
+// SummaryBar renders XirrDetailsCard, which imports the real Supabase client
+// at module load — that throws in CI where SUPABASE_URL isn't set. Mock it
+// the same way src/test/xirr-details-card.test.tsx does.
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          order: () => Promise.resolve({ data: [], error: null }),
+        }),
+      }),
+    }),
+    functions: { invoke: vi.fn().mockResolvedValue({ data: null, error: null }) },
+  },
+}));
+
 vi.mocked(usePrivacy).mockReturnValue({ hidden: false, toggle: vi.fn(), mask: (v: string) => v });
 
 const baseSummary: PortfolioSummary = {
