@@ -3,12 +3,28 @@
 // (see src/test/benchmark-page.test.tsx for the pattern this extends).
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import DevZone from '@/pages/DevZone';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentType } from 'react';
 
-const { appLogRows, auditLogRows } = vi.hoisted(() => ({
+// DevZone.tsx reads import.meta.env.VITE_SUPABASE_URL at module scope (for the
+// System Status tab's edge-function pings) — unset in CI, where no .env exists
+// (same gap noted in portfolio-ai-preset-questions.test.ts). A static import
+// evaluates that module-scope read before vi.stubEnv below ever runs (import
+// statements are hoisted ahead of the rest of this file's body), so DevZone
+// has to be loaded dynamically, after the stub is in place.
+vi.stubEnv('VITE_SUPABASE_URL', 'https://test-project.supabase.co');
+
+let DevZone: ComponentType;
+
+beforeAll(async () => {
+  ({ default: DevZone } = await import('@/pages/DevZone'));
+});
+
+const { appLogRows, auditLogRows, probeSymbolRows, invokeMock } = vi.hoisted(() => ({
   appLogRows: [] as Record<string, unknown>[],
   auditLogRows: [] as Record<string, unknown>[],
+  probeSymbolRows: [{ symbol: 'RELIANCE.NS' }] as Record<string, unknown>[],
+  invokeMock: vi.fn((_fn: string, _opts?: { body?: unknown }) => Promise.resolve({ data: {} as any, error: null as any })),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -20,10 +36,34 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (table === 'audit_logs') {
         return { select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: auditLogRows, error: null }) }) }) };
       }
+      if (table === 'cash_settings') {
+        // System Status tab's DB check — a lightweight head-only query.
+        return { select: () => Promise.resolve({ error: null }) };
+      }
+      if (table === 'transactions') {
+        // Deep checks' probe-symbol lookup.
+        return { select: () => ({ limit: () => Promise.resolve({ data: probeSymbolRows, error: null }) }) };
+      }
       throw new Error(`Unexpected table in test: ${table}`);
+    },
+    auth: {
+      // System Status tab's Auth check.
+      getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+      getSession: () => Promise.resolve({ data: { session: { access_token: 'test-token' } } }),
+    },
+    functions: {
+      // Deep checks' fetch-prices/fetch-fx-rates/etc calls.
+      invoke: invokeMock,
     },
   },
 }));
+
+// System Status tab pings every edge function with a raw `fetch(..., {method:
+// 'OPTIONS'})` — stub it so those tests (which exercise the App Logs / Audit
+// Trail tabs, not Status) don't hit the network.
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(null, { status: 200 }))));
+});
 
 function renderPage() {
   return render(
@@ -37,10 +77,13 @@ describe('DevZone', () => {
   beforeEach(() => {
     appLogRows.length = 0;
     auditLogRows.length = 0;
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(() => Promise.resolve({ data: {}, error: null }));
   });
 
   it('shows an empty state on the App Logs tab when nothing has been logged', async () => {
     renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'App Logs' }));
     await waitFor(() => expect(screen.getByText(/no warnings or errors logged yet/i)).toBeInTheDocument());
   });
 
@@ -50,6 +93,7 @@ describe('DevZone', () => {
       fn: 'fetch-prices', message: 'Failed to fetch price', context: { symbol: 'TCS' },
     });
     renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'App Logs' }));
 
     await waitFor(() => expect(screen.getByText('Failed to fetch price')).toBeInTheDocument());
     expect(screen.getByText('error')).toBeInTheDocument();
@@ -63,6 +107,7 @@ describe('DevZone', () => {
       fn: 'fetch-fx-rates', message: 'upsert error', context: { pair: 'USDINR' },
     });
     renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'App Logs' }));
 
     await waitFor(() => expect(screen.getByText('upsert error')).toBeInTheDocument());
     expect(screen.queryByText(/"pair"/)).not.toBeInTheDocument();
@@ -77,6 +122,7 @@ describe('DevZone', () => {
       { id: '2', logged_at: '2026-08-27T10:01:00Z', source: 'edge', level: 'warn', fn: 'fetch-prices', message: 'warn message', context: {} },
     );
     renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'App Logs' }));
 
     await waitFor(() => expect(screen.getByText('error message')).toBeInTheDocument());
     expect(screen.getByText('warn message')).toBeInTheDocument();
@@ -93,8 +139,6 @@ describe('DevZone', () => {
       arguments: {}, duration_ms: 42, success: true, error: null,
     });
     renderPage();
-    await waitFor(() => expect(screen.getByText(/no warnings or errors logged yet/i)).toBeInTheDocument());
-
     fireEvent.click(screen.getByRole('button', { name: 'Audit Trail' }));
 
     await waitFor(() => expect(screen.getByText('get_portfolio_summary')).toBeInTheDocument());
@@ -113,5 +157,83 @@ describe('DevZone', () => {
     await waitFor(() => expect(screen.getByText('run_stress_test')).toBeInTheDocument());
     expect(screen.getByText('failed')).toBeInTheDocument();
     expect(screen.getByText('timeout')).toBeInTheDocument();
+  });
+
+  describe('System Status tab (default view)', () => {
+    it('reports all systems operational when DB, Auth and every edge function respond OK', async () => {
+      renderPage();
+      await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
+
+      expect(screen.getByText('Database (Postgres via PostgREST)')).toBeInTheDocument();
+      expect(screen.getByText('Auth (GoTrue)')).toBeInTheDocument();
+      expect(screen.getByText('Portfolio MCP Server')).toBeInTheDocument();
+    });
+
+    it('flags a failing check when the database query errors', async () => {
+      const { supabase } = await import('@/integrations/supabase/client');
+      vi.spyOn(supabase, 'from').mockImplementationOnce(() => ({
+        select: () => Promise.resolve({ error: { message: 'connection refused' } }),
+      }) as never);
+
+      renderPage();
+      await waitFor(() => expect(screen.getByText(/check.*failing/i)).toBeInTheDocument());
+      expect(screen.getByText('connection refused')).toBeInTheDocument();
+    });
+
+    it('flags an edge function as failing when its OPTIONS ping fails', async () => {
+      vi.stubGlobal('fetch', vi.fn((url: string) => {
+        if (url.includes('fetch-fx-rates')) return Promise.resolve(new Response(null, { status: 503 }));
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }));
+
+      renderPage();
+      await waitFor(() => expect(screen.getByText(/check.*failing/i)).toBeInTheDocument());
+      expect(screen.getByText('HTTP 503')).toBeInTheDocument();
+    });
+
+    it('re-runs all checks when Recheck is clicked', async () => {
+      renderPage();
+      await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: /recheck/i }));
+      await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
+    });
+
+    it('does not call any edge function beyond the OPTIONS ping until Run Deep Checks is clicked', async () => {
+      renderPage();
+      await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
+      expect(invokeMock).not.toHaveBeenCalled();
+    });
+
+    it('runs deep checks against a real portfolio symbol and shows a live price', async () => {
+      invokeMock.mockImplementation((fn: string) =>
+        fn === 'fetch-prices'
+          ? Promise.resolve({ data: { prices: { 'RELIANCE.NS': 2456.7 } }, error: null })
+          : Promise.resolve({ data: {}, error: null }),
+      );
+
+      renderPage();
+      await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: /run deep checks/i }));
+
+      await waitFor(() => expect(screen.getByText(/Deep: Live price for RELIANCE\.NS: 2456\.7/)).toBeInTheDocument());
+      expect(invokeMock).toHaveBeenCalledWith('fetch-prices', { body: { symbols: ['RELIANCE.NS'] } });
+    });
+
+    it('shows a deep-check failure when an edge function errors', async () => {
+      invokeMock.mockImplementation((fn: string) =>
+        fn === 'fetch-fx-rates'
+          ? Promise.resolve({ data: null, error: { message: 'Yahoo Finance unreachable' } })
+          : Promise.resolve({ data: {}, error: null }),
+      );
+
+      renderPage();
+      await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: /run deep checks/i }));
+
+      await waitFor(() => expect(screen.getByText(/Deep: Yahoo Finance unreachable/)).toBeInTheDocument());
+    });
   });
 });
