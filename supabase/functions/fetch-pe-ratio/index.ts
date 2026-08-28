@@ -1,6 +1,8 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger } from "../_shared/logger.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { requireUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { createDbLogSink } from "../_shared/db-log-sink.ts";
 
 const corsHeaders = buildCorsHeaders();
 
@@ -48,6 +50,7 @@ Deno.serve(async (req) => {
     logger.warn("Rejected unauthenticated fetch-pe-ratio request");
     return unauthorizedResponse(corsHeaders);
   }
+  logger.attachSink(createDbLogSink(createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)));
 
   try {
     const { symbol } = await req.json();

@@ -29,6 +29,7 @@ import { validateArgs } from "../_shared/mcp-schema-validate.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { recordToolCall } from "../_shared/audit-log.ts";
+import { createDbLogSink } from "../_shared/db-log-sink.ts";
 
 const logger = createLogger("portfolio-mcp-server");
 
@@ -186,6 +187,13 @@ Deno.serve(async (req: Request) => {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+  try {
+    logger.attachSink(createDbLogSink(getSupabaseClient()));
+  } catch (err) {
+    // Persisted logging is best-effort infra, never a hard requirement for
+    // serving the actual request — see logger.ts's attachSink doc comment.
+    logger.warn("Failed to attach app_logs sink", { error: err });
   }
 
   let body: JsonRpcRequest | JsonRpcRequest[];

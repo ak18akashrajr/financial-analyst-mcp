@@ -3,47 +3,20 @@
 Running list of action items for this repo. Add new items to the bottom of the relevant section;
 check items off (`- [x]`) when merged, and note the PR number.
 
-## Dashboard / Benchmark (HIGH PRIORITY)
-
-_(none currently — see Archive at the bottom for resolved items)_
-
 ## Backlog
 
-- [ ] **Wire A2UI into AI Agent frontend response.** Scope: purely how the `portfolio-ai` chat
-      response *renders* on the frontend — reformat it to look visually good (structured
-      components instead of raw markdown/prose), not a server-side protocol change. Research
-      best practice for integrating [A2UI](https://a2ui.org/) client-side rendering before
-      implementing (check whether it's a renderer library that consumes a JSON/schema payload,
-      and whether that payload can be derived from the existing chat response shape or needs
-      the response format changed).
-
-- [x] **AUM target: ₹50L by March 2028, on the net-worth chart.**
-      [NetWorthChart.tsx](src/components/NetWorthChart.tsx) — added the simpler static version
-      (no projected pace-to-target line): a dashed `ReferenceLine` at ₹50L labeled
-      "Goal: ₹50L (Mar 2028)", the Y-axis domain extended so the goal line is always visible even
-      while AUM is well below it, and a "`X.X`% of ₹50L goal (Mar 2028)" line next to the chart
-      heading, computed from the same `currentNetWorth` prop the chart already uses (holdings +
-      cash − liabilities). Both the goal label and the % figure respect privacy-hide mode. Tests:
-      [net-worth-chart-goal.test.tsx](src/test/net-worth-chart-goal.test.tsx).
-
-- [ ] **XIRR → time-to-double.** Show next to every XIRR figure in
-      [XirrDetailsCard.tsx](src/components/XirrDetailsCard.tsx)'s breakdown (Overall, ex-PF,
-      per-benchmark) — Rule of 72 / `ln(2)/ln(1+xirr)` style calculation per figure.
+- [ ] **Wire Claude Agent SDK into the codebase.** So that users with Claude Agent SDK support can
+      get the most out of the application. Needs scoping before implementation — how this relates
+      to the existing `portfolio-ai` agent loop / MCP-tools setup
+      ([supabase/functions/portfolio-ai/](supabase/functions/portfolio-ai/index.ts),
+      [_shared/mcp-client.ts](supabase/functions/_shared/mcp-client.ts)) is still an open question.
 
 ## Portfolio AI / MCP tools
 
-- [ ] Overlap % MCP agent tool to be added
 - [ ] All risk ratios to be added
 - [ ] Time series forecasting
 - [ ] Evaluate OpenRouter + Nemotron plan — see
       [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)
-
-## Repo tooling
-
-- [ ] Explore and implement [CodeRabbit.ai](https://coderabbit.ai) on GitHub — automated PR review
-      bot to complement the existing required checks (Vitest, typecheck, Gitleaks). Evaluate free
-      tier vs. paid, review-comment noise on this repo's size, and whether it should be required
-      or advisory before merge.
 
 <details>
 <summary>Archive (completed)</summary>
@@ -117,5 +90,38 @@ _(none currently — see Archive at the bottom for resolved items)_
       [use-portfolio-cashflow-tracking.test.tsx](src/test/use-portfolio-cashflow-tracking.test.tsx),
       [cash-section.test.tsx](src/test/cash-section.test.tsx),
       [expense-income-ratio-card.test.tsx](src/test/expense-income-ratio-card.test.tsx).
+
+- [x] **XIRR → time-to-double.** [XirrDetailsCard.tsx](src/components/XirrDetailsCard.tsx)'s
+      breakdown rows (Overall, ex-PF, and each benchmark) now show years-to-double next to the XIRR
+      figure — exact `ln(2) / ln(1+xirr)`, not the rough Rule-of-72 mental-math shortcut (see
+      [timeToDouble.ts](src/lib/timeToDouble.ts)). Sub-year durations render in months (e.g.
+      "6.0mo to double"); a zero or negative XIRR renders "—" since it never doubles. Tests:
+      [time-to-double.test.ts](src/test/time-to-double.test.ts) for the formula, plus new coverage
+      in [xirr-details-card.test.tsx](src/test/xirr-details-card.test.tsx).
+
+- [x] **AUM target: ₹50L by March 2028, on the net-worth chart.**
+      [NetWorthChart.tsx](src/components/NetWorthChart.tsx) — added the simpler static version
+      (no projected pace-to-target line): a dashed `ReferenceLine` at ₹50L labeled
+      "Goal: ₹50L (Mar 2028)", the Y-axis domain extended so the goal line is always visible even
+      while AUM is well below it, and a "`X.X`% of ₹50L goal (Mar 2028)" line next to the chart
+      heading, computed from the same `currentNetWorth` prop the chart already uses (holdings +
+      cash − liabilities). Both the goal label and the % figure respect privacy-hide mode. Tests:
+      [net-worth-chart-goal.test.tsx](src/test/net-worth-chart-goal.test.tsx).
+
+- [x] **Wire A2UI into AI Agent frontend response.** Resolved as a frontend-only,
+      A2UI-inspired restyle, not the real [A2UI](https://a2ui.org/) protocol — confirmed via
+      `google/A2UI`/a2ui.org that a genuine A2UI renderer (`@a2ui/react`) consumes a structured
+      JSON envelope (`createSurface`/`updateComponents`/`updateDataModel` against a component
+      catalog) that has to originate server-side, which `portfolio-ai`'s SSE stream doesn't emit
+      (`delta` chunks are plain Markdown, `tool_call` only carries `{name, args}`). Rather than
+      change the SSE contract, added
+      [`AssistantMarkdown`](src/components/portfolio-ai/AssistantMarkdown.tsx) as a drop-in
+      replacement for the bare `<ReactMarkdown remarkPlugins={[remarkGfm]}>` in
+      [PortfolioAI.tsx](src/pages/PortfolioAI.tsx): GFM tables render as bordered card containers
+      with zebra rows, right-aligned/`tabular-nums` numeric columns, and sign-colored gain/loss
+      cells (`+2.3%` → emerald, `-1.1%` → rose, based on the leading `+`/`-`); blockquotes render
+      as a left-accented callout card; inline code gets a pill background. Tests:
+      [portfolio-ai-markdown.test.tsx](src/test/portfolio-ai-markdown.test.tsx). Branch:
+      `feat/portfolio-ai-a2ui-markdown-rendering`.
 
 </details>

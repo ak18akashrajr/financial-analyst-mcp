@@ -4,6 +4,7 @@ import { TrendingUp, Loader2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/integrations/supabase/client';
 import { computeBenchmarkXirr, type BenchmarkPricePoint, type BenchmarkXirrResult } from '@/lib/benchmarkXirr';
+import { formatYearsToDouble, yearsToDouble } from '@/lib/timeToDouble';
 import type { Transaction } from '@/types/portfolio';
 
 // Mirrors BENCHMARK_TICKERS in supabase/functions/fetch-benchmark-prices/index.ts and
@@ -121,12 +122,13 @@ export function XirrDetailsCard({ overallXirr, portfolioXirr, transactions }: Pr
       <PopoverContent align="end" className="w-80 space-y-3">
         <p className="text-xs font-semibold text-foreground">XIRR Breakdown</p>
 
-        <Row label="Overall Portfolio XIRR" value={fmtPct(overallXirr)} tone={toneOf(overallXirr)} />
-        <Row label="Portfolio XIRR (ex-PF holdings)" value={fmtPct(portfolioXirr)} tone={toneOf(portfolioXirr)} />
+        <Row label="Overall Portfolio XIRR" value={fmtPct(overallXirr)} tone={toneOf(overallXirr)} xirr={overallXirr} />
+        <Row label="Portfolio XIRR (ex-PF holdings)" value={fmtPct(portfolioXirr)} tone={toneOf(portfolioXirr)} xirr={portfolioXirr} />
         <p className="text-[10px] leading-relaxed text-muted-foreground">
           Stocks, ETFs, Mutual Funds &amp; other transaction-backed holdings only — same as the Holdings table. The
           manual PF (PPF/EPF) balance in Cash Management isn't included in either number above: it has no dated
-          contribution history to build cash flows from, so no real XIRR can be computed for it.
+          contribution history to build cash flows from, so no real XIRR can be computed for it. Time-to-double is
+          ln(2) ÷ ln(1 + rate) — shown as "—" when the rate is zero or negative, since it never doubles.
         </p>
 
         <div className="border-t border-border pt-2.5 space-y-2">
@@ -150,12 +152,15 @@ function toneOf(n: number | null): 'gain' | 'loss' | 'default' {
   return n >= 0 ? 'gain' : 'loss';
 }
 
-function Row({ label, value, tone }: { label: string; value: string; tone: 'gain' | 'loss' | 'default' }) {
+function Row({ label, value, tone, xirr }: { label: string; value: string; tone: 'gain' | 'loss' | 'default'; xirr: number | null }) {
   return (
     <div className="flex items-center justify-between text-xs">
       <span className="text-muted-foreground">{label}</span>
-      <span className={`font-mono font-semibold ${tone === 'gain' ? 'text-gain' : tone === 'loss' ? 'text-loss' : 'text-foreground'}`}>
-        {value}
+      <span className="flex items-baseline gap-1.5">
+        <span className={`font-mono font-semibold ${tone === 'gain' ? 'text-gain' : tone === 'loss' ? 'text-loss' : 'text-foreground'}`}>
+          {value}
+        </span>
+        <span className="font-mono text-[10px] text-muted-foreground">{formatYearsToDouble(yearsToDouble(xirr))}</span>
       </span>
     </div>
   );
@@ -195,8 +200,11 @@ function BenchmarkRow({ label, state }: { label: string; state: BenchmarkState |
     <div className="space-y-0.5">
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted-foreground">{label}</span>
-        <span className={`font-mono font-semibold ${tone === 'gain' ? 'text-gain' : tone === 'loss' ? 'text-loss' : 'text-foreground'}`}>
-          {fmtPct(r?.xirr ?? null)}
+        <span className="flex items-baseline gap-1.5">
+          <span className={`font-mono font-semibold ${tone === 'gain' ? 'text-gain' : tone === 'loss' ? 'text-loss' : 'text-foreground'}`}>
+            {fmtPct(r?.xirr ?? null)}
+          </span>
+          <span className="font-mono text-[10px] text-muted-foreground">{formatYearsToDouble(yearsToDouble(r?.xirr ?? null))}</span>
         </span>
       </div>
       {r && r.excludedCount > 0 && (

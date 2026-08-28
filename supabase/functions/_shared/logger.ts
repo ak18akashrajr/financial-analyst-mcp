@@ -15,6 +15,20 @@ export type LogLevel = "info" | "warn" | "error";
 
 export type LogContext = Record<string, unknown>;
 
+/** A warn/error entry handed to an attached sink — see `Logger.attachSink`. */
+export interface SinkableLogEntry {
+  ts: string;
+  level: "warn" | "error";
+  fn: string;
+  message: string;
+  context: Record<string, unknown>;
+}
+
+/** Receives every warn/error entry a logger emits, in addition to the usual
+ * console output. Must never throw — a sink failing is a logging-infra
+ * problem, not something that should break the call site being logged. */
+export type LogSink = (entry: SinkableLogEntry) => void;
+
 interface SerializedError {
   name: string;
   message: string;
@@ -54,24 +68,47 @@ export interface Logger {
    * their own error handling unchanged.
    */
   timed<T>(label: string, operation: () => Promise<T>): Promise<T>;
+  /**
+   * Wires a fire-and-forget sink that receives every subsequent warn/error
+   * entry (info is intentionally excluded — see the app_logs migration).
+   * Optional and additive: console output happens exactly as before whether
+   * or not a sink is attached. Loggers are created at module load (before
+   * any request, before `Deno.env` access is meaningful), so this exists to
+   * be called later, once per request, from inside a handler that already
+   * has a service-role Supabase client — see _shared/db-log-sink.ts. Pass
+   * `undefined` to detach.
+   */
+  attachSink(sink: LogSink | undefined): void;
 }
 
 export function createLogger(fn: string): Logger {
+  let sink: LogSink | undefined;
+
   function write(level: LogLevel, message: string, context?: LogContext): void {
+    const serializedContext = serializeContext(context);
     const entry = {
       ts: new Date().toISOString(),
       level,
       fn,
       msg: message,
-      ...serializeContext(context),
+      ...serializedContext,
     };
     WRITE_BY_LEVEL[level](JSON.stringify(entry));
+
+    if (sink && level !== "info") {
+      try {
+        sink({ ts: entry.ts, level, fn, message, context: serializedContext });
+      } catch {
+        // A sink must never take down the call site it's logging for.
+      }
+    }
   }
 
   return {
     info: (message, context) => write("info", message, context),
     warn: (message, context) => write("warn", message, context),
     error: (message, context) => write("error", message, context),
+    attachSink: (s) => { sink = s; },
     async timed<T>(label: string, operation: () => Promise<T>): Promise<T> {
       const startedAt = Date.now();
       write("info", `${label} started`);

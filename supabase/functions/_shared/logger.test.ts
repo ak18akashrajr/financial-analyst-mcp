@@ -89,4 +89,66 @@ describe("createLogger", () => {
     expect(typeof entry.duration_ms).toBe("number");
     expect(entry.error).toMatchObject({ message: "upstream down" });
   });
+
+  describe("attachSink", () => {
+    it("forwards warn and error entries to the attached sink", () => {
+      const logger = createLogger("fetch-prices");
+      const sink = vi.fn();
+      logger.attachSink(sink);
+
+      logger.warn("degraded", { symbol: "TCS" });
+      logger.error("failed", { symbol: "INFY" });
+
+      expect(sink).toHaveBeenCalledTimes(2);
+      expect(sink).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        level: "warn",
+        fn: "fetch-prices",
+        message: "degraded",
+        context: { symbol: "TCS" },
+      }));
+      expect(sink).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        level: "error",
+        fn: "fetch-prices",
+        message: "failed",
+        context: { symbol: "INFY" },
+      }));
+    });
+
+    it("does not forward info-level entries to the sink", () => {
+      const logger = createLogger("fetch-prices");
+      const sink = vi.fn();
+      logger.attachSink(sink);
+
+      logger.info("starting");
+
+      expect(sink).not.toHaveBeenCalled();
+    });
+
+    it("still writes to console when no sink is attached (default, unchanged behavior)", () => {
+      const logger = createLogger("fetch-prices");
+      logger.warn("degraded");
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops forwarding once detached with undefined", () => {
+      const logger = createLogger("fetch-prices");
+      const sink = vi.fn();
+      logger.attachSink(sink);
+      logger.attachSink(undefined);
+
+      logger.error("failed");
+
+      expect(sink).not.toHaveBeenCalled();
+    });
+
+    it("a throwing sink doesn't break the log call or console output", () => {
+      const logger = createLogger("fetch-prices");
+      logger.attachSink(() => {
+        throw new Error("sink boom");
+      });
+
+      expect(() => logger.error("failed")).not.toThrow();
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -22,6 +22,7 @@ import type { LlmProvider, ToolResultForProvider } from "../_shared/providers/ty
 import { chunkText, createSseStream } from "../_shared/sse.ts";
 import { classifyChatError, ToolLoopExceededError } from "../_shared/chat-error-classifier.ts";
 import { createLogger } from "../_shared/logger.ts";
+import { createDbLogSink } from "../_shared/db-log-sink.ts";
 
 const logger = createLogger("portfolio-ai");
 
@@ -159,6 +160,7 @@ Deno.serve(async (req: Request) => {
   // endpoint per call (up to MAX_TOOL_TURNS round trips), so even a single
   // authenticated user should be capped at a sane per-minute rate.
   const serviceClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  logger.attachSink(createDbLogSink(serviceClient));
   const withinLimit = await checkRateLimit(serviceClient, user.id);
   if (!withinLimit) {
     logger.warn("Rate limit exceeded", { userId: user.id });
