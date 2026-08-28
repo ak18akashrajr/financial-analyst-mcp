@@ -147,6 +147,34 @@ describe('buildSnapshot — price resolution', () => {
   });
 });
 
+describe('buildSnapshot — period-only P&L (Reports.tsx "Unrealized P&L by Period" bar chart)', () => {
+  // buildSnapshot's own `pnl` field is always all-time cumulative (since the earliest
+  // transaction), never reset per period — Reports.tsx derives the period-only P&L shown
+  // in that bar chart by subtracting two cumulative snapshots: pnl(period end) − pnl(period start).
+  it('derives a period-only P&L that resets each quarter, from two cumulative snapshots', () => {
+    const symbolMeta = { SYM: { category: 'Equity', geography: 'India' } };
+    const transactions = [txn({ type: 'BUY', quantity: 10, price: 100, date: new Date(2026, 3, 15).toISOString() })]; // Q1 FY26-27
+    const historical: HistoricalPriceMap = {
+      SYM: [
+        { date: '2026-06-29', close: 120 }, // last close before Q1 end (Jul 1, exclusive)
+        { date: '2026-09-29', close: 150 }, // last close before Q2 end (Oct 1, exclusive)
+      ],
+    };
+    // Use each period's actual (exclusive) end boundary, as Reports.tsx does — Q1 ends Jul 1, Q2 ends Oct 1.
+    const q1End = buildSnapshot(new Date(2026, 6, 1), transactions, {}, symbolMeta, [], ZERO_CASH, { historicalPrices: historical });
+    const q2End = buildSnapshot(new Date(2026, 9, 1), transactions, {}, symbolMeta, [], ZERO_CASH, { historicalPrices: historical });
+
+    // Cumulative pnl keeps growing across periods — it does NOT reset on its own.
+    expect(q1End.pnl).toBe(200);  // (120 - 100) * 10
+    expect(q2End.pnl).toBe(500);  // (150 - 100) * 10
+
+    // Period-only P&L for Q2 = cumulative(Q2 end) − cumulative(Q1 end), i.e. the price
+    // move within Q2 alone ((150 - 120) * 10), not the all-time total.
+    const q2PeriodOnlyPnl = q2End.pnl - q1End.pnl;
+    expect(q2PeriodOnlyPnl).toBe(300);
+  });
+});
+
 describe('buildSnapshot — cash resolution', () => {
   const netWorthHistory: NetWorthHistoryRow[] = [
     { recorded_at: '2024-01-01', net_worth: 0, portfolio_value: 0, liquid_cash: 1000, vault_cash: 2000, pf_balance: 500, credit_card_debt: 0 },
