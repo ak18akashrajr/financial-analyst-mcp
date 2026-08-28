@@ -13,6 +13,7 @@ import type { ComponentType } from 'react';
 // statements are hoisted ahead of the rest of this file's body), so DevZone
 // has to be loaded dynamically, after the stub is in place.
 vi.stubEnv('VITE_SUPABASE_URL', 'https://test-project.supabase.co');
+vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'test-anon-key');
 
 let DevZone: ComponentType;
 
@@ -189,6 +190,19 @@ describe('DevZone', () => {
       renderPage();
       await waitFor(() => expect(screen.getByText(/check.*failing/i)).toBeInTheDocument());
       expect(screen.getByText('HTTP 503')).toBeInTheDocument();
+    });
+
+    it('sends the anon apikey header on the OPTIONS ping (the gateway 400s a request without one)', async () => {
+      const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 200 })));
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderPage();
+      await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/functions/v1/fetch-prices'),
+        expect.objectContaining({ headers: { apikey: 'test-anon-key' } }),
+      );
     });
 
     it('re-runs all checks when Recheck is clicked', async () => {

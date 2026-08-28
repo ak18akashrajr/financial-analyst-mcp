@@ -136,6 +136,7 @@ interface CheckRow {
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 const EDGE_FN_TIMEOUT_MS = 6000;
 
 const CORE_CHECKS: { id: string; label: string; run: () => Promise<CheckResult> }[] = [
@@ -187,7 +188,19 @@ async function pingEdgeFunction(id: string): Promise<CheckResult> {
   const timer = setTimeout(() => controller.abort(), EDGE_FN_TIMEOUT_MS);
   const start = performance.now();
   try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/${id}`, { method: 'OPTIONS', signal: controller.signal });
+    // The Supabase edge gateway requires an `apikey` on every request it
+    // routes — including a manually-fired OPTIONS like this one — and
+    // rejects one without it before the request ever reaches our function's
+    // own CORS handling, in a response that carries no CORS headers itself.
+    // The browser can't expose that to JS, so it surfaces as a generic
+    // "Failed to fetch" TypeError rather than a readable status. A real
+    // browser CORS preflight and supabase.functions.invoke() both attach
+    // this automatically; a raw fetch has to add it explicitly.
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/${id}`, {
+      method: 'OPTIONS',
+      headers: SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : undefined,
+      signal: controller.signal,
+    });
     const latencyMs = Math.round(performance.now() - start);
     return res.ok
       ? { status: 'ok', detail: 'Reachable', latencyMs }
