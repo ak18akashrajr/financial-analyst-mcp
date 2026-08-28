@@ -3,8 +3,22 @@
 // (see src/test/benchmark-page.test.tsx for the pattern this extends).
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import DevZone from '@/pages/DevZone';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentType } from 'react';
+
+// DevZone.tsx reads import.meta.env.VITE_SUPABASE_URL at module scope (for the
+// System Status tab's edge-function pings) — unset in CI, where no .env exists
+// (same gap noted in portfolio-ai-preset-questions.test.ts). A static import
+// evaluates that module-scope read before vi.stubEnv below ever runs (import
+// statements are hoisted ahead of the rest of this file's body), so DevZone
+// has to be loaded dynamically, after the stub is in place.
+vi.stubEnv('VITE_SUPABASE_URL', 'https://test-project.supabase.co');
+
+let DevZone: ComponentType;
+
+beforeAll(async () => {
+  ({ default: DevZone } = await import('@/pages/DevZone'));
+});
 
 const { appLogRows, auditLogRows, probeSymbolRows, invokeMock } = vi.hoisted(() => ({
   appLogRows: [] as Record<string, unknown>[],
