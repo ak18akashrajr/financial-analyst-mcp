@@ -21,8 +21,9 @@ export function SummaryBar({ summary, transactions }: Props) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
       {/* Hero — Net Worth (col-span-5, like the "balance" card) */}
-      <div className="lg:col-span-5 rounded-2xl border border-border bg-card p-6 flex flex-col justify-between min-h-[180px]">
-        <div className="flex items-start justify-between">
+      <div className="relative lg:col-span-5 rounded-2xl border border-border bg-card p-6 flex flex-col justify-between min-h-[180px] overflow-hidden">
+        <AumBackdrop positive={pnlPositive} />
+        <div className="relative flex items-start justify-between">
           <div>
             <p className="text-xs text-muted-foreground">Assets Under Management (AUM)</p>
             <p className="mt-3 text-3xl sm:text-4xl font-semibold tracking-tight text-foreground">
@@ -38,7 +39,7 @@ export function SummaryBar({ summary, transactions }: Props) {
             {pnlPositive ? '+' : ''}{summary.totalPnlPercent.toFixed(2)}%
           </span>
         </div>
-        <div className="flex items-center justify-between text-xs text-muted-foreground border-t border-border/70 pt-3 mt-4">
+        <div className="relative flex items-center justify-between text-xs text-muted-foreground border-t border-border/70 pt-3 mt-4">
           <span>Holdings + Cash − Debt</span>
           <span className="font-mono">
             Principal Capital Allocated {fmt(summary.investedValue)} · Current {fmt(summary.currentValue)}
@@ -77,6 +78,42 @@ export function SummaryBar({ summary, transactions }: Props) {
         />
       </div>
     </div>
+  );
+}
+
+// Decorative area-chart pattern echoing the AUM trend, tucked behind the hero
+// card's text (bottom-right, low-opacity). Not driven by real historical
+// data — a single smooth ascending sweep, flat/invisible through the left
+// half of the card and rising into the bottom-right corner, in the spirit of
+// the dotted "Holdings · Cash · Principal · ..." legend line above it.
+function AumBackdrop({ positive }: { positive: boolean }) {
+  const color = positive ? 'hsl(var(--gain))' : 'hsl(var(--loss))';
+  const fillGradientId = positive ? 'aumBackdropGainFill' : 'aumBackdropLossFill';
+  const lineGradientId = positive ? 'aumBackdropGainLine' : 'aumBackdropLossLine';
+  const linePath = 'M0,95 C40,94 70,93 90,90 C110,87 122,81 140,74 C165,64 185,49 210,34 C235,19 260,9 300,3';
+  return (
+    <svg
+      className="absolute inset-x-0 bottom-0 w-full h-28 sm:h-32 pointer-events-none"
+      viewBox="0 0 300 100"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <defs>
+        {/* Diagonal fade: near-invisible at bottom-left, solid by the top-right */}
+        <linearGradient id={fillGradientId} x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={color} stopOpacity="0.02" />
+          <stop offset="55%" stopColor={color} stopOpacity="0.16" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.4" />
+        </linearGradient>
+        <linearGradient id={lineGradientId} x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={color} stopOpacity="0.1" />
+          <stop offset="55%" stopColor={color} stopOpacity="0.5" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.85" />
+        </linearGradient>
+      </defs>
+      <path d={`${linePath} L300,100 L0,100 Z`} fill={`url(#${fillGradientId})`} />
+      <path d={linePath} fill="none" stroke={`url(#${lineGradientId})`} strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }
 

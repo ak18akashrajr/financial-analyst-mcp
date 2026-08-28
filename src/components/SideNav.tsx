@@ -21,19 +21,37 @@ import {
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 
-const tabs = [
-  { to: '/overview', label: 'Overview', icon: LayoutDashboard },
-  { to: '/charts', label: 'Charts', icon: BarChart3 },
-  { to: '/reports', label: 'Reports', icon: FileSpreadsheet },
-  { to: '/benchmark', label: 'Benchmark', icon: TrendingUp },
-  { to: '/dollar-adjusted-returns', label: 'USD View', icon: DollarSign },
-  { to: '/taxes', label: 'Taxes', icon: FileText },
-  { to: '/projections', label: 'Projections', icon: Crosshair },
-  { to: '/deployment-plan', label: 'Deploy', icon: Target },
-  { to: '/goal-track', label: 'Goals', icon: Flag },
-  { to: '/rolling-returns', label: 'Rolling', icon: Activity },
-  { to: '/ai', label: 'AI', icon: Bot },
-  { to: '/dev-zone', label: 'Dev Zone', icon: Terminal },
+const navGroups = [
+  {
+    label: null, // ungrouped — always visible, no section header
+    items: [{ to: '/overview', label: 'Overview', icon: LayoutDashboard }],
+  },
+  {
+    label: 'Analytics',
+    items: [
+      { to: '/charts', label: 'Charts', icon: BarChart3 },
+      { to: '/reports', label: 'Reports', icon: FileSpreadsheet },
+      { to: '/benchmark', label: 'Benchmark', icon: TrendingUp },
+      { to: '/dollar-adjusted-returns', label: 'USD View', icon: DollarSign },
+      { to: '/rolling-returns', label: 'Rolling', icon: Activity },
+    ],
+  },
+  {
+    label: 'Planning',
+    items: [
+      { to: '/taxes', label: 'Taxes', icon: FileText },
+      { to: '/projections', label: 'Projections', icon: Crosshair },
+      { to: '/deployment-plan', label: 'Deploy', icon: Target },
+      { to: '/goal-track', label: 'Goals', icon: Flag },
+    ],
+  },
+  {
+    label: 'Tools',
+    items: [
+      { to: '/ai', label: 'AI', icon: Bot },
+      { to: '/dev-zone', label: 'Dev Zone', icon: Terminal },
+    ],
+  },
 ];
 
 const EXPANDED = '16rem';
@@ -101,29 +119,40 @@ export function SideNav() {
 
       {/* Nav */}
       <nav className="flex-1 flex flex-col gap-1 overflow-y-auto">
-        {tabs.map((t) => {
-          const Icon = t.icon;
-          return (
-            <NavLink
-              key={t.to}
-              to={t.to}
-              end={t.to === '/overview'}
-              title={collapsed ? t.label : undefined}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors ${
-                  collapsed ? 'justify-center h-10 w-10 mx-auto' : 'px-3 py-2.5'
-                } ${
-                  isActive
-                    ? 'bg-foreground text-background'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                }`
-              }
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              {!collapsed && <span className="truncate">{t.label}</span>}
-            </NavLink>
-          );
-        })}
+        {navGroups.map((group, gi) => (
+          <div key={group.label ?? `group-${gi}`} className={gi > 0 ? 'mt-3 pt-3 border-t border-border/60' : undefined}>
+            {group.label && !collapsed && (
+              <p className="px-3 mb-1 text-[10px] font-semibold tracking-wider uppercase text-muted-foreground/70">
+                {group.label}
+              </p>
+            )}
+            <div className="flex flex-col gap-1">
+              {group.items.map((t) => {
+                const Icon = t.icon;
+                return (
+                  <NavLink
+                    key={t.to}
+                    to={t.to}
+                    end={t.to === '/overview'}
+                    title={collapsed ? t.label : undefined}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors ${
+                        collapsed ? 'justify-center h-10 w-10 mx-auto' : 'px-3 py-2.5'
+                      } ${
+                        isActive
+                          ? 'bg-foreground text-background'
+                          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                      }`
+                    }
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    {!collapsed && <span className="truncate">{t.label}</span>}
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Footer */}
