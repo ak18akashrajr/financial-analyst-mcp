@@ -10,6 +10,7 @@ import {
   buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor,
   type PeriodDef, type PeriodType, type NetWorthHistoryRow, type HistoricalPriceMap,
 } from '@/lib/periodReports';
+import { parseLocalDate } from '@/lib/dateUtils';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts';
@@ -160,7 +161,10 @@ const ReportsContent = () => {
   const currentFYStartYear = useMemo(() => fyStartYearFor(new Date()), []);
   const earliestFYStartYear = useMemo(() => {
     if (transactions.length === 0) return currentFYStartYear;
-    return Math.min(...transactions.map(t => fyStartYearFor(new Date(t.date))));
+    // transactions.date is a Postgres DATE — parse as local midnight (see dateUtils.ts),
+    // not `new Date(t.date)`'s UTC midnight, so fyStartYearFor's .getMonth() read isn't
+    // shifted a day in timezones behind UTC.
+    return Math.min(...transactions.map(t => fyStartYearFor(parseLocalDate(t.date))));
   }, [transactions, currentFYStartYear]);
   const canGoPrevFY = fyStartYear > earliestFYStartYear;
   const canGoNextFY = fyStartYear < currentFYStartYear;
@@ -228,8 +232,8 @@ const ReportsContent = () => {
     const priorAsOf = new Date(endAsOf);
     priorAsOf.setFullYear(priorAsOf.getFullYear() - 1);
     const earliestTxnDate = transactions.reduce(
-      (min, t) => { const d = new Date(t.date); return d < min ? d : min; },
-      new Date(transactions[0].date),
+      (min, t) => { const d = parseLocalDate(t.date); return d < min ? d : min; },
+      parseLocalDate(transactions[0].date),
     );
     if (earliestTxnDate > priorAsOf) return null; // no portfolio existed that far back
     const priorSnap = buildSnapshot(priorAsOf, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
@@ -876,7 +880,7 @@ interface BuildAuditsArgs {
 function buildAudits(a: BuildAuditsArgs) {
   const { endSnap, startSnap, activity, active, status, projection, monthlySIPTarget, periodOverPeriod, yoy, transactions, hidden } = a;
   const periodTxns = transactions.filter(t => {
-    const d = new Date(t.date);
+    const d = parseLocalDate(t.date);
     return d >= active.start && d < active.end;
   });
   const asOf = asOfLabel(endSnap.asOf);

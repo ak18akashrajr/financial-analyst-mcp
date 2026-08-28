@@ -3,6 +3,50 @@
 Running list of action items for this repo. Add new items to the bottom of the relevant section;
 check items off (`- [x]`) when merged, and note the PR number.
 
+## High Priority Action Items
+
+Flagged 2026-08-28 during a Reports-page (`/reports`) calculation audit requested by the user,
+after confirming and fixing one instance of this bug class in
+[fix/timezone-date-boundary-bug](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/new/fix/timezone-date-boundary-bug)
+(`src/lib/periodReports.ts` + `src/pages/Reports.tsx`, using the new
+[`parseLocalDate`](src/lib/dateUtils.ts) helper). Root cause: Postgres `DATE` columns
+(`transactions.date`, `historical_prices.date`, `benchmark_history.date`, goal `target_date`) come
+back as bare `'YYYY-MM-DD'` strings with no time/offset. `new Date(dateString)` parses those per the
+ISO-8601 spec as **UTC midnight**, which is a different instant from the **local midnight** every
+other point-in-time `Date` in this app is built with (`new Date(y, m, d)`, `new Date()`). In a
+timezone ahead of UTC (verified under Asia/Calcutta, UTC+5:30) that skew silently drops or
+misclassifies a row whose date exactly matches the comparison boundary.
+
+**Confirmed bugs** — same root cause verified by reading the actual code, not fixed yet:
+
+| File | What's wrong | Stakes |
+|---|---|---|
+| [`src/lib/taxCalculator.ts:141-143`](src/lib/taxCalculator.ts) | `holdingDays = today.getTime() − new Date(lot.date).getTime()`, then `isLongTerm = holdingDays > thresholdDays` (365/1095-day LTCG threshold). The UTC-vs-local skew can flip STCG↔LTCG classification for a lot sitting exactly at the threshold. | **Highest** — changes reported tax liability. |
+| [`src/pages/RollingReturns.tsx:27-59`](src/pages/RollingReturns.tsx) (`computeWindowXIRR`) | Window `start`/`windowEnd` built locally; transaction and price dates parsed via bare `new Date(...)`, compared against them for inclusion and for "quantity at window start." | XIRR values on the Rolling Returns page. |
+| [`src/lib/benchmarkXirr.ts:36-40`](src/lib/benchmarkXirr.ts) (`priceOnOrBefore`) | Same pattern for benchmark price lookups. | Benchmark comparison XIRR. |
+| [`src/pages/GoalTrack.tsx:509,684`](src/pages/GoalTrack.tsx) | `goal.target_date` (DATE column) compared via `.getTime()` against `Date.now()`/local `today` for "days remaining." | Goal progress display only — lower stakes. |
+
+**Inconclusive** — pattern present, not confirmed as an actual mixed comparison (flagging so it
+isn't lost, not claiming it's broken):
+
+- [`src/lib/chartRange.ts:94-95`](src/lib/chartRange.ts) — depends on whether the `dateKey` values
+  passed in by each caller are real date strings or short chart-axis labels; needs tracing per
+  call site before concluding either way.
+- [`src/components/PortfolioCharts.tsx:108`](src/components/PortfolioCharts.tsx) — builds "today"
+  via `new Date().toISOString().split('T')[0]` (UTC calendar date, not local — wrong for part of
+  every IST day, 00:00–05:29 IST); looked self-consistent against how the rest of that timeline is
+  keyed, but wasn't traced all the way through.
+
+**Decision needed from the user before starting on the confirmed bugs**: fix all four now (each on
+its own branch/tests, same rigor as the `periodReports.ts` fix), or hold `taxCalculator.ts` back
+for a separate, more careful pass/review since it changes reported tax numbers.
+
+- [ ] Fix the `taxCalculator.ts` LTCG/STCG threshold day-count bug (see table above)
+- [ ] Fix the `RollingReturns.tsx` window-boundary bug (see table above)
+- [ ] Fix the `benchmarkXirr.ts` price-lookup bug (see table above)
+- [ ] Fix the `GoalTrack.tsx` days-remaining bug (see table above)
+- [ ] Trace `chartRange.ts:94-95` and `PortfolioCharts.tsx:108` to confirm or rule out a bug
+
 ## Backlog
 
 - [ ] **Wire Claude Agent SDK into the codebase.** So that users with Claude Agent SDK support can

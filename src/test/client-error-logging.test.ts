@@ -56,15 +56,38 @@ describe('logClientError', () => {
 });
 
 describe('installGlobalErrorLogging', () => {
+  // installGlobalErrorLogging() is documented "call exactly once, before the app mounts" — it
+  // never removes what it adds, by design (production only ever calls it once from main.tsx).
+  // But each test here calls it again on the same jsdom `window`, which persists across tests in
+  // this file — with no cleanup, a prior test's listener stays attached and fires (using the same
+  // shared insertMock/fromMock, since vi.resetModules() only clears the module cache, not these
+  // vi.hoisted mocks) when a LATER test dispatches an unrelated event, corrupting that test's
+  // assertions on which `fn` got logged. Track and remove exactly the listeners each test adds.
+  let addedListeners: Array<[string, EventListenerOrEventListenerObject]> = [];
+
+  async function installFresh() {
+    const { installGlobalErrorLogging } = await importFresh();
+    const originalAdd = window.addEventListener.bind(window);
+    const addSpy = vi.spyOn(window, 'addEventListener').mockImplementation((type, listener, options) => {
+      addedListeners.push([type as string, listener as EventListenerOrEventListenerObject]);
+      originalAdd(type, listener, options as AddEventListenerOptions | boolean | undefined);
+    });
+    installGlobalErrorLogging();
+    addSpy.mockRestore();
+  }
+
   beforeEach(() => {
     insertMock.mockReset().mockResolvedValue({ error: null });
     fromMock.mockReset().mockReturnValue({ insert: insertMock });
+    addedListeners = [];
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    for (const [type, listener] of addedListeners) window.removeEventListener(type, listener as EventListener);
+    vi.restoreAllMocks();
+  });
 
   it('logs an uncaught window error event as fn "window.onerror"', async () => {
-    const { installGlobalErrorLogging } = await importFresh();
-    installGlobalErrorLogging();
+    await installFresh();
 
     window.dispatchEvent(new ErrorEvent('error', { message: 'uncaught boom', filename: 'app.js', lineno: 12, colno: 3 }));
 
@@ -75,8 +98,7 @@ describe('installGlobalErrorLogging', () => {
   });
 
   it('logs an unhandled promise rejection as fn "unhandledrejection"', async () => {
-    const { installGlobalErrorLogging } = await importFresh();
-    installGlobalErrorLogging();
+    await installFresh();
 
     // jsdom doesn't implement PromiseRejectionEvent — build a plain Event with the same
     // `reason`/`promise` shape the real browser event carries; the handler only reads `.reason`.

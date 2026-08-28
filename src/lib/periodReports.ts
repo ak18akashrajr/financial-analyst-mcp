@@ -16,6 +16,7 @@
  */
 import type { Transaction, DerivedHolding, CashSettings, CurrentPrices } from '@/types/portfolio';
 import { computeFifoPosition } from './costBasis';
+import { parseLocalDate } from './dateUtils';
 
 export type PeriodType = 'quarter' | 'half' | 'year';
 
@@ -82,7 +83,9 @@ function histCloseAtOrBefore(series: Array<{ date: string; close: number }> | un
   let lo = 0, hi = series.length - 1, ans = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
-    const t = new Date(series[mid].date).getTime();
+    // `date` is a Postgres DATE (no time component) — parse as local midnight, not
+    // UTC midnight, so it lines up with `asOf` (also always local). See dateUtils.ts.
+    const t = parseLocalDate(series[mid].date).getTime();
     if (t <= target) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
   return ans === -1 ? null : Number(series[ans].close);
@@ -94,7 +97,7 @@ function histCloseAtOrBeforeWithDate(series: Array<{ date: string; close: number
   let lo = 0, hi = series.length - 1, ans = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
-    const t = new Date(series[mid].date).getTime();
+    const t = parseLocalDate(series[mid].date).getTime();
     if (t <= target) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
   return ans === -1 ? null : { date: series[ans].date, close: Number(series[ans].close) };
@@ -160,7 +163,9 @@ function computeHoldingsAt(
 } {
   const bySymbol: Record<string, Transaction[]> = {};
   for (const t of transactions) {
-    if (new Date(t.date) <= asOf) {
+    // transactions.date is a Postgres DATE — parse as local midnight (see dateUtils.ts)
+    // so a transaction dated exactly on `asOf`'s calendar day isn't silently dropped.
+    if (parseLocalDate(t.date) <= asOf) {
       (bySymbol[t.symbol] ||= []).push(t);
     }
   }
@@ -320,7 +325,10 @@ export function buildActivity(
   endSnapshot: PeriodSnapshot,
 ): PeriodActivity {
   const inPeriod = transactions.filter(t => {
-    const d = new Date(t.date);
+    // Local-midnight parse (see dateUtils.ts) — kept consistent with computeHoldingsAt's
+    // inclusion check above, rather than relying on `new Date(dateString)`'s UTC parsing
+    // happening to still land inside [p.start, p.end) in a positive-UTC-offset timezone.
+    const d = parseLocalDate(t.date);
     return d >= p.start && d < p.end;
   });
   let buyCount = 0, sellCount = 0, buyValue = 0, sellValue = 0;
