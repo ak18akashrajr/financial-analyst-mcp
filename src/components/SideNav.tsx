@@ -22,7 +22,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 
 const tabs = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard },
+  { to: '/overview', label: 'Overview', icon: LayoutDashboard },
   { to: '/charts', label: 'Charts', icon: BarChart3 },
   { to: '/reports', label: 'Reports', icon: FileSpreadsheet },
   { to: '/benchmark', label: 'Benchmark', icon: TrendingUp },
@@ -64,7 +64,7 @@ export function SideNav() {
       {/* Brand + collapse */}
       <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between'} gap-2 mb-4 px-1`}>
         {!collapsed ? (
-          <Link to="/" className="flex items-start gap-2.5 min-w-0">
+          <Link to="/overview" className="flex items-start gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-foreground text-background flex items-center justify-center shrink-0">
               <Landmark className="w-4.5 h-4.5" />
             </div>
@@ -77,7 +77,7 @@ export function SideNav() {
             </div>
           </Link>
         ) : (
-          <Link to="/" className="w-9 h-9 rounded-lg bg-foreground text-background flex items-center justify-center">
+          <Link to="/overview" className="w-9 h-9 rounded-lg bg-foreground text-background flex items-center justify-center">
             <Landmark className="w-4.5 h-4.5" />
           </Link>
         )}
@@ -107,7 +107,7 @@ export function SideNav() {
             <NavLink
               key={t.to}
               to={t.to}
-              end={t.to === '/'}
+              end={t.to === '/overview'}
               title={collapsed ? t.label : undefined}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors ${

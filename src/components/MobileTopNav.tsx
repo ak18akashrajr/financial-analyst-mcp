@@ -19,7 +19,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 
 const tabs = [
-  { to: '/', label: 'Overview', icon: LayoutDashboard },
+  { to: '/overview', label: 'Overview', icon: LayoutDashboard },
   { to: '/charts', label: 'Charts', icon: BarChart3 },
   { to: '/reports', label: 'Reports', icon: FileSpreadsheet },
   { to: '/benchmark', label: 'Benchmark', icon: TrendingUp },
@@ -41,7 +41,7 @@ export function MobileTopNav() {
   return (
     <header className="md:hidden sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-border">
       <div className="flex items-center justify-between px-4 py-2.5">
-        <Link to="/" className="flex items-center gap-2">
+        <Link to="/overview" className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-md bg-foreground text-background flex items-center justify-center">
             <Landmark className="w-3.5 h-3.5" />
           </div>
@@ -64,7 +64,7 @@ export function MobileTopNav() {
             <NavLink
               key={t.to}
               to={t.to}
-              end={t.to === '/'}
+              end={t.to === '/overview'}
               className={({ isActive }) =>
                 `flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
                   isActive ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'

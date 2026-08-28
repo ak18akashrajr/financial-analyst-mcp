@@ -15,10 +15,11 @@ const mockedUseAuth = vi.mocked(useAuth);
 
 function renderProtectedRoute() {
   return render(
-    <MemoryRouter initialEntries={['/']}>
+    <MemoryRouter initialEntries={['/overview']}>
       <Routes>
+        <Route path="/login" element={<div>Login Page</div>} />
         <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<div>Secret Portfolio Data</div>} />
+          <Route path="/overview" element={<div>Secret Portfolio Data</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -33,10 +34,15 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('Secret Portfolio Data')).not.toBeInTheDocument();
   });
 
-  it('renders the login form instead of protected content when there is no session', () => {
+  it('redirects to the public /login route instead of the protected content when there is no session', () => {
+    // Regression guard: /login used to be rendered inline in place of whatever
+    // page was requested (no real URL change), which also meant the sidebar/
+    // nav — mounted unconditionally at the app root at the time — stayed
+    // visible on top of the login form. Redirecting to a real /login route
+    // keeps that nav out of AppLayout's tree entirely for a signed-out visit.
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn: vi.fn(), signOut: vi.fn() });
     renderProtectedRoute();
-    expect(screen.getByPlaceholderText('you@example.com')).toBeInTheDocument();
+    expect(screen.getByText('Login Page')).toBeInTheDocument();
     expect(screen.queryByText('Secret Portfolio Data')).not.toBeInTheDocument();
   });
 
@@ -49,6 +55,6 @@ describe('ProtectedRoute', () => {
     });
     renderProtectedRoute();
     expect(screen.getByText('Secret Portfolio Data')).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText('you@example.com')).not.toBeInTheDocument();
+    expect(screen.queryByText('Login Page')).not.toBeInTheDocument();
   });
 });

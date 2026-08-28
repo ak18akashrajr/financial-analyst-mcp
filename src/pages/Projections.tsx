@@ -289,7 +289,7 @@ const ProjectionsContent = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors"><ArrowLeft className="w-4 h-4" /></Link>
+            <Link to="/overview" className="text-muted-foreground hover:text-foreground transition-colors"><ArrowLeft className="w-4 h-4" /></Link>
             <div>
               <h1 className="text-xl font-bold text-foreground">Projection Engine</h1>
               <p className="text-xs text-muted-foreground">Scenario simulations, goal probability, FIRE planning, and historical stress replay</p>

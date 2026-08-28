@@ -140,7 +140,7 @@ const DeploymentPlanContent = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link to="/" className="text-muted-foreground hover:text-primary transition-colors">
+            <Link to="/overview" className="text-muted-foreground hover:text-primary transition-colors">
               <ArrowLeft className="w-4 h-4" />
             </Link>
             <div>

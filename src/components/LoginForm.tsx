@@ -1,9 +1,12 @@
 import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 
 export const LoginForm = () => {
   const { signIn } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -14,8 +17,17 @@ export const LoginForm = () => {
     setSubmitting(true);
     setError('');
     const { error: signInError } = await signIn(email, password);
-    if (signInError) setError(signInError);
-    setSubmitting(false);
+    if (signInError) {
+      setError(signInError);
+      setSubmitting(false);
+      return;
+    }
+    // Send the user back to whatever protected page they were trying to
+    // reach before ProtectedRoute bounced them to /login (see
+    // ProtectedRoute.tsx's `state={{ from: location }}`), defaulting to the
+    // dashboard for a direct visit to /login.
+    const from = (location.state as { from?: Location } | null)?.from?.pathname ?? '/overview';
+    navigate(from, { replace: true });
   };
 
   return (
