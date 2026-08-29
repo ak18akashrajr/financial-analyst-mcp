@@ -384,6 +384,81 @@ export type Database = {
         }
         Relationships: []
       }
+      // security_incidents and session_fingerprints are hand-added (matching
+      // their migrations' schemas exactly), same as app_logs/audit_logs above
+      // — see that comment for why.
+      security_incidents: {
+        Row: {
+          acknowledged: boolean
+          detected_at: string
+          id: string
+          ip: string | null
+          new_values: Json | null
+          old_values: Json | null
+          operation: string
+          row_id: string | null
+          session_id: string
+          table_name: string
+          user_agent: string | null
+        }
+        Insert: {
+          acknowledged?: boolean
+          detected_at?: string
+          id?: string
+          ip?: string | null
+          new_values?: Json | null
+          old_values?: Json | null
+          operation: string
+          row_id?: string | null
+          session_id: string
+          table_name: string
+          user_agent?: string | null
+        }
+        Update: {
+          acknowledged?: boolean
+          detected_at?: string
+          id?: string
+          ip?: string | null
+          new_values?: Json | null
+          old_values?: Json | null
+          operation?: string
+          row_id?: string | null
+          session_id?: string
+          table_name?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
+      session_fingerprints: {
+        Row: {
+          first_ip: string | null
+          first_seen_at: string
+          first_user_agent: string | null
+          last_ip: string | null
+          last_seen_at: string
+          last_user_agent: string | null
+          session_id: string
+        }
+        Insert: {
+          first_ip?: string | null
+          first_seen_at?: string
+          first_user_agent?: string | null
+          last_ip?: string | null
+          last_seen_at?: string
+          last_user_agent?: string | null
+          session_id: string
+        }
+        Update: {
+          first_ip?: string | null
+          first_seen_at?: string
+          first_user_agent?: string | null
+          last_ip?: string | null
+          last_seen_at?: string
+          last_user_agent?: string | null
+          session_id?: string
+        }
+        Relationships: []
+      }
       symbol_metadata: {
         Row: {
           geography: string

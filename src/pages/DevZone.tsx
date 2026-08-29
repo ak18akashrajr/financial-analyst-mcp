@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Terminal, RefreshCw, AlertTriangle, OctagonAlert, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Search, Loader2, Activity,
+  CheckCircle2, XCircle, Search, Loader2, Activity, ShieldAlert, LogOut,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { supabase } from '@/integrations/supabase/client';
+import { useSecurityIncidents, type SecurityIncident } from '@/contexts/SecurityIncidentsContext';
 
 // One-stop view over everything this app currently persists as a "log":
 //   - app_logs   — logger.ts warn/error entries from every edge function (via
@@ -41,7 +42,7 @@ interface AuditLogRow {
   error: string | null;
 }
 
-type Tab = 'status' | 'app-logs' | 'audit-trail';
+type Tab = 'status' | 'app-logs' | 'audit-trail' | 'security';
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
@@ -721,6 +722,197 @@ function AuditTrailTab() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Security tab — docs/session-hijack-detection-plan.md §1, §3, §5. Global
+// sign-out (§1) revokes every refresh token for the account; it does NOT
+// retroactively invalidate an access token already issued and still inside
+// its ~1hr expiry (Supabase Auth doesn't check a revocation list per-request
+// by default) — stated up front in the UI, not just the design doc, since
+// that's a real gap someone relying on this button should know about.
+//
+// The incident list (§3) shows the full ack+unack history, not just what the
+// app-wide banner is watching for — SecurityIncidentsContext only tracks the
+// unacknowledged subset, so this tab does its own query, same pattern as
+// AppLogsTab/AuditTrailTab above. Acknowledging here also calls that
+// context's refetch() so the banner clears immediately in this tab session.
+function GlobalSignOutCard() {
+  const [signingOut, setSigningOut] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleSignOut = async () => {
+    if (!confirm(
+      'Sign out of every device and browser using this account?\n\n' +
+      'This revokes all refresh tokens, so nothing can log back in without your ' +
+      'password again. It does NOT instantly kill an access token already issued ' +
+      'and still inside its ~1hr expiry — this stops it being renewed, not an ' +
+      'in-progress request.',
+    )) return;
+
+    setSigningOut(true);
+    setResult(null);
+    const { error } = await supabase.auth.signOut({ scope: 'global' });
+    setSigningOut(false);
+    setResult(
+      error
+        ? { ok: false, message: error.message }
+        : { ok: true, message: 'Signed out everywhere. This tab will redirect to login shortly.' },
+    );
+  };
+
+  return (
+    <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-4">
+      <div className="flex items-start gap-3">
+        <LogOut className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
+        <div className="flex-1">
+          <h3 className="text-sm font-semibold text-foreground">Global sign-out</h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Revokes every refresh token for this account — use this if you suspect a session has
+            been compromised. <strong className="text-foreground/80">Known limitation:</strong> a
+            still-valid access token already issued (~1hr expiry) keeps working until it naturally
+            expires; this stops it being renewed, it isn't an instant kill switch.
+          </p>
+          {result && (
+            <p className={`mt-2 text-xs font-medium ${result.ok ? 'text-emerald-500' : 'text-rose-500'}`}>
+              {result.message}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={handleSignOut}
+          disabled={signingOut}
+          className="shrink-0 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-500/20 transition-colors disabled:opacity-50"
+        >
+          {signingOut ? 'Signing out…' : 'Sign out everywhere'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function IncidentDiff({ incident }: { incident: SecurityIncident }) {
+  return (
+    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Before</p>
+        <JsonBlock value={incident.old_values} />
+        {incident.old_values == null && <p className="text-[11px] text-muted-foreground/70 italic">n/a</p>}
+      </div>
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">After</p>
+        <JsonBlock value={incident.new_values} />
+        {incident.new_values == null && <p className="text-[11px] text-muted-foreground/70 italic">n/a</p>}
+      </div>
+    </div>
+  );
+}
+
+function SecurityTab() {
+  const { refetch: refetchBanner } = useSecurityIncidents();
+  const [rows, setRows] = useState<SecurityIncident[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unacknowledged' | 'acknowledged'>('unacknowledged');
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
+  const { expanded, toggle } = useExpandable();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const { data, error: err } = await supabase
+      .from('security_incidents')
+      .select('*')
+      .order('detected_at', { ascending: false })
+      .limit(ROW_LIMIT);
+    if (err) setError(err.message);
+    else setRows((data ?? []) as SecurityIncident[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const acknowledge = async (id: string) => {
+    setAcknowledgingId(id);
+    const { error: err } = await supabase.from('security_incidents').update({ acknowledged: true }).eq('id', id);
+    setAcknowledgingId(null);
+    if (err) { setError(err.message); return; }
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, acknowledged: true } : r)));
+    refetchBanner();
+  };
+
+  const filtered = rows.filter((r) => {
+    if (statusFilter === 'unacknowledged' && r.acknowledged) return false;
+    if (statusFilter === 'acknowledged' && !r.acknowledged) return false;
+    return true;
+  });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <GlobalSignOutCard />
+
+      <FilterBar onRefresh={load} loading={loading}>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as 'all' | 'unacknowledged' | 'acknowledged')}
+          className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground"
+        >
+          <option value="unacknowledged">Unacknowledged</option>
+          <option value="acknowledged">Acknowledged</option>
+          <option value="all">All incidents</option>
+        </select>
+      </FilterBar>
+
+      {error && <ErrorBanner message={error} />}
+      {!error && !loading && filtered.length === 0 && (
+        <EmptyState text={rows.length === 0
+          ? 'No replay incidents detected yet — that\'s a good sign.'
+          : 'No rows match this filter.'} />
+      )}
+
+      <div className="flex flex-col gap-1.5">
+        {filtered.map((row) => (
+          <div key={row.id} className="rounded-lg border border-border bg-card">
+            <div className="flex items-start gap-2.5 px-3 py-2.5">
+              <button
+                onClick={() => toggle(row.id)}
+                className="flex flex-1 items-start gap-2.5 text-left hover:bg-accent/40 -m-1 p-1 rounded-md transition-colors"
+              >
+                {expanded.has(row.id) ? <ChevronDown className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-500">
+                      <ShieldAlert className="w-3 h-3" /> {row.operation}
+                    </span>
+                    <span className="text-[11px] font-mono text-foreground/90">{row.table_name}</span>
+                    {row.row_id && <span className="text-[10px] font-mono text-muted-foreground">#{row.row_id}</span>}
+                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{fmtTime(row.detected_at)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-foreground/90">
+                    Session <span className="font-mono">{row.session_id.slice(0, 8)}…</span> replayed from{' '}
+                    <span className="font-mono">{row.ip ?? 'unknown IP'}</span>
+                    {row.user_agent && <span className="text-muted-foreground"> · {row.user_agent}</span>}
+                  </p>
+                  {expanded.has(row.id) && <IncidentDiff incident={row} />}
+                </div>
+              </button>
+              {!row.acknowledged ? (
+                <button
+                  onClick={() => acknowledge(row.id)}
+                  disabled={acknowledgingId === row.id}
+                  className="shrink-0 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  {acknowledgingId === row.id ? 'Acknowledging…' : 'Acknowledge'}
+                </button>
+              ) : (
+                <span className="shrink-0 text-[10px] font-medium text-muted-foreground">Acknowledged</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FilterBar({ children, onRefresh, loading }: { children: React.ReactNode; onRefresh: () => void; loading: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -767,8 +959,16 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
+const VALID_TABS: Tab[] = ['status', 'app-logs', 'audit-trail', 'security'];
+
 const DevZone = () => {
-  const [tab, setTab] = useState<Tab>('status');
+  const [searchParams] = useSearchParams();
+  // Lets SecurityIncidentBanner's link (/dev-zone?tab=security) land directly
+  // on the Security tab instead of the default System Status view.
+  const initialTab = searchParams.get('tab');
+  const [tab, setTab] = useState<Tab>(
+    VALID_TABS.includes(initialTab as Tab) ? (initialTab as Tab) : 'status',
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -787,7 +987,7 @@ const DevZone = () => {
               </div>
               <div>
                 <h1 className="text-sm font-bold text-foreground tracking-tight">Dev Zone</h1>
-                <p className="text-[10px] text-muted-foreground">System status, application logs &amp; MCP audit trail</p>
+                <p className="text-[10px] text-muted-foreground">System status, application logs, MCP audit trail &amp; security</p>
               </div>
             </div>
           </div>
@@ -822,9 +1022,18 @@ const DevZone = () => {
           >
             Audit Trail
           </button>
+          <button
+            onClick={() => setTab('security')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              tab === 'security' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+            Security
+          </button>
         </div>
 
-        {tab !== 'status' && (
+        {tab !== 'status' && tab !== 'security' && (
           <p className="mb-4 text-[11px] text-muted-foreground">
             Showing the latest {ROW_LIMIT} rows. Info-level edge-function logs aren't persisted here —
             use <code className="rounded bg-muted px-1 py-0.5 font-mono">supabase functions logs &lt;fn&gt;</code> for
@@ -832,7 +1041,10 @@ const DevZone = () => {
           </p>
         )}
 
-        {tab === 'status' ? <SystemStatusTab /> : tab === 'app-logs' ? <AppLogsTab /> : <AuditTrailTab />}
+        {tab === 'status' ? <SystemStatusTab />
+          : tab === 'app-logs' ? <AppLogsTab />
+          : tab === 'audit-trail' ? <AuditTrailTab />
+          : <SecurityTab />}
       </div>
     </div>
   );
