@@ -48,4 +48,36 @@ describe('Login page', () => {
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('you@example.com')).not.toBeInTheDocument();
   });
+
+  it('does not redirect away from the form once a fresh sign-in flips the session mid-render', () => {
+    // Regression test: supabase.auth.onAuthStateChange flips `session` to
+    // non-null within a tick of a successful signIn() call inside
+    // LoginForm — well before LoginForm's own post-login loading animation
+    // (LoginLoadingScreen) has finished and called navigate() itself. If
+    // Login.tsx reacted to that session change by redirecting on its own,
+    // it would unmount LoginForm (and the animation) mid-sequence. The
+    // "already signed in" redirect must only apply to the session Login.tsx
+    // saw when it first finished loading, not one that changes afterward.
+    const signIn = vi.fn().mockResolvedValue({ error: null });
+    mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
+    const { rerender } = renderLogin();
+    expect(screen.getByPlaceholderText('you@example.com')).toBeInTheDocument();
+
+    mockedUseAuth.mockReturnValue({
+      session: { access_token: 'fresh' } as never,
+      loading: false,
+      signIn,
+      signOut: vi.fn(),
+    });
+    rerender(
+      <MemoryRouter initialEntries={['/login']}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/overview" element={<div>Dashboard</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+  });
 });
