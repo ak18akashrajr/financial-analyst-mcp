@@ -26,8 +26,9 @@ describe('getDynamicGreeting', () => {
   });
 
   it('appends a positive stat line when totalPnlPercent and xirr are provided', () => {
+    // xirr is a decimal fraction (matches PortfolioSummary.xirr / XirrDetailsCard), not a percentage.
     const now = new Date(2026, 7, 31, 8, 0, 0);
-    const greeting = getDynamicGreeting(now, { totalPnlPercent: 12.345, xirr: 18.2 });
+    const greeting = getDynamicGreeting(now, { totalPnlPercent: 12.345, xirr: 0.182 });
     expect(greeting.subtitle).toContain('+12.3%');
     expect(greeting.subtitle).toContain('18.2% XIRR');
   });

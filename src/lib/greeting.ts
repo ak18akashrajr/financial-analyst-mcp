@@ -1,7 +1,10 @@
 export interface GreetingStats {
   /** Overall unrealized P/L %, i.e. PortfolioSummary.totalPnlPercent. */
   totalPnlPercent?: number | null;
-  /** Annualized return, i.e. PortfolioSummary.xirr. */
+  /**
+   * Annualized return, i.e. PortfolioSummary.xirr — a decimal fraction (0.0661 for 6.61%),
+   * matching what XirrDetailsCard receives. This module multiplies by 100 before display.
+   */
   xirr?: number | null;
 }
 
@@ -133,7 +136,7 @@ function buildStatLine(stats?: GreetingStats): string | null {
     const up = totalPnlPercent >= 0;
     const pnlStr = `${up ? '+' : ''}${totalPnlPercent.toFixed(1)}%`;
     if (typeof xirr === 'number' && Number.isFinite(xirr)) {
-      return `Book's ${up ? 'up' : 'down'} ${pnlStr} overall, running at ${xirr.toFixed(1)}% XIRR. Elite pace — keep it up.`;
+      return `Book's ${up ? 'up' : 'down'} ${pnlStr} overall, running at ${(xirr * 100).toFixed(1)}% XIRR. Elite pace — keep it up.`;
     }
     return `Book's ${up ? 'up' : 'down'} ${pnlStr} overall. ${up ? 'Elite pace — keep it up.' : 'Stay sharp — the comeback is part of the story.'}`;
   }
