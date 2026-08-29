@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
+import { LoginLoadingScreen } from '@/components/LoginLoadingScreen';
 
 export const LoginForm = () => {
   const { signIn } = useAuth();
@@ -11,6 +12,7 @@ export const LoginForm = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +24,12 @@ export const LoginForm = () => {
       setSubmitting(false);
       return;
     }
+    // Credentials are good — hand off to the loading screen, which
+    // navigates on to the dashboard once its cosmetic sequence finishes.
+    setAuthenticated(true);
+  };
+
+  const goToDashboard = () => {
     // Send the user back to whatever protected page they were trying to
     // reach before ProtectedRoute bounced them to /login (see
     // ProtectedRoute.tsx's `state={{ from: location }}`), defaulting to the
@@ -29,6 +37,10 @@ export const LoginForm = () => {
     const from = (location.state as { from?: Location } | null)?.from?.pathname ?? '/overview';
     navigate(from, { replace: true });
   };
+
+  if (authenticated) {
+    return <LoginLoadingScreen onDone={goToDashboard} />;
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">

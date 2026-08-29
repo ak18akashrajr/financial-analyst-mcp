@@ -73,7 +73,7 @@ describe('LoginForm', () => {
     expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
   });
 
-  it('redirects to the dashboard after a successful sign-in with no prior destination', async () => {
+  it('shows the cosmetic loading sequence, then redirects to the dashboard with no prior destination', async () => {
     const signIn = vi.fn().mockResolvedValue({ error: null });
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
@@ -82,7 +82,10 @@ describe('LoginForm', () => {
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'correct-password' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
 
-    expect(await screen.findByText('Dashboard')).toBeInTheDocument();
+    // A successful sign-in hands off to LoginLoadingScreen (real timers, ~2.2s
+    // of cosmetic stages — see LoginLoadingScreen.tsx) before it navigates on.
+    expect(await screen.findByText(/entering your finance world/i)).toBeInTheDocument();
+    expect(await screen.findByText('Dashboard', undefined, { timeout: 4000 })).toBeInTheDocument();
   });
 
   it('redirects back to the page the user originally tried to reach, via ProtectedRoute\'s state.from', async () => {
@@ -94,6 +97,6 @@ describe('LoginForm', () => {
     fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'correct-password' } });
     fireEvent.click(screen.getByRole('button', { name: /login/i }));
 
-    expect(await screen.findByText('Reports Page')).toBeInTheDocument();
+    expect(await screen.findByText('Reports Page', undefined, { timeout: 4000 })).toBeInTheDocument();
   });
 });
