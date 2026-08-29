@@ -1,28 +1,10 @@
-export interface GreetingStats {
-  /** Overall unrealized P/L %, i.e. PortfolioSummary.totalPnlPercent. */
-  totalPnlPercent?: number | null;
-  /**
-   * Annualized return, i.e. PortfolioSummary.xirr — a decimal fraction (0.0661 for 6.61%),
-   * matching what XirrDetailsCard receives. This module multiplies by 100 before display.
-   */
-  xirr?: number | null;
-}
-
-export interface GreetingStat {
-  /** e.g. "+3.5% · 6.6% XIRR" — compact, meant for a colored pill, not a sentence. */
-  text: string;
-  positive: boolean;
-}
-
 export interface Greeting {
   title: string;
   subtitle: string;
   emoji: string;
-  /** null when stats weren't provided, or totalPnlPercent is missing/non-finite. */
-  stat: GreetingStat | null;
 }
 
-export function getDynamicGreeting(now = new Date(), stats?: GreetingStats): Greeting {
+export function getDynamicGreeting(now = new Date()): Greeting {
   const day = now.getDay(); // 0 Sun - 6 Sat
   const hour = now.getHours();
   const period: 'morning' | 'afternoon' | 'evening' | 'night' =
@@ -33,7 +15,7 @@ export function getDynamicGreeting(now = new Date(), stats?: GreetingStats): Gre
 
   // Curated micro-bank keyed by `${day}-${period}`. Full English, elite/sharp,
   // timing-relevant, addressed to Ak / Ak18 / Akash on rotation.
-  const bank: Record<string, { title: string; subtitle: string; emoji: string }> = {
+  const bank: Record<string, Greeting> = {
     'Monday-morning': {
       title: 'New week, new leverage, Ak. ⚡',
       subtitle: 'The market pays patience, not panic. Set the tone for the week right now.',
@@ -106,14 +88,11 @@ export function getDynamicGreeting(now = new Date(), stats?: GreetingStats): Gre
     },
   };
 
-  const exact = bank[`${dayName}-${period}`];
-  const base = exact ?? getFallback(period);
-
-  return { ...base, stat: buildStat(stats) };
+  return bank[`${dayName}-${period}`] ?? getFallback(period);
 }
 
-function getFallback(period: 'morning' | 'afternoon' | 'evening' | 'night') {
-  const fallback: Record<typeof period, { title: string; subtitle: string; emoji: string }> = {
+function getFallback(period: 'morning' | 'afternoon' | 'evening' | 'night'): Greeting {
+  const fallback: Record<typeof period, Greeting> = {
     morning: {
       title: 'Rise and build, Ak. ☀️',
       subtitle: 'Every great portfolio starts with one disciplined morning. This is yours.',
@@ -136,16 +115,4 @@ function getFallback(period: 'morning' | 'afternoon' | 'evening' | 'night') {
     },
   };
   return fallback[period];
-}
-
-function buildStat(stats?: GreetingStats): GreetingStat | null {
-  if (!stats) return null;
-  const { totalPnlPercent, xirr } = stats;
-  if (typeof totalPnlPercent !== 'number' || !Number.isFinite(totalPnlPercent)) return null;
-
-  const positive = totalPnlPercent >= 0;
-  const pnlStr = `${positive ? '+' : ''}${totalPnlPercent.toFixed(1)}%`;
-  const xirrStr =
-    typeof xirr === 'number' && Number.isFinite(xirr) ? ` · ${(xirr * 100).toFixed(1)}% XIRR` : '';
-  return { text: `${pnlStr}${xirrStr}`, positive };
 }

@@ -15,7 +15,7 @@ import { DebtChart } from '@/components/DebtChart';
 import { PriceRefreshButton } from '@/components/PriceRefreshButton';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useAutoRefreshPricesOnLoad } from '@/hooks/useAutoRefreshPricesOnLoad';
-import { Eye, EyeOff, CreditCard, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
+import { Eye, EyeOff, CreditCard, AlertTriangle } from 'lucide-react';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { SiteFooter } from '@/components/SiteFooter';
 import { getDynamicGreeting } from '@/lib/greeting';
@@ -97,7 +97,7 @@ const IndexContent = () => {
         </div>
 
         {/* Welcome */}
-        <DynamicWelcome summary={summary} />
+        <DynamicWelcome />
 
         {/* CC Bill Reminder — first 5 days of month while debt is outstanding */}
         {cash.creditCardDebt > 0 && new Date().getDate() <= 5 && (
@@ -166,11 +166,8 @@ const IndexContent = () => {
   );
 };
 
-function DynamicWelcome({ summary }: { summary: { totalPnlPercent: number; xirr: number | null } }) {
-  const greeting = useMemo(
-    () => getDynamicGreeting(new Date(), { totalPnlPercent: summary.totalPnlPercent, xirr: summary.xirr }),
-    [summary.totalPnlPercent, summary.xirr]
-  );
+function DynamicWelcome() {
+  const greeting = useMemo(() => getDynamicGreeting(), []);
   const dateStr = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   // The title already ends with the same emoji surfaced separately as an icon badge below —
   // strip it here so it isn't shown twice.
@@ -179,32 +176,19 @@ function DynamicWelcome({ summary }: { summary: { totalPnlPercent: number; xirr:
     : greeting.title;
 
   return (
-    <div className="flex items-start justify-between gap-4 flex-wrap px-1">
-      <div className="flex items-start gap-3.5 min-w-0">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/60 text-xl">
-          {greeting.emoji}
-        </div>
-        <div className="min-w-0">
-          <p className="text-[11px] tracking-[0.2em] uppercase text-muted-foreground mb-1.5 font-mono">{dateStr}</p>
-          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight bg-gradient-to-r from-foreground via-foreground to-foreground/60 bg-clip-text text-transparent">
-            {displayTitle}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl leading-relaxed">
-            {greeting.subtitle}
-          </p>
-        </div>
+    <div className="flex items-start gap-3.5 px-1">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary/60 text-xl">
+        {greeting.emoji}
       </div>
-
-      {greeting.stat && (
-        <div
-          className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-semibold shrink-0 ${
-            greeting.stat.positive ? 'border-gain/30 bg-gain/10 text-gain' : 'border-loss/30 bg-loss/10 text-loss'
-          }`}
-        >
-          {greeting.stat.positive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-          {greeting.stat.text}
-        </div>
-      )}
+      <div className="min-w-0">
+        <p className="text-[11px] tracking-[0.2em] uppercase text-muted-foreground mb-1.5 font-mono">{dateStr}</p>
+        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight bg-gradient-to-r from-foreground via-foreground to-foreground/60 bg-clip-text text-transparent">
+          {displayTitle}
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl leading-relaxed">
+          {greeting.subtitle}
+        </p>
+      </div>
     </div>
   );
 }
