@@ -21,11 +21,14 @@ beforeAll(async () => {
   ({ default: DevZone } = await import('@/pages/DevZone'));
 });
 
-const { appLogRows, auditLogRows, probeSymbolRows, invokeMock } = vi.hoisted(() => ({
+const { appLogRows, auditLogRows, probeSymbolRows, securityIncidentRows, invokeMock, signOutMock, updateIncidentMock } = vi.hoisted(() => ({
   appLogRows: [] as Record<string, unknown>[],
   auditLogRows: [] as Record<string, unknown>[],
   probeSymbolRows: [{ symbol: 'RELIANCE.NS' }] as Record<string, unknown>[],
+  securityIncidentRows: [] as Record<string, unknown>[],
   invokeMock: vi.fn((_fn: string, _opts?: { body?: unknown }) => Promise.resolve({ data: {} as any, error: null as any })),
+  signOutMock: vi.fn(() => Promise.resolve({ error: null as { message: string } | null })),
+  updateIncidentMock: vi.fn((_id: string) => Promise.resolve({ error: null as { message: string } | null })),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -45,12 +48,29 @@ vi.mock('@/integrations/supabase/client', () => ({
         // Deep checks' probe-symbol lookup.
         return { select: () => ({ limit: () => Promise.resolve({ data: probeSymbolRows, error: null }) }) };
       }
+      if (table === 'security_incidents') {
+        return {
+          // SecurityIncidentsContext's unacknowledged-only fetch (banner, not visible in DevZone itself).
+          select: () => ({
+            eq: () => ({ order: () => Promise.resolve({ data: securityIncidentRows.filter((r) => !r.acknowledged), error: null }) }),
+            order: () => ({ limit: () => Promise.resolve({ data: securityIncidentRows, error: null }) }),
+          }),
+          update: (patch: Record<string, unknown>) => ({
+            eq: (_col: string, id: string) => {
+              const row = securityIncidentRows.find((r) => r.id === id);
+              if (row) Object.assign(row, patch);
+              return updateIncidentMock(id);
+            },
+          }),
+        };
+      }
       throw new Error(`Unexpected table in test: ${table}`);
     },
     auth: {
       // System Status tab's Auth check.
       getUser: () => Promise.resolve({ data: { user: null }, error: null }),
       getSession: () => Promise.resolve({ data: { session: { access_token: 'test-token' } } }),
+      signOut: signOutMock,
     },
     functions: {
       // Deep checks' fetch-prices/fetch-fx-rates/etc calls.
@@ -80,8 +100,12 @@ describe('DevZone', () => {
   beforeEach(() => {
     appLogRows.length = 0;
     auditLogRows.length = 0;
+    securityIncidentRows.length = 0;
     invokeMock.mockReset();
     invokeMock.mockImplementation(() => Promise.resolve({ data: {}, error: null }));
+    signOutMock.mockReset();
+    signOutMock.mockImplementation(() => Promise.resolve({ error: null }));
+    updateIncidentMock.mockClear();
   });
 
   it('shows an empty state on the App Logs tab when nothing has been logged', async () => {
@@ -254,6 +278,115 @@ describe('DevZone', () => {
       fireEvent.click(screen.getByRole('button', { name: /run deep checks/i }));
 
       await waitFor(() => expect(screen.getByText(/Deep: Yahoo Finance unreachable/)).toBeInTheDocument());
+    });
+  });
+
+  describe('Security tab', () => {
+    it('shows an empty state when there are no incidents', async () => {
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /security/i }));
+      await waitFor(() => expect(screen.getByText(/no replay incidents detected yet/i)).toBeInTheDocument());
+    });
+
+    it('lists an incident with its table, operation, session and IP', async () => {
+      securityIncidentRows.push({
+        id: '1', detected_at: '2026-08-29T03:32:34Z', session_id: 'b097e56c-5a00-4e1b-9153-60a214ff10b3',
+        table_name: 'cash_settings', operation: 'update', row_id: '02d0b63d-f691-44f6-838d-1bb8fdd5e59e',
+        old_values: { liquid_cash: 230.84 }, new_values: { liquid_cash: 230.84 },
+        ip: '223.181.196.149', user_agent: 'curl/8.21.0', acknowledged: false,
+      });
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /security/i }));
+
+      await waitFor(() => expect(screen.getByText('cash_settings')).toBeInTheDocument());
+      expect(screen.getByText('update')).toBeInTheDocument();
+      expect(screen.getByText(/223\.181\.196\.149/)).toBeInTheDocument();
+      expect(screen.getByText(/b097e56c/)).toBeInTheDocument();
+    });
+
+    it('expands a row to show the before/after diff', async () => {
+      securityIncidentRows.push({
+        id: '1', detected_at: '2026-08-29T03:32:34Z', session_id: 'sess-1', table_name: 'cash_settings',
+        operation: 'update', row_id: 'row-1', old_values: { liquid_cash: 100 }, new_values: { liquid_cash: 200 },
+        ip: '1.2.3.4', user_agent: 'curl/8.21.0', acknowledged: false,
+      });
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /security/i }));
+
+      await waitFor(() => expect(screen.getByText('cash_settings')).toBeInTheDocument());
+      expect(screen.queryByText(/"liquid_cash": 100/)).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('cash_settings'));
+      await waitFor(() => expect(screen.getByText(/"liquid_cash": 100/)).toBeInTheDocument());
+      expect(screen.getByText(/"liquid_cash": 200/)).toBeInTheDocument();
+    });
+
+    it('defaults to showing only unacknowledged incidents, and switching the filter reveals acknowledged ones', async () => {
+      securityIncidentRows.push(
+        { id: '1', detected_at: '2026-08-29T03:00:00Z', session_id: 'sess-1', table_name: 'transactions', operation: 'insert', row_id: 'row-1', old_values: null, new_values: {}, ip: '1.1.1.1', user_agent: 'ua', acknowledged: false },
+        { id: '2', detected_at: '2026-08-29T02:00:00Z', session_id: 'sess-2', table_name: 'symbol_metadata', operation: 'update', row_id: 'TCS', old_values: {}, new_values: {}, ip: '2.2.2.2', user_agent: 'ua', acknowledged: true },
+      );
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /security/i }));
+
+      await waitFor(() => expect(screen.getByText('transactions')).toBeInTheDocument());
+      expect(screen.queryByText('symbol_metadata')).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByDisplayValue('Unacknowledged'), { target: { value: 'acknowledged' } });
+      await waitFor(() => expect(screen.getByText('symbol_metadata')).toBeInTheDocument());
+      expect(screen.queryByText('transactions')).not.toBeInTheDocument();
+    });
+
+    it('acknowledges an incident, removing it from the default unacknowledged view', async () => {
+      securityIncidentRows.push({
+        id: '1', detected_at: '2026-08-29T03:00:00Z', session_id: 'sess-1', table_name: 'transactions',
+        operation: 'insert', row_id: 'row-1', old_values: null, new_values: {}, ip: '1.1.1.1', user_agent: 'ua',
+        acknowledged: false,
+      });
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /security/i }));
+
+      await waitFor(() => expect(screen.getByText('transactions')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /^acknowledge$/i }));
+
+      await waitFor(() => expect(screen.queryByText('transactions')).not.toBeInTheDocument());
+      expect(updateIncidentMock).toHaveBeenCalledWith('1');
+    });
+
+    it('asks for confirmation before global sign-out, and does nothing if declined', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /security/i }));
+
+      await waitFor(() => expect(screen.getByText('Global sign-out')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /sign out everywhere/i }));
+
+      expect(window.confirm).toHaveBeenCalled();
+      expect(signOutMock).not.toHaveBeenCalled();
+    });
+
+    it('calls supabase.auth.signOut with global scope once confirmed', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /security/i }));
+
+      await waitFor(() => expect(screen.getByText('Global sign-out')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /sign out everywhere/i }));
+
+      await waitFor(() => expect(signOutMock).toHaveBeenCalledWith({ scope: 'global' }));
+      await waitFor(() => expect(screen.getByText(/signed out everywhere/i)).toBeInTheDocument());
+    });
+
+    it('shows the sign-out error message when it fails', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
+      signOutMock.mockImplementation(() => Promise.resolve({ error: { message: 'network error' } }));
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: /security/i }));
+
+      await waitFor(() => expect(screen.getByText('Global sign-out')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: /sign out everywhere/i }));
+
+      await waitFor(() => expect(screen.getByText('network error')).toBeInTheDocument());
     });
   });
 });
