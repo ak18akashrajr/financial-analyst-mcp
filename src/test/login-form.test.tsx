@@ -52,6 +52,26 @@ describe('LoginForm', () => {
     expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
   });
 
+  it('replays the shake animation on the form when a sign-in fails, without clearing the typed fields', async () => {
+    const signIn = vi.fn().mockResolvedValue({ error: 'Invalid login credentials' });
+    mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
+
+    renderLoginForm();
+    const emailInput = screen.getByPlaceholderText('you@example.com');
+    const passwordInput = screen.getByPlaceholderText('••••••••');
+    fireEvent.change(emailInput, { target: { value: 'me@example.com' } });
+    fireEvent.change(passwordInput, { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+
+    await screen.findByText(/invalid login credentials/i);
+    // The form itself carries the shake class (see the force-reflow trick in
+    // LoginForm.tsx) — the DOM node isn't remounted, so a wrong-password
+    // attempt doesn't blow away what the user already typed.
+    expect(screen.getByRole('button', { name: /login/i }).closest('form')).toHaveClass('animate-shake');
+    expect(emailInput).toHaveValue('me@example.com');
+    expect(passwordInput).toHaveValue('wrong');
+  });
+
   it('never hardcodes a working credential locally — the old exploit pair always goes through signIn', async () => {
     // Regression guard for the old vulnerability: username === 'ak18' && password === '2003'
     // compared entirely client-side with no network call at all. Using a

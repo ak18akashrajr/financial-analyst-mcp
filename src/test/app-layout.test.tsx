@@ -38,12 +38,13 @@ vi.mock('@/integrations/supabase/client', () => ({
   },
 }));
 
-function renderLayout() {
+function renderLayout(initialEntries: Array<string | { pathname: string; state?: unknown }> = ['/overview']) {
   return render(
-    <MemoryRouter initialEntries={['/overview']}>
+    <MemoryRouter initialEntries={initialEntries}>
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/overview" element={<div>Dashboard Content</div>} />
+          <Route path="/reports" element={<div>Reports Content</div>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -85,5 +86,17 @@ describe('AppLayout', () => {
 
     const banner = await screen.findByText(/suspicious activity detected/i);
     expect(banner.closest('a')).toHaveAttribute('href', '/dev-zone?tab=security');
+  });
+
+  it('does not play the post-login entrance animation on a normal visit', async () => {
+    renderLayout(['/overview']);
+    await waitFor(() => expect(screen.getByText('Dashboard Content')).toBeInTheDocument());
+    expect(screen.getByTestId('app-content')).not.toHaveClass('animate-in');
+  });
+
+  it('plays the post-login entrance animation when LoginForm hands off with state.justLoggedIn', async () => {
+    renderLayout([{ pathname: '/overview', state: { justLoggedIn: true } }]);
+    await waitFor(() => expect(screen.getByText('Dashboard Content')).toBeInTheDocument());
+    expect(screen.getByTestId('app-content')).toHaveClass('animate-in');
   });
 });
