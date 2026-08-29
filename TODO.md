@@ -64,6 +64,19 @@ tax numbers.
       ([supabase/functions/portfolio-ai/](supabase/functions/portfolio-ai/index.ts),
       [_shared/mcp-client.ts](supabase/functions/_shared/mcp-client.ts)) is still an open question.
 
+- [ ] **Groq 429 error-surfacing.** When the Groq provider hits a rate limit (429), surface that to
+      the user distinctly instead of a generic failure — currently
+      [`withRetry`](supabase/functions/_shared/retry.ts) retries transient 429/5xx/529s with
+      backoff, but if all retries are exhausted the user-facing error doesn't call out "rate
+      limited" specifically. From the user's own portfolio-AI accuracy-testing notes as still open.
+
+- [ ] **Scaling & archival plan.** Implement the plan in
+      [docs/scaling-and-archival-plan.md](docs/scaling-and-archival-plan.md) — currently
+      planning-only, nothing built yet. Needs the "Open decisions" in that doc answered first:
+      retention window for `audit_logs`, where the archive lives (same-DB `_archive` table vs.
+      Supabase Storage export), whether `pg_cron` is available/acceptable vs. a scheduled edge
+      function, and `ai_rate_limits`' cleanup cadence.
+
 ## Portfolio AI / MCP tools
 
 - [ ] All risk ratios to be added
