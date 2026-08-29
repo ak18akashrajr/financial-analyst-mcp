@@ -1,4 +1,14 @@
-export function getDynamicGreeting(now = new Date()): { title: string; subtitle: string; emoji: string } {
+export interface GreetingStats {
+  /** Overall unrealized P/L %, i.e. PortfolioSummary.totalPnlPercent. */
+  totalPnlPercent?: number | null;
+  /** Annualized return, i.e. PortfolioSummary.xirr. */
+  xirr?: number | null;
+}
+
+export function getDynamicGreeting(
+  now = new Date(),
+  stats?: GreetingStats
+): { title: string; subtitle: string; emoji: string } {
   const day = now.getDay(); // 0 Sun - 6 Sat
   const hour = now.getHours();
   const period: 'morning' | 'afternoon' | 'evening' | 'night' =
@@ -7,100 +17,125 @@ export function getDynamicGreeting(now = new Date()): { title: string; subtitle:
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const dayName = dayNames[day];
 
-  // Curated micro-bank keyed by `${day}-${period}`
+  // Curated micro-bank keyed by `${day}-${period}`. Full English, elite/sharp,
+  // timing-relevant, addressed to Ak / Ak18 / Akash on rotation.
   const bank: Record<string, { title: string; subtitle: string; emoji: string }> = {
     'Monday-morning': {
-      title: 'Rise and grind, Mapla! 💡',
-      subtitle: 'The market rewards the patient and resilient. Embrace the volatility, focus on long-term goals. #MondayMotivation',
-      emoji: '💡',
+      title: 'New week, new leverage, Ak. ⚡',
+      subtitle: 'The market pays patience, not panic. Set the tone for the week right now.',
+      emoji: '⚡',
     },
     'Monday-afternoon': {
-      title: 'Halfway through Monday — keep stacking! 📊',
-      subtitle: 'Compounding doesn’t care about your mood. Show up, stay consistent.',
+      title: 'Momentum check, Akash. 📊',
+      subtitle: 'Halfway through Monday — compounding doesn’t care about your mood. Stay the course.',
       emoji: '📊',
     },
     'Monday-evening': {
-      title: 'Markets closed. Reflect & reset. 🌅',
-      subtitle: 'A day in the green or red is just one tick on a long timeline.',
-      emoji: '🌅',
+      title: 'Books closed. Head held high, Ak18. 🌆',
+      subtitle: 'One session is a rounding error on a decades-long chart. Reset and reload.',
+      emoji: '🌆',
     },
     'Tuesday-morning': {
-      title: 'Tuesday tactics, Da Mapla! 🎯',
-      subtitle: 'Small SIPs. Big future. Consistency > timing.',
+      title: 'Sharp start, Ak. 🎯',
+      subtitle: 'Discipline compounds faster than any single trade. Show up like it matters — it does.',
       emoji: '🎯',
     },
     'Wednesday-morning': {
-      title: 'Hump day hustle! 🐪',
-      subtitle: 'You’re not building wealth in a day — you’re building it every day.',
+      title: 'Midweek command, Akash. 🐪',
+      subtitle: 'You’re not built in a day — you’re built in the days nobody’s watching.',
       emoji: '🐪',
     },
     'Wednesday-afternoon': {
-      title: 'Mid-week check-in 📈',
-      subtitle: 'Trust the process. Review the plan, not the price.',
+      title: 'Stay locked in, Ak18. 📈',
+      subtitle: 'Review the plan, not the price. Elite portfolios are boring on purpose.',
       emoji: '📈',
     },
     'Thursday-morning': {
-      title: 'Thursday thrust! 🚀',
-      subtitle: 'Patience compounds quietly. Keep going.',
+      title: 'Thursday thrust, Ak. 🚀',
+      subtitle: 'Almost there. Quiet patience is the loudest edge you have.',
       emoji: '🚀',
     },
+    'Thursday-evening': {
+      title: 'One session from the weekend, Akash. 🌇',
+      subtitle: 'Finish strong. Tomorrow’s the last lap before you clock out in style.',
+      emoji: '🌇',
+    },
     'Friday-morning': {
-      title: 'Friday vibes, but markets don’t take days off! 🎉',
-      subtitle: 'End the week strong — review, rebalance, relax.',
-      emoji: '🎉',
+      title: 'Friday, but markets don’t clock out, Ak18. 🔥',
+      subtitle: 'Close the week like a professional — review, rebalance, then go enjoy it.',
+      emoji: '🔥',
     },
     'Friday-evening': {
-      title: 'Weekend mode, but money still works. 🍻',
-      subtitle: 'Your portfolio doesn’t clock out. Enjoy the well-earned break.',
-      emoji: '🍻',
+      title: 'Weekend mode unlocked, Ak. 🥂',
+      subtitle: 'Your portfolio keeps working while you don’t. Go enjoy the well-earned break.',
+      emoji: '🥂',
     },
     'Saturday-morning': {
-      title: 'Saturday strategist 📚',
-      subtitle: 'No market noise today — perfect time to plan and learn.',
-      emoji: '📚',
+      title: 'Strategist mode, Akash. 🧠',
+      subtitle: 'No noise today — the best portfolios are shaped on quiet weekends like this one.',
+      emoji: '🧠',
     },
     'Saturday-evening': {
-      title: 'Chill mode, Mapla 🛋️',
-      subtitle: 'Rest is part of the plan. Markets reopen Monday.',
+      title: 'Recharge mode, Ak18. 🛋️',
+      subtitle: 'Rest is part of the strategy, not a break from it. Markets reopen Monday — so will you.',
       emoji: '🛋️',
     },
     'Sunday-morning': {
-      title: 'Sunday reset ☕',
-      subtitle: 'Review, journal, and get ready to dominate the week ahead.',
+      title: 'Sunday reset, Ak. ☕',
+      subtitle: 'Review the week, journal the wins and misses, and line up the next move.',
       emoji: '☕',
     },
     'Sunday-evening': {
-      title: 'Eve of Monday — set your intent. 🌙',
-      subtitle: 'A small plan tonight beats a big regret tomorrow.',
+      title: 'Eve of the grind, Akash. 🌙',
+      subtitle: 'Set tomorrow’s intent tonight. A sharp plan beats a scramble every time.',
       emoji: '🌙',
     },
   };
 
   const exact = bank[`${dayName}-${period}`];
-  if (exact) return exact;
+  const base = exact ?? getFallback(period);
 
-  // Fallback by time of day
+  const statLine = buildStatLine(stats);
+  return statLine ? { ...base, subtitle: `${base.subtitle} ${statLine}` } : base;
+}
+
+function getFallback(period: 'morning' | 'afternoon' | 'evening' | 'night') {
   const fallback: Record<typeof period, { title: string; subtitle: string; emoji: string }> = {
     morning: {
-      title: 'Vanakkam Da Mapla! ☀️',
-      subtitle: 'Iniku market epdi iruku nu paklam vaariya 📈',
+      title: 'Rise and build, Ak. ☀️',
+      subtitle: 'Every great portfolio starts with one disciplined morning. This is yours.',
       emoji: '☀️',
     },
     afternoon: {
-      title: 'Afternoon, Mapla! 📈',
-      subtitle: 'Markets are moving. So should your discipline.',
+      title: 'Eyes on the horizon, Akash. 📈',
+      subtitle: 'Markets are moving. Make sure your discipline is moving with them.',
       emoji: '📈',
     },
     evening: {
-      title: 'Good evening, investor 🌆',
-      subtitle: 'Close the day with gratitude — green or red.',
+      title: 'Evening debrief, Ak18. 🌆',
+      subtitle: 'Close the day with clarity — green or red, the plan stays the plan.',
       emoji: '🌆',
     },
     night: {
-      title: 'Late night, Mapla? 🌙',
-      subtitle: 'Sleep is the best leverage. Tomorrow’s markets need a fresh you.',
+      title: 'Still up, Ak? 🌙',
+      subtitle: 'Sleep is the highest-leverage asset you own. Tomorrow’s markets need a sharp you.',
       emoji: '🌙',
     },
   };
   return fallback[period];
+}
+
+function buildStatLine(stats?: GreetingStats): string | null {
+  if (!stats) return null;
+  const { totalPnlPercent, xirr } = stats;
+
+  if (typeof totalPnlPercent === 'number' && Number.isFinite(totalPnlPercent)) {
+    const up = totalPnlPercent >= 0;
+    const pnlStr = `${up ? '+' : ''}${totalPnlPercent.toFixed(1)}%`;
+    if (typeof xirr === 'number' && Number.isFinite(xirr)) {
+      return `Book's ${up ? 'up' : 'down'} ${pnlStr} overall, running at ${xirr.toFixed(1)}% XIRR. Elite pace — keep it up.`;
+    }
+    return `Book's ${up ? 'up' : 'down'} ${pnlStr} overall. ${up ? 'Elite pace — keep it up.' : 'Stay sharp — the comeback is part of the story.'}`;
+  }
+  return null;
 }
