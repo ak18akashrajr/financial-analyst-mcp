@@ -10,16 +10,18 @@ describe('LoginLoadingScreen', () => {
     expect(screen.getByText(/entering your finance world/i)).toBeInTheDocument();
     expect(onDone).not.toHaveBeenCalled();
 
-    // Real timers — the full sequence is ~2.2s (see LoginLoadingScreen.tsx).
+    // Real timers — the full sequence (4 stages + completion flourish +
+    // fade-out) is ~2.45s, see LoginLoadingScreen.tsx.
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1), { timeout: 4000 });
   });
 
-  it('advances through every stage in order before finishing', async () => {
+  it('advances through every stage in order, then shows a completion flourish before finishing', async () => {
     render(<LoginLoadingScreen onDone={() => {}} />);
 
     expect(screen.getByText(/entering your finance world/i)).toBeInTheDocument();
     expect(await screen.findByText(/pulling up your portfolio/i, undefined, { timeout: 2000 })).toBeInTheDocument();
     expect(await screen.findByText(/processing holdings/i, undefined, { timeout: 2000 })).toBeInTheDocument();
     expect(await screen.findByText(/analyzing exposure/i, undefined, { timeout: 2000 })).toBeInTheDocument();
+    expect(await screen.findByText(/you're in/i, undefined, { timeout: 2000 })).toBeInTheDocument();
   });
 });
