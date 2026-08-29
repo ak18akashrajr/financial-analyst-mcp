@@ -25,24 +25,24 @@ describe('getDynamicGreeting', () => {
     expect(greeting.title).toContain('Evening debrief');
   });
 
-  it('appends a positive stat line when totalPnlPercent and xirr are provided', () => {
+  it('builds a positive stat pill when totalPnlPercent and xirr are provided', () => {
     // xirr is a decimal fraction (matches PortfolioSummary.xirr / XirrDetailsCard), not a percentage.
     const now = new Date(2026, 7, 31, 8, 0, 0);
     const greeting = getDynamicGreeting(now, { totalPnlPercent: 12.345, xirr: 0.182 });
-    expect(greeting.subtitle).toContain('+12.3%');
-    expect(greeting.subtitle).toContain('18.2% XIRR');
+    expect(greeting.stat).toEqual({ text: '+12.3% · 18.2% XIRR', positive: true });
+    // subtitle stays pure motivational copy — the stat is a separate field, not baked into prose.
+    expect(greeting.subtitle).not.toMatch(/XIRR|%/);
   });
 
-  it('appends a negative stat line without XIRR when only totalPnlPercent is provided', () => {
+  it('builds a negative stat pill without XIRR when only totalPnlPercent is provided', () => {
     const now = new Date(2026, 7, 31, 8, 0, 0);
     const greeting = getDynamicGreeting(now, { totalPnlPercent: -4.2, xirr: null });
-    expect(greeting.subtitle).toContain('-4.2%');
-    expect(greeting.subtitle).toContain('down');
+    expect(greeting.stat).toEqual({ text: '-4.2%', positive: false });
   });
 
-  it('omits the stat line when no stats are provided', () => {
+  it('has no stat when no stats are provided', () => {
     const now = new Date(2026, 7, 31, 8, 0, 0);
     const withoutStats = getDynamicGreeting(now);
-    expect(withoutStats.subtitle).not.toMatch(/XIRR|Book's/);
+    expect(withoutStats.stat).toBeNull();
   });
 });
