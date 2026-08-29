@@ -1,14 +1,28 @@
 export interface GreetingStats {
   /** Overall unrealized P/L %, i.e. PortfolioSummary.totalPnlPercent. */
   totalPnlPercent?: number | null;
-  /** Annualized return, i.e. PortfolioSummary.xirr. */
+  /**
+   * Annualized return, i.e. PortfolioSummary.xirr — a decimal fraction (0.0661 for 6.61%),
+   * matching what XirrDetailsCard receives. This module multiplies by 100 before display.
+   */
   xirr?: number | null;
 }
 
-export function getDynamicGreeting(
-  now = new Date(),
-  stats?: GreetingStats
-): { title: string; subtitle: string; emoji: string } {
+export interface GreetingStat {
+  /** e.g. "+3.5% · 6.6% XIRR" — compact, meant for a colored pill, not a sentence. */
+  text: string;
+  positive: boolean;
+}
+
+export interface Greeting {
+  title: string;
+  subtitle: string;
+  emoji: string;
+  /** null when stats weren't provided, or totalPnlPercent is missing/non-finite. */
+  stat: GreetingStat | null;
+}
+
+export function getDynamicGreeting(now = new Date(), stats?: GreetingStats): Greeting {
   const day = now.getDay(); // 0 Sun - 6 Sat
   const hour = now.getHours();
   const period: 'morning' | 'afternoon' | 'evening' | 'night' =
@@ -95,8 +109,7 @@ export function getDynamicGreeting(
   const exact = bank[`${dayName}-${period}`];
   const base = exact ?? getFallback(period);
 
-  const statLine = buildStatLine(stats);
-  return statLine ? { ...base, subtitle: `${base.subtitle} ${statLine}` } : base;
+  return { ...base, stat: buildStat(stats) };
 }
 
 function getFallback(period: 'morning' | 'afternoon' | 'evening' | 'night') {
@@ -125,17 +138,14 @@ function getFallback(period: 'morning' | 'afternoon' | 'evening' | 'night') {
   return fallback[period];
 }
 
-function buildStatLine(stats?: GreetingStats): string | null {
+function buildStat(stats?: GreetingStats): GreetingStat | null {
   if (!stats) return null;
   const { totalPnlPercent, xirr } = stats;
+  if (typeof totalPnlPercent !== 'number' || !Number.isFinite(totalPnlPercent)) return null;
 
-  if (typeof totalPnlPercent === 'number' && Number.isFinite(totalPnlPercent)) {
-    const up = totalPnlPercent >= 0;
-    const pnlStr = `${up ? '+' : ''}${totalPnlPercent.toFixed(1)}%`;
-    if (typeof xirr === 'number' && Number.isFinite(xirr)) {
-      return `Book's ${up ? 'up' : 'down'} ${pnlStr} overall, running at ${xirr.toFixed(1)}% XIRR. Elite pace — keep it up.`;
-    }
-    return `Book's ${up ? 'up' : 'down'} ${pnlStr} overall. ${up ? 'Elite pace — keep it up.' : 'Stay sharp — the comeback is part of the story.'}`;
-  }
-  return null;
+  const positive = totalPnlPercent >= 0;
+  const pnlStr = `${positive ? '+' : ''}${totalPnlPercent.toFixed(1)}%`;
+  const xirrStr =
+    typeof xirr === 'number' && Number.isFinite(xirr) ? ` · ${(xirr * 100).toFixed(1)}% XIRR` : '';
+  return { text: `${pnlStr}${xirrStr}`, positive };
 }
