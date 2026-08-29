@@ -97,7 +97,7 @@ const IndexContent = () => {
         </div>
 
         {/* Welcome */}
-        <DynamicWelcome />
+        <DynamicWelcome summary={summary} />
 
         {/* CC Bill Reminder — first 5 days of month while debt is outstanding */}
         {cash.creditCardDebt > 0 && new Date().getDate() <= 5 && (
@@ -166,8 +166,11 @@ const IndexContent = () => {
   );
 };
 
-function DynamicWelcome() {
-  const greeting = useMemo(() => getDynamicGreeting(), []);
+function DynamicWelcome({ summary }: { summary: { totalPnlPercent: number; xirr: number | null } }) {
+  const greeting = useMemo(
+    () => getDynamicGreeting(new Date(), { totalPnlPercent: summary.totalPnlPercent, xirr: summary.xirr }),
+    [summary.totalPnlPercent, summary.xirr]
+  );
   const dateStr = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return (
     <div className="flex items-end justify-between flex-wrap gap-3 px-1">
