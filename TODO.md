@@ -5,6 +5,21 @@ check items off (`- [x]`) when merged, and note the PR number.
 
 ## High Priority Action Items
 
+Flagged 2026-08-29 during an adversarial security re-scan (third pass) of
+[docs/security-review.md](docs/security-review.md) — full findings, exploit steps, and fix
+recommendation in that doc's "Third pass (2026-08-29)" section.
+
+- [ ] **Fix finding #10 — a hijacked/replayed session can silence or delete its own
+      `security_incidents` row, and re-baseline `session_fingerprints`, using nothing but the
+      stolen token itself.** Both tables currently grant `authenticated` full `UPDATE`/`DELETE` via
+      RLS, same as every other write path in this app — but these two tables are supposed to be the
+      one place an attacker holding a replayed token *can't* cover their tracks. Needs `REVOKE
+      DELETE` from `authenticated` on both tables, plus a narrower `UPDATE` policy on
+      `security_incidents` that only permits flipping `acknowledged` (not touching the diff/IP
+      columns). See the doc for the exact exploit (`curl` against the PostgREST endpoint with a
+      stolen token) and suggested migration shape.
+
+
 Flagged 2026-08-28 during a Reports-page (`/reports`) calculation audit requested by the user,
 after confirming and fixing one instance of this bug class in
 [fix/timezone-date-boundary-bug](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/new/fix/timezone-date-boundary-bug)
