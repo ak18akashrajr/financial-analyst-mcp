@@ -64,8 +64,19 @@ tax numbers.
 
 - [ ] All risk ratios to be added
 - [ ] Time series forecasting
-- [ ] Evaluate OpenRouter + Nemotron plan — see
-      [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)
+- [x] Evaluate OpenRouter + Nemotron plan — see
+      [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md). Opt-in Nemotron/MiniMax
+      path shipped and live (PRs #105-108); auto-escalation default still pending the bench-off
+      documented in that doc's task 9.
+- [ ] **Set up OpenRouter Guardrails** for the opt-in Nemotron/MiniMax path —
+      [openrouter.ai/activity/guardrails](https://openrouter.ai/activity/guardrails) offers content
+      filters, spending limits, and usage policies on top of an OpenRouter account/API key.
+      Flagged by the user 2026-08-30 while testing the opt-in path
+      ([docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)). Not yet scoped — need
+      to check at implementation time exactly what "spending limits" means for a *free-tier-only*
+      usage pattern (this app never sends paid requests to OpenRouter today), whether policies are
+      configured per-key or account-wide, and whether enabling anything here changes the existing
+      `llm_quota_usage`-based quota tracking or is purely additive/defense-in-depth on top of it.
 
 <details>
 <summary>Archive (completed)</summary>
