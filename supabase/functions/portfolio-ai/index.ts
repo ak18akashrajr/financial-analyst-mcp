@@ -269,10 +269,21 @@ Deno.serve(async (req: Request) => {
             result = await provider.runTurn(model, SYSTEM_PROMPT, tools);
           } catch (err) {
             // OpenRouter's own retries (withRetry, inside openrouter.ts) are already
-            // exhausted by the time this is reached. Only retried once, on the very
-            // first turn (before any tool-call state has accumulated on this
-            // provider) — restarting mid-loop would lose that state, and the plan
-            // doc only calls for "retry same turn", not resuming a partial one.
+            // exhausted by the time this is reached. Falls back on ANY turn
+            // OpenRouter is still the active provider, not just the first — a real
+            // production case (2026-08-30) had Nemotron succeed on turn 0 (a tool
+            // call) then fail on turn 1 with a genuine upstream 502; restricting
+            // this to turn 0 meant that surfaced as a raw classified error instead
+            // of falling back. Only once (`!openRouterFallback` guard) since a
+            // later-turn fallback necessarily DISCARDS whatever tool-call/
+            // tool-result state accumulated on the OpenRouter provider so far —
+            // there's no generic way to hand that off to a fresh GroqProvider,
+            // whose internal message format is private and provider-specific — so
+            // Groq restarts the tool-use loop from just the original history plus
+            // the latest user message. That's safe (if a little wasteful) because
+            // every MCP tool is a read-only, idempotent SELECT (see retry.ts's doc
+            // comment) — Groq re-deciding which tools to call from scratch can't
+            // cause a duplicate side effect, just a possibly-redundant re-call.
             //
             // isRetryableError() alone (not `instanceof HttpCallError` on top of
             // it) — it also covers a request timeout (a DOMException, not an
@@ -281,8 +292,7 @@ Deno.serve(async (req: Request) => {
             // has been seen to never respond at all rather than erroring, which
             // openrouter.ts now bounds with its own request timeout — that timeout
             // needs to reach this same fallback, not just an HTTP error status.
-            const canFallBack = turn === 0 && provider.name === "openrouter" && !openRouterFallback
-              && isRetryableError(err);
+            const canFallBack = provider.name === "openrouter" && !openRouterFallback && isRetryableError(err);
             if (!canFallBack) throw err;
 
             const groqKey = Deno.env.get("GROQ_API_KEY");

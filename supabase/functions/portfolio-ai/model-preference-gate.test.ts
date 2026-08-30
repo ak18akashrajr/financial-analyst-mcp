@@ -231,6 +231,29 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
     expect(text).toContain("OpenRouter fallback");
   });
 
+  it("falls back to Groq on a LATER turn's OpenRouter failure too, not just the first", async () => {
+    // Real production case (2026-08-30): Nemotron succeeded on turn 0 (asked
+    // for a tool call) but failed on turn 1 with a genuine upstream 502 — the
+    // fallback used to only trigger on turn 0, so this surfaced as a raw
+    // classified error instead of falling back to Groq.
+    stubEnv({ GROQ_API_KEY: "test-key", OPENROUTER_API_KEY: "or-key" });
+    ({ HttpCallError } = await import("../_shared/http-call-error.ts"));
+    await import("./index.ts");
+
+    quotaMock.mockResolvedValue(true);
+    openRouterRunTurnMock
+      .mockResolvedValueOnce({ done: false, calls: [{ id: "call-1", name: "get_portfolio_summary", arguments: {} }] })
+      .mockRejectedValueOnce(new HttpCallError("OpenRouter", 502, "upstream overloaded"));
+    groqRunTurnMock.mockResolvedValue({ done: true, text: "answer" });
+
+    const res = await handler(chatRequest("nemotron"));
+    const text = await readAllEvents(res.body as ReadableStream<Uint8Array>);
+
+    expect(openRouterRunTurnMock).toHaveBeenCalledTimes(2);
+    expect(groqRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(text).toContain("OpenRouter fallback");
+  });
+
   it("never calls OpenRouter at all when modelPreference is omitted (auto stays today's behavior)", async () => {
     stubEnv({ GROQ_API_KEY: "test-key", OPENROUTER_API_KEY: "or-key" });
     ({ HttpCallError } = await import("../_shared/http-call-error.ts"));
