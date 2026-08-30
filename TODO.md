@@ -62,7 +62,7 @@ tax numbers.
 
 ## Portfolio AI / MCP tools
 
-- [ ] All risk ratios to be added
+- [ ] All risk ratios to be added(Alpha, Beta, Volatility, Sharpe Ratio)
 - [ ] Time series forecasting
 - [x] Evaluate OpenRouter + Nemotron plan — see
       [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md). Opt-in Nemotron/MiniMax
