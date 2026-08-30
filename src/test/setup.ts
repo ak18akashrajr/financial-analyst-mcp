@@ -26,6 +26,19 @@ Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
   }),
 });
 
+// jsdom's AbortSignal polyfill lacks the static `.timeout()` method (added to
+// the real DOM/Node/Deno spec well before jsdom picked it up) — used by
+// _shared/providers/openrouter.ts to bound a hung upstream request. Deno
+// (this app's actual edge runtime) has supported it for a long time; this is
+// a test-environment gap only, not a production concern.
+if (typeof AbortSignal.timeout !== "function") {
+  AbortSignal.timeout = (ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("The operation timed out.", "TimeoutError")), ms);
+    return controller.signal;
+  };
+}
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({

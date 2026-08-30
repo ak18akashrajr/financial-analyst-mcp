@@ -210,6 +210,27 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
     expect(text).not.toContain("429");
   });
 
+  it("falls back to Groq mid-turn when the OpenRouter call times out (not just an HttpCallError)", async () => {
+    // Real production case (2026-08-30): nemotron sometimes never responds at
+    // all — openrouter.ts now bounds that with its own request timeout, which
+    // surfaces here as a DOMException, not an HttpCallError. The fallback
+    // must still trigger on this, not just on an HTTP error status.
+    stubEnv({ GROQ_API_KEY: "test-key", OPENROUTER_API_KEY: "or-key" });
+    ({ HttpCallError } = await import("../_shared/http-call-error.ts"));
+    await import("./index.ts");
+
+    quotaMock.mockResolvedValue(true);
+    openRouterRunTurnMock.mockRejectedValue(new DOMException("The operation timed out.", "TimeoutError"));
+    groqRunTurnMock.mockResolvedValue({ done: true, text: "answer" });
+
+    const res = await handler(chatRequest("nemotron"));
+    const text = await readAllEvents(res.body as ReadableStream<Uint8Array>);
+
+    expect(openRouterRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(groqRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(text).toContain("OpenRouter fallback");
+  });
+
   it("never calls OpenRouter at all when modelPreference is omitted (auto stays today's behavior)", async () => {
     stubEnv({ GROQ_API_KEY: "test-key", OPENROUTER_API_KEY: "or-key" });
     ({ HttpCallError } = await import("../_shared/http-call-error.ts"));
