@@ -19,6 +19,7 @@ no scheduled or automatic rotation for any of them.
 |---|---|---|
 | `GROQ_API_KEY` | `portfolio-ai` (default LLM provider) | `npx supabase secrets set GROQ_API_KEY=...` |
 | `ANTHROPIC_API_KEY` | `portfolio-ai` (used exclusively once set — see [_shared/providers](../supabase/functions/_shared/providers)) | `npx supabase secrets set ANTHROPIC_API_KEY=...` |
+| `OPENROUTER_API_KEY` | `portfolio-ai` (opt-in Nemotron 3 Ultra / MiniMax M2.7 path — see [docs/openrouter-nemotron-plan.md](openrouter-nemotron-plan.md)); its absence doesn't affect the Groq/Anthropic paths at all, same as `ANTHROPIC_API_KEY`'s optionality | `npx supabase secrets set OPENROUTER_API_KEY=...` |
 | `ALLOWED_ORIGIN` | every DB-touching edge function (CORS) | `npx supabase secrets set ALLOWED_ORIGIN=...` |
 | `SUPABASE_SERVICE_ROLE_KEY` | `portfolio-ai`, `portfolio-mcp-server`, `fetch-*` | injected automatically by Supabase per-project — not user-set |
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | all edge functions | injected automatically by Supabase per-project — not user-set |
@@ -40,11 +41,12 @@ section below, which is the more sensitive of the two since it bypasses RLS.
   [auth-rls-plan.md](auth-rls-plan.md) for why this app has no per-user isolation to fall back on
   in the meantime).
 
-## Rotating `GROQ_API_KEY` / `ANTHROPIC_API_KEY`
+## Rotating `GROQ_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY`
 
-1. Generate a new key in the provider's console (Groq Console / Anthropic Console) — don't revoke
-   the old one yet.
-2. `npx supabase secrets set GROQ_API_KEY="<new key>"` (or `ANTHROPIC_API_KEY`). This takes effect
+1. Generate a new key in the provider's console (Groq Console / Anthropic Console / OpenRouter
+   dashboard) — don't revoke the old one yet.
+2. `npx supabase secrets set GROQ_API_KEY="<new key>"` (or `ANTHROPIC_API_KEY` /
+   `OPENROUTER_API_KEY`). This takes effect
    on the next cold start of `portfolio-ai` — no redeploy needed, but see the note on in-flight
    requests below.
 3. Send one real chat message through `/portfolio-ai` in the deployed app and confirm it succeeds

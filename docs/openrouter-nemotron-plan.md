@@ -1,7 +1,10 @@
 # Portfolio AI: OpenRouter (Nemotron 3 Ultra / MiniMax M2.7) as Third Provider — Plan
 
-Status: **Not started** — documented for later implementation, tracked here so both of us can pick
-it up. Companion to [llm-mcp-agent-plan.md](llm-mcp-agent-plan.md), which this extends rather than
+Status: **Opt-in path implemented** (rollout tasks 3, 4, 6, 7, 8, and most of 10 — see below);
+the automatic complexity-based auto-route (task 5) is deliberately deferred until the bench-off
+(task 9) picks a winner between Nemotron and MiniMax, per Goal 5. `OPENROUTER_API_KEY` still needs
+to actually be set as a Supabase secret (task 2) before either model works in the deployed app.
+Companion to [llm-mcp-agent-plan.md](llm-mcp-agent-plan.md), which this extends rather than
 replaces.
 
 ## Why
@@ -145,48 +148,78 @@ free-tier allowances on OpenRouter.
       it matches Nemotron's numbers.
 - [ ] 2. Add `OPENROUTER_API_KEY` as a Supabase secret (not committed; follow the existing
       [key-rotation.md](key-rotation.md) convention). One key covers both models — same OpenRouter
-      account.
-- [ ] 3. Create `supabase/functions/_shared/providers/openrouter.ts` implementing `LlmProvider`
+      account. **Code is ready for this (task 6); the actual secret still needs to be set in the
+      deployed project** — its absence just means the opt-in path logs a warning and falls back to
+      Groq (see the "falls back... when OPENROUTER_API_KEY is not configured" test).
+- [x] 3. Create `supabase/functions/_shared/providers/openrouter.ts` implementing `LlmProvider`
       (mirror `groq.ts`: same message/tool-call shapes), pointed at
       `https://openrouter.ai/api/v1/chat/completions`, with the model id parameterized rather than
       hardcoded so it can serve either `nvidia/nemotron-3-ultra-550b-a55b:free` or
       `minimax/minimax-m2.7:free`, with OpenRouter's recommended `HTTP-Referer` / `X-Title` headers
-      set. Note MiniMax supports `response_format` JSON-schema structured output where Nemotron
-      doesn't — keep tool-result parsing tolerant enough to work either way.
-- [ ] 4. Add a quota-tracking mechanism (Supabase table or KV row), **keyed per model id**, for
+      set. **Done** — note MiniMax supports `response_format` JSON-schema structured output where
+      Nemotron doesn't; tool-result parsing (via `appendToolResults`) is unchanged from
+      `groq.ts`/`anthropic.ts`'s already-tolerant JSON.stringify round-trip, so no special-casing
+      was needed for either model.
+- [x] 4. Add a quota-tracking mechanism (Supabase table or KV row), **keyed per model id**, for
       OpenRouter calls per day, plus a small helper (e.g. `_shared/openrouter-quota.ts`) to
-      check/increment it per model.
+      check/increment it per model. **Done** — see
+      [supabase/migrations/20260830150000_add_llm_quota_usage.sql](../supabase/migrations/20260830150000_add_llm_quota_usage.sql)
+      and [_shared/openrouter-quota.ts](../supabase/functions/_shared/openrouter-quota.ts). Both
+      models' daily caps default to a conservative 200 and are overridable via
+      `OPENROUTER_NEMOTRON_DAILY_CAP` / `OPENROUTER_MINIMAX_DAILY_CAP` env vars — no code change
+      needed once MiniMax's real number is confirmed (task 1a).
 - [ ] 5. Extend `router.ts` (or add a sibling function) so `isComplexQuery`/`shouldEscalate` results
       can route to the configured default OpenRouter model when its quota allows, falling back to
       the existing `gpt-oss-120b` tier otherwise — keep the Groq-only tiering behavior fully intact
-      when neither OpenRouter model is in play.
-- [ ] 6. Update `buildProvider()` / the turn loop in `supabase/functions/portfolio-ai/index.ts` to:
+      when neither OpenRouter model is in play. **Deliberately not done yet** — deferred until the
+      bench-off (task 9) picks a default, per Goal 5. `isComplexQuery`/`shouldEscalate` remain
+      wired only into Groq's existing two-tier escalation, unchanged.
+- [x] 6. Update `buildProvider()` / the turn loop in `supabase/functions/portfolio-ai/index.ts` to:
       accept `modelPreference: 'auto' | 'nemotron' | 'minimax'` from the request body, wire in the
       OpenRouter branch for whichever model id is selected, and catch OpenRouter `HttpCallError`
-      (429/5xx) to retry on Groq with an honest `attribution` string.
-- [ ] 7. Add structured logging (via `_shared/logger.ts`, not raw `console.log`) for: which
+      (429/5xx) to retry on Groq with an honest `attribution` string. **Done** — opt-in only, as
+      scoped by task 5's deferral: Anthropic still wins outright over any `modelPreference`, and
+      `modelPreference: 'auto'` (or omitting it) is byte-for-byte the same code path as before this
+      change.
+- [x] 7. Add structured logging (via `_shared/logger.ts`, not raw `console.log`) for: which
       OpenRouter model was selected (user vs auto), quota check result per model, and any
       fallback-to-Groq event — so this is diagnosable from Supabase's log explorer per
-      [logging-monitoring.md](logging-monitoring.md).
-- [ ] 8. Add the model-selector UI + warning copy to `src/pages/PortfolioAI.tsx` for both Nemotron
+      [logging-monitoring.md](logging-monitoring.md). **Done** — `modelPreference` and
+      `openRouterFallback` are now in both the "Chat request started" and "Chat request completed"
+      log lines; the quota-exhausted and OpenRouter-call-failed paths each get their own `logger.warn`/
+      `logger.info` line.
+- [x] 8. Add the model-selector UI + warning copy to `src/pages/PortfolioAI.tsx` for both Nemotron
       and MiniMax, threading `modelPreference` into the existing `fetch(CHAT_URL, ...)` call.
+      **Done** — a compact select next to the composer, defaulting to "Auto"; each option's label
+      states "free, rate-limited" inline rather than a separate warning banner (kept simple since
+      the backend already degrades to Groq transparently on quota exhaustion or failure — there's
+      no error state for the user to be warned about beyond that label).
 - [ ] 9. **Bench-off**: before picking the auto-escalation default, run a handful of real
       multi-tool-call portfolio questions (e.g. stress-test + exposure + benchmark-compare in one
       turn) through Nemotron and MiniMax side by side; compare tool-call correctness, latency, and
       whether MiniMax's `response_format` support actually reduces parsing issues in practice. Record
-      the outcome and the chosen default in this doc.
-- [ ] 10. Tests (per repo convention — every branch adds/updates tests):
-      - `openrouter.ts` provider unit tests mirroring the existing Groq provider tests, covering
-        both model ids.
-      - `portfolio-ai/index.ts` tests: user-selected Nemotron happy path, user-selected MiniMax
-        happy path, quota-exhausted (per model) → auto-fallback to Groq, auto-escalation-by-
-        complexity → default OpenRouter model when quota allows.
-      - Frontend test for the new toggle (both options) rendering the warning and passing
-        `modelPreference` through, alongside the existing `portfolio-ai-tool-trace.test.tsx`
-        patterns.
+      the outcome and the chosen default in this doc. **Still open** — needs real `OPENROUTER_API_KEY`
+      traffic (task 2) against the deployed app, not just unit tests with mocked providers.
+- [x] 10. Tests (per repo convention — every branch adds/updates tests). **Done, except the
+      auto-escalation-by-complexity case, which doesn't exist yet per task 5's deferral**:
+      - `openrouter.ts` provider unit tests mirroring the existing Groq/Anthropic provider tests,
+        covering both model ids — see
+        [_shared/providers/provider-error.test.ts](../supabase/functions/_shared/providers/provider-error.test.ts).
+      - `_shared/openrouter-quota.test.ts` — cap resolution (default vs. env override vs. invalid
+        override) and the insert/update/reject branches, per model id.
+      - `portfolio-ai/index.ts` tests — see
+        [model-preference-gate.test.ts](../supabase/functions/portfolio-ai/model-preference-gate.test.ts):
+        modelPreference validation, Anthropic winning outright over a user-selected OpenRouter
+        model, OPENROUTER_API_KEY-missing fallback, quota-exhausted fallback, mid-turn
+        HttpCallError fallback, and `auto` staying byte-for-byte identical to today's behavior.
+      - Frontend test for the new toggle (default value and passing the selected `modelPreference`
+        through) — see
+        [portfolio-ai-model-preference.test.tsx](../src/test/portfolio-ai-model-preference.test.tsx).
 - [ ] 11. Update `README.md` / [llm-mcp-agent-plan.md](llm-mcp-agent-plan.md) cross-reference and
       this doc's Status line once shipped, matching how the MCP agent plan documents its own
-      "Shipped" status and PR link.
+      "Shipped" status and PR link. **Still open** — hold until task 2 (secret actually set) and
+      ideally task 9 (bench-off) land; this doc's Status line above reflects the current partial
+      state in the meantime.
 - [ ] 12. Open PR from a feature branch into `main`; merge only after Vitest, typecheck, and
       Gitleaks all pass (per `CLAUDE.md`'s enforced workflow).
 

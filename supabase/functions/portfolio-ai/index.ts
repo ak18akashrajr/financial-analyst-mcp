@@ -18,7 +18,16 @@ import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, isComplexQuery, shouldEscalate }
 import { findTool } from "../_shared/mcp-tools.ts";
 import { GroqProvider } from "../_shared/providers/groq.ts";
 import { AnthropicProvider } from "../_shared/providers/anthropic.ts";
-import type { LlmProvider, ToolResultForProvider } from "../_shared/providers/types.ts";
+import { OpenRouterProvider } from "../_shared/providers/openrouter.ts";
+import type { LlmProvider, ToolResultForProvider, TurnResult } from "../_shared/providers/types.ts";
+import {
+  checkAndIncrementQuota,
+  MINIMAX_MODEL_ID,
+  NEMOTRON_MODEL_ID,
+  OPENROUTER_MODEL_ATTRIBUTION,
+} from "../_shared/openrouter-quota.ts";
+import { HttpCallError } from "../_shared/http-call-error.ts";
+import { isRetryableError } from "../_shared/retry.ts";
 import { chunkText, createSseStream } from "../_shared/sse.ts";
 import { classifyChatError, ToolLoopExceededError } from "../_shared/chat-error-classifier.ts";
 import { createLogger } from "../_shared/logger.ts";
@@ -131,6 +140,19 @@ interface ChatRequestMessage {
   content: string;
 }
 
+// Opt-in path only (docs/openrouter-nemotron-plan.md) — the user explicitly
+// asking for Nemotron or MiniMax on this turn. There is no automatic
+// complexity-based route to either model yet: that's gated behind a
+// bench-off between the two (see the plan doc's Goal 5 / rollout task 9)
+// that hasn't happened. "auto" (or omitting the field) is identical to
+// today's behavior — Anthropic-if-set, else Groq's existing two-tier router.
+type ModelPreference = "auto" | "nemotron" | "minimax";
+const MODEL_PREFERENCE_VALUES: ModelPreference[] = ["auto", "nemotron", "minimax"];
+const OPENROUTER_MODEL_ID_FOR: Record<"nemotron" | "minimax", string> = {
+  nemotron: NEMOTRON_MODEL_ID,
+  minimax: MINIMAX_MODEL_ID,
+};
+
 function buildProvider(): { provider: LlmProvider; model: string; attribution: string } {
   const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (anthropicKey) {
@@ -171,10 +193,17 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { messages } = (await req.json()) as { messages: ChatRequestMessage[] };
+    const { messages, modelPreference: rawModelPreference } = (await req.json()) as {
+      messages: ChatRequestMessage[];
+      modelPreference?: string;
+    };
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new ValidationError("Request must include a non-empty `messages` array");
     }
+    if (rawModelPreference !== undefined && !MODEL_PREFERENCE_VALUES.includes(rawModelPreference as ModelPreference)) {
+      throw new ValidationError(`modelPreference must be one of: ${MODEL_PREFERENCE_VALUES.join(", ")}`);
+    }
+    const modelPreference = (rawModelPreference as ModelPreference | undefined) ?? "auto";
 
     const history = messages.slice(0, -1);
     const latest = messages[messages.length - 1];
@@ -185,32 +214,80 @@ Deno.serve(async (req: Request) => {
     await mcpClient.initialize();
     const tools = await mcpClient.listTools();
 
-    const { provider, model: fixedModel, attribution: fixedAttribution } = buildProvider();
+    const { provider: baseProvider, model: fixedModel, attribution: fixedAttribution } = buildProvider();
     const usingAnthropic = fixedModel === CLAUDE_MODEL;
 
     // Groq two-tier routing: pick the model up front from the heuristic, escalate mid-loop if needed.
+    let provider: LlmProvider = baseProvider;
     let model = fixedModel;
     let attribution = fixedAttribution;
     let escalated = false;
     if (!usingAnthropic) {
       model = isComplexQuery(latest.content) ? GROQ_COMPLEX_MODEL : GROQ_SIMPLE_MODEL;
       attribution = model === GROQ_COMPLEX_MODEL ? "GPT-OSS 120B via Groq" : "GPT-OSS 20B via Groq";
+
+      // Opt-in OpenRouter path (Anthropic still wins outright above, unconditionally
+      // — this never overrides that, matching docs/openrouter-nemotron-plan.md's
+      // explicit out-of-scope note). Falls back to the Groq tiering already computed
+      // above whenever the key is missing or the model's daily quota is exhausted —
+      // never a hard error for an opt-in choice that just isn't available right now.
+      if (modelPreference === "nemotron" || modelPreference === "minimax") {
+        const openRouterModelId = OPENROUTER_MODEL_ID_FOR[modelPreference];
+        const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
+        if (!openRouterKey) {
+          logger.warn("modelPreference requested but OPENROUTER_API_KEY not configured — using Groq", { modelPreference });
+        } else {
+          const withinQuota = await checkAndIncrementQuota(serviceClient, openRouterModelId);
+          if (!withinQuota) {
+            logger.info("OpenRouter daily quota exhausted — using Groq", { modelId: openRouterModelId });
+            attribution = `${attribution} (requested model's daily quota is used up for today)`;
+          } else {
+            provider = new OpenRouterProvider(openRouterKey);
+            model = openRouterModelId;
+            attribution = OPENROUTER_MODEL_ATTRIBUTION[openRouterModelId];
+          }
+        }
+      }
     }
 
     provider.loadHistory(history);
     provider.addUserMessage(latest.content);
 
-    logger.info("Chat request started", { model, attribution, historyLength: history.length });
+    logger.info("Chat request started", { model, attribution, modelPreference, historyLength: history.length });
     const requestStartedAt = Date.now();
 
     const stream = createSseStream(async (send) => {
       let toolCallCount = 0;
       let invokedComplexTool = false;
       let finalText = "";
+      let openRouterFallback = false;
 
       try {
         for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
-          const result = await provider.runTurn(model, SYSTEM_PROMPT, tools);
+          let result: TurnResult;
+          try {
+            result = await provider.runTurn(model, SYSTEM_PROMPT, tools);
+          } catch (err) {
+            // OpenRouter's own retries (withRetry, inside openrouter.ts) are already
+            // exhausted by the time this is reached. Only retried once, on the very
+            // first turn (before any tool-call state has accumulated on this
+            // provider) — restarting mid-loop would lose that state, and the plan
+            // doc only calls for "retry same turn", not resuming a partial one.
+            const canFallBack = turn === 0 && provider.name === "openrouter" && !openRouterFallback
+              && err instanceof HttpCallError && isRetryableError(err);
+            if (!canFallBack) throw err;
+
+            const groqKey = Deno.env.get("GROQ_API_KEY");
+            if (!groqKey) throw err; // no fallback target configured — surface the classified original error
+            openRouterFallback = true;
+            logger.warn("OpenRouter call failed, falling back to Groq", { model, status: (err as HttpCallError).status });
+            provider = new GroqProvider(groqKey);
+            provider.loadHistory(history);
+            provider.addUserMessage(latest.content);
+            model = GROQ_COMPLEX_MODEL;
+            attribution = "GPT-OSS 120B via Groq (OpenRouter fallback)";
+            result = await provider.runTurn(model, SYSTEM_PROMPT, tools);
+          }
 
           // Explicit `=== true` (not a bare truthy check) so TS reliably narrows
           // this boolean-discriminated union in the `else` path below.
@@ -268,7 +345,9 @@ Deno.serve(async (req: Request) => {
         logger.info("Chat request completed", {
           model,
           attribution,
+          modelPreference,
           escalated,
+          openRouterFallback,
           toolCallCount,
           duration_ms: Date.now() - requestStartedAt,
         });
