@@ -11,9 +11,25 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 import type { LogSink, SinkableLogEntry } from "./logger.ts";
 
+/** Real production case (2026-08-30): entries the raw Supabase function logs
+ * clearly show (a console.warn/error line did print) never showed up in the
+ * app's own /dev-zone "App Logs" view, which reads from this sink's target
+ * table. Cause: a Deno edge function's isolate can be torn down the instant
+ * the HTTP response finishes — often within milliseconds, per that same
+ * incident's logs showing a "shutdown" event right after the log line — and
+ * this insert was pure fire-and-forget (`void ...`), racing that teardown
+ * with no way to win. EdgeRuntime.waitUntil (a Deno Deploy/Supabase-specific
+ * global, not present under Vitest/Node — hence the feature-detect) tells
+ * the runtime to keep the isolate alive until the given promise settles,
+ * instead of racing it. */
+function waitUntil(promise: Promise<unknown>): void {
+  const edgeRuntime = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+  edgeRuntime?.waitUntil?.(promise);
+}
+
 export function createDbLogSink(sb: SupabaseClient): LogSink {
   return (entry: SinkableLogEntry) => {
-    void sb
+    const write = sb
       .from("app_logs")
       .insert({
         source: "edge",
@@ -39,5 +55,6 @@ export function createDbLogSink(sb: SupabaseClient): LogSink {
       .catch(() => {
         // Network/client-construction failure — same best-effort posture.
       });
+    waitUntil(write);
   };
 }

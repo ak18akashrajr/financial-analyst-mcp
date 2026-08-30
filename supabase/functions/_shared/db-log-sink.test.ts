@@ -77,4 +77,31 @@ describe("createDbLogSink", () => {
     // unhandled rejection.
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
+
+  // Real production case (2026-08-30): a fire-and-forget insert with no way
+  // to keep the isolate alive raced the edge function's own teardown and
+  // silently lost the write — see this file's waitUntil() doc comment.
+  it("hands the insert promise to EdgeRuntime.waitUntil when that global is present", async () => {
+    const waitUntilMock = vi.fn();
+    (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime = { waitUntil: waitUntilMock };
+    try {
+      const { from } = fakeClient({ error: null });
+      const sink = createDbLogSink({ from } as never);
+
+      sink(SAMPLE_ENTRY);
+
+      expect(waitUntilMock).toHaveBeenCalledTimes(1);
+      expect(waitUntilMock.mock.calls[0][0]).toBeInstanceOf(Promise);
+    } finally {
+      delete (globalThis as { EdgeRuntime?: unknown }).EdgeRuntime;
+    }
+  });
+
+  it("does nothing extra (and still doesn't throw) when EdgeRuntime isn't present — e.g. under Vitest/Node", () => {
+    expect((globalThis as { EdgeRuntime?: unknown }).EdgeRuntime).toBeUndefined();
+    const { from } = fakeClient({ error: null });
+    const sink = createDbLogSink({ from } as never);
+
+    expect(() => sink(SAMPLE_ENTRY)).not.toThrow();
+  });
 });
