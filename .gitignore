@@ -37,3 +37,5 @@ fetch_old_data.js
 fetch_old_data.cjs
 migrate_data.cjs
 
+# Reference notes
+reference-notes.md
