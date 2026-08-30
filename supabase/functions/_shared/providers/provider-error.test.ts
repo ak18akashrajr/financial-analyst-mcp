@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GroqProvider } from "./groq.ts";
 import { AnthropicProvider } from "./anthropic.ts";
-import { OpenRouterProvider } from "./openrouter.ts";
+import { OPENROUTER_MAX_ATTEMPTS, OpenRouterProvider } from "./openrouter.ts";
 import { HttpCallError } from "../http-call-error.ts";
 
 afterEach(() => {
@@ -95,8 +95,8 @@ describe("OpenRouterProvider.runTurn", () => {
     expect(caught).toBeInstanceOf(HttpCallError);
     expect((caught as HttpCallError).status).toBe(429);
     expect((caught as HttpCallError).source).toBe("OpenRouter");
-    // 429 is retryable — the default 3 attempts, not just 1.
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // 429 is retryable — OpenRouter's own reduced attempt cap (2), not just 1.
+    expect(fetchMock).toHaveBeenCalledTimes(OPENROUTER_MAX_ATTEMPTS);
   });
 
   it("does not retry a non-retryable status (fails on the first attempt)", async () => {
@@ -131,8 +131,8 @@ describe("OpenRouterProvider.runTurn", () => {
 
     expect(caught).toBeInstanceOf(HttpCallError);
     expect((caught as HttpCallError).status).toBe(503);
-    // 503 is retryable — the default 3 attempts, not just 1.
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // 503 is retryable — OpenRouter's own reduced attempt cap (2), not just 1.
+    expect(fetchMock).toHaveBeenCalledTimes(OPENROUTER_MAX_ATTEMPTS);
   });
 
   it("throws a classified HttpCallError on an HTTP 200 with no choices and no error field either", async () => {
@@ -144,5 +144,42 @@ describe("OpenRouterProvider.runTurn", () => {
     const caught = await provider.runTurn("nvidia/nemotron-3-ultra-550b-a55b:free", "system", []).catch((err) => err);
     expect(caught).toBeInstanceOf(HttpCallError);
     expect((caught as HttpCallError).status).toBe(502); // no numeric error.code to use, so the generic default
+  });
+
+  // Real production case (2026-08-30): nemotron sometimes never responds at
+  // all (no error, no timeout) rather than erroring — a silent, permanent
+  // hang with no HTTP status to classify, since nothing ever comes back.
+  it("passes an AbortSignal to fetch so a hung request doesn't wait forever", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenRouterProvider("test-key");
+    provider.addUserMessage("hi");
+
+    await provider.runTurn("nvidia/nemotron-3-ultra-550b-a55b:free", "system", []);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("retries up to OpenRouter's own (reduced) attempt cap when the request times out", async () => {
+    vi.useFakeTimers();
+    // Simulates what fetch() actually rejects with once an AbortSignal.timeout
+    // signal fires — a DOMException named "TimeoutError", which retry.ts's
+    // isTimeout()/isRetryableError() already know how to classify.
+    const fetchMock = vi.fn().mockRejectedValue(new DOMException("The operation timed out.", "TimeoutError"));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenRouterProvider("test-key");
+    provider.addUserMessage("hi");
+
+    const pending = provider.runTurn("nvidia/nemotron-3-ultra-550b-a55b:free", "system", []).catch((err) => err);
+    await vi.runAllTimersAsync();
+    const caught = await pending;
+
+    expect((caught as DOMException).name).toBe("TimeoutError");
+    // Fewer attempts than Groq/Anthropic's default 3 — a hung free-tier model
+    // shouldn't compound into an even longer wait before falling back to Groq.
+    expect(fetchMock).toHaveBeenCalledTimes(OPENROUTER_MAX_ATTEMPTS);
   });
 });

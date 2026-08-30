@@ -273,14 +273,29 @@ Deno.serve(async (req: Request) => {
             // first turn (before any tool-call state has accumulated on this
             // provider) — restarting mid-loop would lose that state, and the plan
             // doc only calls for "retry same turn", not resuming a partial one.
+            //
+            // isRetryableError() alone (not `instanceof HttpCallError` on top of
+            // it) — it also covers a request timeout (a DOMException, not an
+            // HttpCallError) and a network-level failure (TypeError). A timeout is
+            // a real, observed case here: nvidia/nemotron-3-ultra-550b-a55b:free
+            // has been seen to never respond at all rather than erroring, which
+            // openrouter.ts now bounds with its own request timeout — that timeout
+            // needs to reach this same fallback, not just an HTTP error status.
             const canFallBack = turn === 0 && provider.name === "openrouter" && !openRouterFallback
-              && err instanceof HttpCallError && isRetryableError(err);
+              && isRetryableError(err);
             if (!canFallBack) throw err;
 
             const groqKey = Deno.env.get("GROQ_API_KEY");
             if (!groqKey) throw err; // no fallback target configured — surface the classified original error
             openRouterFallback = true;
-            logger.warn("OpenRouter call failed, falling back to Groq", { model, status: (err as HttpCallError).status });
+            logger.warn("OpenRouter call failed, falling back to Groq", {
+              model,
+              status: err instanceof HttpCallError ? err.status : undefined,
+              // DOMException (e.g. the timeout above) has a real `.name` (e.g.
+              // "TimeoutError") but isn't `instanceof Error` in Deno/Node, so
+              // that check alone would misreport it as a bare "object".
+              errorName: (err as { name?: unknown })?.name ?? typeof err,
+            });
             provider = new GroqProvider(groqKey);
             provider.loadHistory(history);
             provider.addUserMessage(latest.content);

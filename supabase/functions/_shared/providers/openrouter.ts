@@ -26,6 +26,24 @@ interface OpenRouterMessage {
 
 const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
+// Real production case (2026-08-30): nvidia/nemotron-3-ultra-550b-a55b:free
+// sometimes never responds at all — no error, no timeout, just an open
+// connection with nothing coming back (plausible for a free-tier model with
+// no available backend to route to). Unlike a thrown error, this produces NO
+// log line at all (see logger.ts: the DB-backed "App Logs" dashboard only
+// receives warn/error entries, and nothing warns/errors on a request that
+// never resolves) — the SSE stream just sits open and the client is stuck on
+// "Understanding your question..." forever, since neither a `done` nor an
+// `error` event ever gets sent. Groq/Anthropic haven't shown this failure
+// mode in practice, but nothing stopped it: no provider call anywhere in this
+// codebase previously had a request timeout. Bounding it here converts a
+// silent, permanent hang into a classified, retryable timeout that the
+// existing OpenRouter->Groq fallback in portfolio-ai/index.ts can act on.
+// Two attempts at 25s each (see withRetry below) keeps the worst case well
+// under a minute rather than compounding into an actually-unbounded wait.
+export const OPENROUTER_TIMEOUT_MS = 25_000;
+export const OPENROUTER_MAX_ATTEMPTS = 2;
+
 export class OpenRouterProvider implements LlmProvider {
   readonly name = "openrouter";
   private apiKey: string;
@@ -69,6 +87,7 @@ export class OpenRouterProvider implements LlmProvider {
           tools: this.toOpenRouterTools(tools),
           stream: false,
         }),
+        signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),
       });
       if (!res.ok) throw new HttpCallError("OpenRouter", res.status, await res.text());
       const json = await res.json();
@@ -85,7 +104,7 @@ export class OpenRouterProvider implements LlmProvider {
         throw new HttpCallError("OpenRouter", status, JSON.stringify(json.error ?? json));
       }
       return json;
-    }, { label: "OpenRouter" });
+    }, { label: "OpenRouter", maxAttempts: OPENROUTER_MAX_ATTEMPTS });
     const message = data.choices[0].message;
 
     if (message.tool_calls && message.tool_calls.length > 0) {
