@@ -594,11 +594,18 @@ client code that calls it, rather than re-deriving the older findings.
 
 | # | Issue | Severity | Status |
 |---|-------|----------|--------|
-| 10 | A hijacked session can erase its own hijack evidence (`security_incidents`/`session_fingerprints` are writable by any `authenticated` token, including a replayed one) | **High** | Open |
+| 10 | A hijacked session can erase its own hijack evidence (`security_incidents`/`session_fingerprints` are writable by any `authenticated` token, including a replayed one) | **High** | ✅ **Fixed** |
 | 11 | `x-forwarded-for` hijack-detection fallback is client-spoofable if the Cloudflare front-door is ever bypassed or misconfigured | Low | Accepted risk (documented) |
 | 12 | New tables/pages this pass touched (`DevZone.tsx`, `Landing.tsx`, `Login.tsx`) show no new injection/XSS/credential-leak surface | — | Verified clean |
 
-### 10. A hijacked session can tamper with, or erase, its own hijack-detection record — Open
+### 10. A hijacked session can tamper with, or erase, its own hijack-detection record — ✅ FIXED
+
+> **Status: fixed** on branch `fix/session-hijack-rls-anti-tamper` (see
+> [Remediation log](#remediation-log)). `session_fingerprints` now has no `authenticated`-facing
+> policy at all (only the `SECURITY DEFINER` trigger can touch it); `security_incidents` keeps
+> `SELECT` but its `UPDATE` policy plus a new `BEFORE UPDATE` guard trigger together restrict a
+> client-facing write to flipping `acknowledged` to `true` and nothing else. `DELETE` is revoked
+> from `authenticated` on both tables.
 
 **Files:**
 - [supabase/migrations/20260829130000_add_session_hijack_tables.sql](../supabase/migrations/20260829130000_add_session_hijack_tables.sql) — `security_incidents`/`session_fingerprints` RLS policies are `for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated')`, with no explicit `GRANT`/`REVOKE`, so both tables inherit this project's default schema privileges (the same pattern every other table in this app relies on) — meaning the `authenticated` Postgres role can `SELECT`/`INSERT`/`UPDATE`/`DELETE` on them directly, not just via the trigger.
@@ -697,7 +704,41 @@ Specifically checked (all negative):
 
 ---
 
-**Updated priority order:** #10 (audit-trail tamper/anti-forensics gap) is the only actionable new
-finding from this pass and should be fixed before relying on the session-hijack-detection feature
-for anything beyond a best-effort, "attacker didn't bother to clean up" signal. #11 is a
-documentation note. See [TODO.md](../TODO.md) for tracking.
+**Updated priority order:** #10 (audit-trail tamper/anti-forensics gap) was the only actionable new
+finding from this pass — **now fixed**, see below. #11 is a documentation note. See
+[TODO.md](../TODO.md) for tracking.
+
+### 2026-08-30 — Fixed #10: RLS anti-tamper hardening for session-hijack tables
+
+**Branch:** `fix/session-hijack-rls-anti-tamper`.
+
+**Changes** (all in one new migration,
+[20260830090000_harden_session_hijack_rls.sql](../supabase/migrations/20260830090000_harden_session_hijack_rls.sql)):
+- `session_fingerprints`: dropped the blanket `for all` policy and added none in its place —
+  confirmed first that no frontend code reads or writes this table at all (only
+  `detect_session_hijack()` does, running as `SECURITY DEFINER`, unaffected by RLS either way), so
+  `authenticated` now has zero access (SELECT/INSERT/UPDATE/DELETE all default-deny).
+- `security_incidents`: dropped the blanket `for all` policy; `REVOKE DELETE` and `REVOKE INSERT`
+  from `authenticated` (nothing client-facing does either — only the trigger inserts); added a
+  `for select` policy (still needed by
+  [`SecurityIncidentsContext.tsx`](../src/contexts/SecurityIncidentsContext.tsx)'s banner query and
+  [`DevZone.tsx`](../src/pages/DevZone.tsx)'s Security tab list) and a narrower `for update` policy
+  whose `with check` pins the new `acknowledged` value to `true`.
+- Because RLS `USING`/`WITH CHECK` can only see whole rows, not which columns changed, a new
+  `BEFORE UPDATE` guard trigger (`guard_security_incidents_update`) additionally rejects any
+  `UPDATE` that touches anything other than `acknowledged` — closing the gap a `WITH CHECK` alone
+  can't (e.g. a single statement that sets `acknowledged = true` while also rewriting `ip` or
+  `old_values`/`new_values`).
+- No application code changes were needed — `DevZone.tsx`'s existing
+  `.update({ acknowledged: true }).eq('id', id)` call already matches the one shape the new policy
+  and trigger now permit.
+- **Tests:** none added — this repo has no SQL/RLS test harness (`vitest` runs against mocked
+  Supabase clients, not a live Postgres instance with RLS enforced), and no application code
+  changed for this fix. **Not yet verified against a live/local Supabase instance** — this was
+  checked by reading the migration and the frontend call sites only (confirmed `DevZone.tsx`'s
+  acknowledge call sends exactly `{acknowledged: true}` and nothing else touches these two tables
+  from the client). Before merging, run the finding's own `curl` reproduction (PATCH with an extra
+  `ip`/`old_values` field in the body, then a bare `DELETE`) against a real
+  `supabase start` instance to confirm both now fail while DevZone's actual acknowledge flow still
+  succeeds, and confirm the trigger's own fingerprint upkeep (a `transactions` write from two
+  different IPs) still produces an incident row unaffected.
