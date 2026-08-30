@@ -108,4 +108,41 @@ describe("OpenRouterProvider.runTurn", () => {
     await expect(provider.runTurn("minimax/minimax-m2.7:free", "system", [])).rejects.toBeInstanceOf(HttpCallError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  // Real production failure (2026-08-30): nvidia/nemotron-3-ultra-550b-a55b:free
+  // returned HTTP 200 with an error body instead of a completion — the code
+  // used to crash with an unclassified "Cannot read properties of undefined
+  // (reading '0')" TypeError instead of a proper HttpCallError, which meant
+  // it never triggered the OpenRouter->Groq fallback in portfolio-ai/index.ts.
+  it("throws a classified HttpCallError (not a raw TypeError) on an HTTP 200 with an error body", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: { message: "no instances available", code: 503 } }), { status: 200 }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenRouterProvider("test-key");
+    provider.addUserMessage("hi");
+
+    const pending = provider.runTurn("nvidia/nemotron-3-ultra-550b-a55b:free", "system", []).catch((err) => err);
+    await vi.runAllTimersAsync();
+    const caught = await pending;
+
+    expect(caught).toBeInstanceOf(HttpCallError);
+    expect((caught as HttpCallError).status).toBe(503);
+    // 503 is retryable — the default 3 attempts, not just 1.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws a classified HttpCallError on an HTTP 200 with no choices and no error field either", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({}), { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenRouterProvider("test-key");
+    provider.addUserMessage("hi");
+
+    const caught = await provider.runTurn("nvidia/nemotron-3-ultra-550b-a55b:free", "system", []).catch((err) => err);
+    expect(caught).toBeInstanceOf(HttpCallError);
+    expect((caught as HttpCallError).status).toBe(502); // no numeric error.code to use, so the generic default
+  });
 });

@@ -71,7 +71,20 @@ export class OpenRouterProvider implements LlmProvider {
         }),
       });
       if (!res.ok) throw new HttpCallError("OpenRouter", res.status, await res.text());
-      return res.json();
+      const json = await res.json();
+      // OpenRouter can return an HTTP 200 with an error body (or an empty
+      // `choices`) instead of a non-2xx status when the selected free
+      // model has no available upstream backend right now — a real
+      // production case hit against nvidia/nemotron-3-ultra-550b-a55b:free.
+      // Without this check that surfaces downstream as an opaque "Cannot
+      // read properties of undefined (reading '0')" crash instead of a
+      // classified, retryable failure that can fall back to Groq (see
+      // portfolio-ai/index.ts's OpenRouter fallback).
+      if (json.error || !json.choices?.length) {
+        const status = typeof json.error?.code === "number" ? json.error.code : 502;
+        throw new HttpCallError("OpenRouter", status, JSON.stringify(json.error ?? json));
+      }
+      return json;
     }, { label: "OpenRouter" });
     const message = data.choices[0].message;
 
