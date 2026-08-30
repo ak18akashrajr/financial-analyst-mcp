@@ -9,15 +9,19 @@ Flagged 2026-08-29 during an adversarial security re-scan (third pass) of
 [docs/security-review.md](docs/security-review.md) — full findings, exploit steps, and fix
 recommendation in that doc's "Third pass (2026-08-29)" section.
 
-- [ ] **Fix finding #10 — a hijacked/replayed session can silence or delete its own
+- [x] **Fix finding #10 — a hijacked/replayed session can silence or delete its own
       `security_incidents` row, and re-baseline `session_fingerprints`, using nothing but the
-      stolen token itself.** Both tables currently grant `authenticated` full `UPDATE`/`DELETE` via
-      RLS, same as every other write path in this app — but these two tables are supposed to be the
-      one place an attacker holding a replayed token *can't* cover their tracks. Needs `REVOKE
-      DELETE` from `authenticated` on both tables, plus a narrower `UPDATE` policy on
-      `security_incidents` that only permits flipping `acknowledged` (not touching the diff/IP
-      columns). See the doc for the exact exploit (`curl` against the PostgREST endpoint with a
-      stolen token) and suggested migration shape.
+      stolen token itself.** Fixed in
+      [20260830090000_harden_session_hijack_rls.sql](supabase/migrations/20260830090000_harden_session_hijack_rls.sql)
+      on branch `fix/session-hijack-rls-anti-tamper`: `session_fingerprints` now has no
+      `authenticated`-facing policy at all (client never touched it anyway — only the
+      `SECURITY DEFINER` trigger does); `security_incidents` keeps `SELECT` but its `UPDATE` policy
+      plus a new `BEFORE UPDATE` guard trigger restrict a client write to flipping `acknowledged`
+      to `true` and nothing else; `DELETE`/`INSERT` revoked from `authenticated` on both tables. See
+      [docs/security-review.md](docs/security-review.md)'s 2026-08-30 remediation log entry —
+      **not yet verified against a live Postgres instance** (no Docker/`supabase start` available
+      in the environment this was written in); run the doc's `curl` reproduction against a real
+      local/staging instance before merging.
 
 
 Flagged 2026-08-28 during a Reports-page (`/reports`) calculation audit requested by the user,
