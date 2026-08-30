@@ -99,6 +99,16 @@ against this design.**
 > implemented trigger uses `cf-connecting-ip` as the primary IP source, falling back to
 > `x-forwarded-for` only if it's ever absent — see
 > [20260829130100_add_session_hijack_trigger.sql](../supabase/migrations/20260829130100_add_session_hijack_trigger.sql).
+>
+> **Caveat (accepted risk — security-review.md finding #11):** this whole check's trust boundary
+> depends on Cloudflare actually fronting every request path to this project. If Cloudflare is ever
+> removed, bypassed, or a direct-to-Supabase path is added without going through it, every request
+> falls back to `x-forwarded-for`, which the client fully controls — an attacker can then forge
+> whatever IP they like, silently defeating this mismatch check by making every request look like it
+> came from one fake IP, not by tampering with any row. No action needed while Cloudflare stays in
+> front of the project; the same reminder is also attached directly to the function as a Postgres
+> comment, see
+> [20260830100000_document_hijack_trigger_ip_source_caveat.sql](../supabase/migrations/20260830100000_document_hijack_trigger_ip_source_caveat.sql).
 
 ### Why IP, not User-Agent, is the primary signal
 
