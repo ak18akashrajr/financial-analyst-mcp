@@ -10,6 +10,19 @@ import { supabase } from '@/integrations/supabase/client';
 // visible after the fact too, not just as a transient "thinking" indicator.
 type Msg = { role: 'user' | 'assistant'; content: string; toolTrace?: string[] };
 
+// Opt-in escalation models via OpenRouter (docs/openrouter-nemotron-plan.md)
+// — 'auto' is today's existing behavior (Anthropic-if-set, else Groq's
+// two-tier router) and is the default. Both opt-in models are free-tier
+// rate-limited on OpenRouter; the backend falls back to Groq transparently
+// (with an honest attribution note) if the daily quota's used up or the
+// call itself fails, so there's no error state to handle here beyond that.
+type ModelPreference = 'auto' | 'nemotron' | 'minimax';
+const MODEL_PREFERENCE_OPTIONS: { value: ModelPreference; label: string }[] = [
+  { value: 'auto', label: 'Auto (default)' },
+  { value: 'nemotron', label: 'NVIDIA Nemotron 3 Ultra — free, rate-limited' },
+  { value: 'minimax', label: 'MiniMax M2.7 — free, rate-limited' },
+];
+
 /** "get_portfolio_summary" -> "Get Portfolio Summary" — for display only, the
  * real tool name is what's actually sent to/from MCP. */
 function humanizeToolName(name: string): string {
@@ -50,12 +63,14 @@ const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portfolio-ai
  */
 async function streamChat({
   messages,
+  modelPreference,
   onDelta,
   onToolCall,
   onDone,
   onError,
 }: {
   messages: Msg[];
+  modelPreference: ModelPreference;
   onDelta: (text: string) => void;
   onToolCall: (name: string) => void;
   onDone: (attribution?: string) => void;
@@ -76,7 +91,7 @@ async function streamChat({
       'Content-Type': 'application/json',
       Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, modelPreference }),
   });
 
   if (resp.status === 429) { onError('Rate limited — please wait a moment and try again.'); return; }
@@ -132,6 +147,7 @@ const PortfolioAI = () => {
   // building up (earlier calls checked off, the newest one still spinning)
   // instead of hiding everything but whatever tool happens to be running now.
   const [liveToolCalls, setLiveToolCalls] = useState<string[]>([]);
+  const [modelPreference, setModelPreference] = useState<ModelPreference>('auto');
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -192,6 +208,7 @@ const PortfolioAI = () => {
     try {
       await streamChat({
         messages: allMsgs,
+        modelPreference,
         onDelta: upsert,
         onToolCall: (name) => {
           collectedTools.push(name);
@@ -209,7 +226,7 @@ const PortfolioAI = () => {
       setIsLoading(false);
       setLiveToolCalls([]);
     }
-  }, [messages, isLoading]);
+  }, [messages, isLoading, modelPreference]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -398,6 +415,22 @@ const PortfolioAI = () => {
 
           {/* Input */}
           <div className="border-t border-border/80 bg-card/40 backdrop-blur-sm p-4">
+            <div className="max-w-3xl mx-auto mb-2 flex items-center gap-1.5">
+              <label htmlFor="model-preference" className="text-[10px] text-muted-foreground/70">
+                Model:
+              </label>
+              <select
+                id="model-preference"
+                value={modelPreference}
+                onChange={(e) => setModelPreference(e.target.value as ModelPreference)}
+                disabled={isLoading}
+                className="text-[10px] bg-transparent border border-border/60 rounded-md px-1.5 py-0.5 text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-50"
+              >
+                {MODEL_PREFERENCE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
             <form onSubmit={handleSubmit} className="flex gap-2 max-w-3xl mx-auto items-end">
               <div className="flex-1 bg-card border border-border rounded-xl px-1 shadow-sm focus-within:ring-2 focus-within:ring-primary/30 focus-within:border-primary transition-colors">
                 <textarea

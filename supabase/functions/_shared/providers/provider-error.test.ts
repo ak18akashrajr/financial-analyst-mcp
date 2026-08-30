@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GroqProvider } from "./groq.ts";
 import { AnthropicProvider } from "./anthropic.ts";
+import { OpenRouterProvider } from "./openrouter.ts";
 import { HttpCallError } from "../http-call-error.ts";
 
 afterEach(() => {
@@ -75,6 +76,36 @@ describe("AnthropicProvider.runTurn", () => {
     provider.addUserMessage("hi");
 
     await expect(provider.runTurn("model", "system", [])).rejects.toBeInstanceOf(HttpCallError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("OpenRouterProvider.runTurn", () => {
+  it("throws an HttpCallError with the real status once retries are exhausted", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response("rate limited", { status: 429 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenRouterProvider("test-key");
+    provider.addUserMessage("hi");
+
+    const pending = provider.runTurn("nvidia/nemotron-3-ultra-550b-a55b:free", "system", []).catch((err) => err);
+    await vi.runAllTimersAsync();
+    const caught = await pending;
+
+    expect(caught).toBeInstanceOf(HttpCallError);
+    expect((caught as HttpCallError).status).toBe(429);
+    expect((caught as HttpCallError).source).toBe("OpenRouter");
+    // 429 is retryable — the default 3 attempts, not just 1.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry a non-retryable status (fails on the first attempt)", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response("bad request", { status: 400 })));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenRouterProvider("test-key");
+    provider.addUserMessage("hi");
+
+    await expect(provider.runTurn("minimax/minimax-m2.7:free", "system", [])).rejects.toBeInstanceOf(HttpCallError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
