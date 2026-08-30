@@ -5,25 +5,6 @@ check items off (`- [x]`) when merged, and note the PR number.
 
 ## High Priority Action Items
 
-Flagged 2026-08-29 during an adversarial security re-scan (third pass) of
-[docs/security-review.md](docs/security-review.md) — full findings, exploit steps, and fix
-recommendation in that doc's "Third pass (2026-08-29)" section.
-
-- [x] **Fix finding #10 — a hijacked/replayed session can silence or delete its own
-      `security_incidents` row, and re-baseline `session_fingerprints`, using nothing but the
-      stolen token itself.** Fixed in
-      [20260830090000_harden_session_hijack_rls.sql](supabase/migrations/20260830090000_harden_session_hijack_rls.sql)
-      on branch `fix/session-hijack-rls-anti-tamper`: `session_fingerprints` now has no
-      `authenticated`-facing policy at all (client never touched it anyway — only the
-      `SECURITY DEFINER` trigger does); `security_incidents` keeps `SELECT` but its `UPDATE` policy
-      plus a new `BEFORE UPDATE` guard trigger restrict a client write to flipping `acknowledged`
-      to `true` and nothing else; `DELETE`/`INSERT` revoked from `authenticated` on both tables. See
-      [docs/security-review.md](docs/security-review.md)'s 2026-08-30 remediation log entry —
-      **not yet verified against a live Postgres instance** (no Docker/`supabase start` available
-      in the environment this was written in); run the doc's `curl` reproduction against a real
-      local/staging instance before merging.
-
-
 Flagged 2026-08-28 during a Reports-page (`/reports`) calculation audit requested by the user,
 after confirming and fixing one instance of this bug class in
 [fix/timezone-date-boundary-bug](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/new/fix/timezone-date-boundary-bug)
@@ -45,25 +26,8 @@ misclassifies a row whose date exactly matches the comparison boundary.
 | [`src/lib/benchmarkXirr.ts:36-40`](src/lib/benchmarkXirr.ts) (`priceOnOrBefore`) | Same pattern for benchmark price lookups. | Benchmark comparison XIRR. |
 | [`src/pages/GoalTrack.tsx:509,684`](src/pages/GoalTrack.tsx) | `goal.target_date` (DATE column) compared via `.getTime()` against `Date.now()`/local `today` for "days remaining." | Goal progress display only — lower stakes. |
 
-**Traced 2026-08-28** — both of the previously-"inconclusive" spots, resolved:
-
-- [x] **`src/lib/chartRange.ts:94-95` — cleared, not a bug.** Traced `computeRangeXIRR`'s only
-      DATE-only-column caller (`PortfolioCharts.tsx`'s `dateKey='date'` usage): its chart points are
-      keyed by `t.date.split('T')[0]` (the raw transaction date string, untouched), and the
-      transactions compared against them are parsed via bare `new Date(t.date)` — both sides use
-      the identical (UTC) parse of the identical kind of string, so the skew is applied uniformly
-      to both sides and cancels out. `NetWorthChart.tsx`'s other call site uses `recorded_at`, a
-      `timestamptz` column (a real instant, not a bare DATE) — also not affected. No fix needed.
-- [x] **`src/components/PortfolioCharts.tsx:108` — confirmed and fixed**, in
-      [fix/timezone-date-boundary-bug](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/new/fix/timezone-date-boundary-bug).
-      `new Date().toISOString().split('T')[0]` gave the *UTC* calendar date to decide "does the
-      timeline already have a point for today," while every other point on that timeline is keyed
-      by the transaction's own (locally-meant) date string — wrong for the ~5.5 hours after local
-      midnight (00:00–05:29 IST), where the UTC date is still "yesterday." Fixed with a new
-      [`todayLocalDateString`](src/lib/dateUtils.ts) helper (local calendar date, zero-padded to the
-      same `'YYYY-MM-DD'` shape). Cosmetic-only impact (a stale/missing "as of now" chart point
-      during that window, never a wrong money figure) — fixed anyway since it was low-effort once
-      traced. Tests: [dateUtils.test.ts](src/test/dateUtils.test.ts).
+Both of the previously-"inconclusive" spots in this investigation were traced and resolved on
+2026-08-28 — see the Archive section below.
 
 **Still needs a decision from the user before starting** — the 4 confirmed bugs below all remain
 unfixed: fix all four now (each on its own branch/tests, same rigor as the `periodReports.ts` fix),
@@ -208,5 +172,43 @@ tax numbers.
       as a left-accented callout card; inline code gets a pill background. Tests:
       [portfolio-ai-markdown.test.tsx](src/test/portfolio-ai-markdown.test.tsx). Branch:
       `feat/portfolio-ai-a2ui-markdown-rendering`.
+
+- [x] **`src/lib/chartRange.ts:94-95` — cleared, not a bug.** Traced (2026-08-28, as part of the
+      Reports-page timezone-date-boundary audit) `computeRangeXIRR`'s only DATE-only-column caller
+      (`PortfolioCharts.tsx`'s `dateKey='date'` usage): its chart points are keyed by
+      `t.date.split('T')[0]` (the raw transaction date string, untouched), and the transactions
+      compared against them are parsed via bare `new Date(t.date)` — both sides use the identical
+      (UTC) parse of the identical kind of string, so the skew is applied uniformly to both sides
+      and cancels out. `NetWorthChart.tsx`'s other call site uses `recorded_at`, a `timestamptz`
+      column (a real instant, not a bare DATE) — also not affected. No fix needed.
+
+- [x] **`src/components/PortfolioCharts.tsx:108` — confirmed and fixed**, in
+      [fix/timezone-date-boundary-bug](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/new/fix/timezone-date-boundary-bug)
+      (2026-08-28, same audit as above). `new Date().toISOString().split('T')[0]` gave the *UTC*
+      calendar date to decide "does the timeline already have a point for today," while every other
+      point on that timeline is keyed by the transaction's own (locally-meant) date string — wrong
+      for the ~5.5 hours after local midnight (00:00–05:29 IST), where the UTC date is still
+      "yesterday." Fixed with a new [`todayLocalDateString`](src/lib/dateUtils.ts) helper (local
+      calendar date, zero-padded to the same `'YYYY-MM-DD'` shape). Cosmetic-only impact (a
+      stale/missing "as of now" chart point during that window, never a wrong money figure) — fixed
+      anyway since it was low-effort once traced. Tests:
+      [dateUtils.test.ts](src/test/dateUtils.test.ts).
+
+- [x] **Fix finding #10 (security-review.md) — a hijacked/replayed session can silence or delete
+      its own `security_incidents` row, and re-baseline `session_fingerprints`, using nothing but
+      the stolen token itself.** Flagged 2026-08-29 during an adversarial security re-scan (third
+      pass) of [docs/security-review.md](docs/security-review.md). Fixed in
+      [20260830090000_harden_session_hijack_rls.sql](supabase/migrations/20260830090000_harden_session_hijack_rls.sql)
+      on branch `fix/session-hijack-rls-anti-tamper`: `session_fingerprints` now has no
+      `authenticated`-facing policy at all (client never touched it anyway — only the
+      `SECURITY DEFINER` trigger does); `security_incidents` keeps `SELECT` but its `UPDATE` policy
+      plus a new `BEFORE UPDATE` guard trigger restrict a client write to flipping `acknowledged`
+      to `true` and nothing else; `DELETE`/`INSERT` revoked from `authenticated` on both tables. See
+      [docs/security-review.md](docs/security-review.md)'s 2026-08-30 remediation log entry.
+      **Verified live** against the real Supabase project (2026-08-30): the exploit's own `curl`
+      reproduction now correctly gets `204` for the legitimate acknowledge-only shape, `400`
+      (`P0001`, guard trigger) for a PATCH that also touches `ip`, `403` (`42501`) for `DELETE`, and
+      an empty result for any `session_fingerprints` read — confirmed via DevZone's Security tab
+      that the real acknowledge flow and incident display are unaffected.
 
 </details>

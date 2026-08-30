@@ -595,7 +595,7 @@ client code that calls it, rather than re-deriving the older findings.
 | # | Issue | Severity | Status |
 |---|-------|----------|--------|
 | 10 | A hijacked session can erase its own hijack evidence (`security_incidents`/`session_fingerprints` are writable by any `authenticated` token, including a replayed one) | **High** | ✅ **Fixed** |
-| 11 | `x-forwarded-for` hijack-detection fallback is client-spoofable if the Cloudflare front-door is ever bypassed or misconfigured | Low | Accepted risk (documented) |
+| 11 | `x-forwarded-for` hijack-detection fallback is client-spoofable if the Cloudflare front-door is ever bypassed or misconfigured | Low | Accepted risk — ✅ **documented** |
 | 12 | New tables/pages this pass touched (`DevZone.tsx`, `Landing.tsx`, `Login.tsx`) show no new injection/XSS/credential-leak surface | — | Verified clean |
 
 ### 10. A hijacked session can tamper with, or erase, its own hijack-detection record — ✅ FIXED
@@ -672,7 +672,15 @@ curl -X DELETE "https://<project-ref>.supabase.co/rest/v1/security_incidents?id=
   check (acknowledged = true)` scoped so only the acknowledge flow's exact shape is legal — nothing
   else the client currently needs would break.
 
-### 11. `x-forwarded-for` fallback in the hijack trigger — Low, accepted risk
+### 11. `x-forwarded-for` fallback in the hijack trigger — Low, accepted risk — ✅ DOCUMENTED
+
+> **Status: documented** on branch `fix/session-hijack-rls-anti-tamper` (see
+> [Remediation log](#remediation-log)). No code behavior changed — this was always an accepted
+> risk, not a bug — but the caveat below is now recorded in two durable places instead of only this
+> review doc: a Postgres `COMMENT ON FUNCTION` attached to `detect_session_hijack()` itself (visible
+> from any DB introspection tool, not just this file), and
+> [docs/session-hijack-detection-plan.md](session-hijack-detection-plan.md)'s own IP-source
+> writeup.
 
 **File:** [supabase/migrations/20260829130100_add_session_hijack_trigger.sql:54-57](../supabase/migrations/20260829130100_add_session_hijack_trigger.sql)
 
@@ -705,8 +713,8 @@ Specifically checked (all negative):
 ---
 
 **Updated priority order:** #10 (audit-trail tamper/anti-forensics gap) was the only actionable new
-finding from this pass — **now fixed**, see below. #11 is a documentation note. See
-[TODO.md](../TODO.md) for tracking.
+finding from this pass — **now fixed**, see below. #11 was a documentation note — **now recorded**,
+see below. See [TODO.md](../TODO.md) for tracking.
 
 ### 2026-08-30 — Fixed #10: RLS anti-tamper hardening for session-hijack tables
 
@@ -734,11 +742,38 @@ finding from this pass — **now fixed**, see below. #11 is a documentation note
   and trigger now permit.
 - **Tests:** none added — this repo has no SQL/RLS test harness (`vitest` runs against mocked
   Supabase clients, not a live Postgres instance with RLS enforced), and no application code
-  changed for this fix. **Not yet verified against a live/local Supabase instance** — this was
-  checked by reading the migration and the frontend call sites only (confirmed `DevZone.tsx`'s
-  acknowledge call sends exactly `{acknowledged: true}` and nothing else touches these two tables
-  from the client). Before merging, run the finding's own `curl` reproduction (PATCH with an extra
-  `ip`/`old_values` field in the body, then a bare `DELETE`) against a real
-  `supabase start` instance to confirm both now fail while DevZone's actual acknowledge flow still
-  succeeds, and confirm the trigger's own fingerprint upkeep (a `transactions` write from two
-  different IPs) still produces an incident row unaffected.
+  changed for this fix.
+- **Verified live** against the real Supabase project (2026-08-30, no Docker/`supabase start`
+  available in the environment this was fixed in, so verification ran directly against the real
+  project instead): applied the migration via `supabase db push`, inserted a disposable test row
+  into `security_incidents`, then re-ran the finding's own `curl` reproduction with a real session
+  token. Results matched expectations exactly — `PATCH {"acknowledged": true}` → `204`; `PATCH
+  {"acknowledged": true, "ip": ...}` → `400`/`P0001` (*"security_incidents rows are append-only
+  except for acknowledged"*, the guard trigger firing); `DELETE` → `403`/`42501` (*"permission
+  denied for table security_incidents"*); a bare `SELECT` on `session_fingerprints` → `200` with an
+  empty array. Also confirmed via DevZone's Security tab that the real acknowledge flow and
+  incident list are unaffected, then deleted the disposable test row via the SQL editor (the REST
+  API can no longer do this, by design).
+
+### 2026-08-30 — Documented #11: Cloudflare-dependency caveat on the hijack trigger's IP source
+
+**Branch:** `fix/session-hijack-rls-anti-tamper` (same branch as #10, above).
+
+Finding #11 was accepted risk from the start — the trigger already does the right thing
+(`cf-connecting-ip` primary, `x-forwarded-for` fallback only) — so this needed a reminder, not a
+code change:
+- New migration
+  [20260830100000_document_hijack_trigger_ip_source_caveat.sql](../supabase/migrations/20260830100000_document_hijack_trigger_ip_source_caveat.sql):
+  a `COMMENT ON FUNCTION public.detect_session_hijack() IS '...'` — a real Postgres catalog comment,
+  so the caveat is visible from `\df+ detect_session_hijack` or any other DB introspection tool, not
+  only from this doc. `detect_session_hijack()` itself is untouched; this is purely additive.
+- [docs/session-hijack-detection-plan.md](session-hijack-detection-plan.md)'s own IP-source writeup
+  now states the same caveat inline, next to where it already documents the `cf-connecting-ip` /
+  `x-forwarded-for` choice.
+- **Did not** edit the original
+  [20260829130100_add_session_hijack_trigger.sql](../supabase/migrations/20260829130100_add_session_hijack_trigger.sql)
+  in place — this repo's convention (confirmed by the existing
+  `20260829140000_fix_session_hijack_trigger_op_case.sql`) is that an already-applied migration is
+  never edited after the fact, even for a comment-only change; a new migration is added instead.
+- No tests apply (a Postgres comment isn't application behavior); typecheck and full suite
+  unaffected since no `.ts`/`.tsx` file changed.
