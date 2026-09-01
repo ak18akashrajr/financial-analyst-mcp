@@ -47,12 +47,6 @@ tax numbers.
       ([supabase/functions/portfolio-ai/](supabase/functions/portfolio-ai/index.ts),
       [_shared/mcp-client.ts](supabase/functions/_shared/mcp-client.ts)) is still an open question.
 
-- [ ] **Groq 429 error-surfacing.** When the Groq provider hits a rate limit (429), surface that to
-      the user distinctly instead of a generic failure — currently
-      [`withRetry`](supabase/functions/_shared/retry.ts) retries transient 429/5xx/529s with
-      backoff, but if all retries are exhausted the user-facing error doesn't call out "rate
-      limited" specifically. From the user's own portfolio-AI accuracy-testing notes as still open.
-
 - [ ] **Scaling & archival plan.** Implement the plan in
       [docs/scaling-and-archival-plan.md](docs/scaling-and-archival-plan.md) — currently
       planning-only, nothing built yet. Needs the "Open decisions" in that doc answered first:
@@ -80,6 +74,20 @@ tax numbers.
 
 <details>
 <summary>Archive (completed)</summary>
+
+- [x] **Groq 429 error-surfacing — already done, pre-dates this TODO item.** Checked
+      2026-09-01: [`chat-error-classifier.ts`](supabase/functions/_shared/chat-error-classifier.ts)
+      already maps a 429 `HttpCallError` to a distinct `rate_limited` category ("The AI service is
+      receiving a high volume of requests right now. Please wait a few seconds and try again."),
+      separate from the generic `unknown`/`upstream_unavailable` messages — wired into both the
+      mid-stream SSE error path ([sse.ts:39](supabase/functions/_shared/sse.ts)) and the pre-stream
+      top-level catch in
+      [portfolio-ai/index.ts:405](supabase/functions/portfolio-ai/index.ts). `withRetry` still
+      retries the 429 with backoff first; only once attempts are exhausted does the original
+      `HttpCallError(429)` propagate and get classified. Landed in commit `a6b1a9f`
+      ("fix: classify LLM/MCP-server error statuses into specific end-user messages"),
+      2026-08-23 — before this backlog item was written, so the item was stale rather than
+      describing real outstanding work. No code changes made.
 
 - [x] **#1 — Reconcile dashboard XIRR-breakdown benchmark numbers with the `/benchmark` page.**
       Resolved by labeling, not unifying (option 2 of the two below) — the user picked this over
