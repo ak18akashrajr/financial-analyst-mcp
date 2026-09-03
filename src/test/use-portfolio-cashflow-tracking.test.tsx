@@ -13,20 +13,26 @@ import { usePortfolio } from '@/hooks/usePortfolio';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
-const { cashState, cashflowState, upsertMock } = vi.hoisted(() => ({
+const { cashState, cashflowState, upsertMock, cashflowDeleteMock, transactionsDeleteMock, pricesDeleteMock } = vi.hoisted(() => ({
   cashState: { liquid_cash: 1000, vault_cash: 2000, pf_balance: 0, credit_card_debt: 500 },
   cashflowState: { row: null as null | { total_income: number; total_expense: number } },
   upsertMock: vi.fn((row: any) => {
     cashflowState.row = { total_income: row.total_income, total_expense: row.total_expense };
     return Promise.resolve({ data: null, error: null });
   }),
+  cashflowDeleteMock: vi.fn(() => ({ not: () => Promise.resolve({ data: null, error: null }) })),
+  transactionsDeleteMock: vi.fn(() => ({ not: () => Promise.resolve({ data: null, error: null }) })),
+  pricesDeleteMock: vi.fn(() => ({ not: () => Promise.resolve({ data: null, error: null }) })),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'transactions') {
-        return { select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) };
+        return {
+          select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }),
+          delete: transactionsDeleteMock,
+        };
       }
       if (table === 'cash_settings') {
         return {
@@ -35,7 +41,10 @@ vi.mock('@/integrations/supabase/client', () => ({
         };
       }
       if (table === 'current_prices') {
-        return { select: () => Promise.resolve({ data: [], error: null }) };
+        return {
+          select: () => Promise.resolve({ data: [], error: null }),
+          delete: pricesDeleteMock,
+        };
       }
       if (table === 'symbol_metadata') {
         return { select: () => Promise.resolve({ data: [], error: null }) };
@@ -50,6 +59,7 @@ vi.mock('@/integrations/supabase/client', () => ({
         return {
           select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: cashflowState.row, error: null }) }) }),
           upsert: upsertMock,
+          delete: cashflowDeleteMock,
         };
       }
       return { select: () => Promise.resolve({ data: [], error: null }) };
@@ -60,6 +70,9 @@ vi.mock('@/integrations/supabase/client', () => ({
 describe('usePortfolio income/expense tracking', () => {
   beforeEach(() => {
     upsertMock.mockClear();
+    cashflowDeleteMock.mockClear();
+    transactionsDeleteMock.mockClear();
+    pricesDeleteMock.mockClear();
     cashflowState.row = null;
   });
 
@@ -145,5 +158,22 @@ describe('usePortfolio income/expense tracking', () => {
 
     expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 500 });
+  });
+
+  it('resetAll clears monthly_cashflow along with everything else', async () => {
+    const { result } = renderHook(() => usePortfolio());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.updateCash({ vaultCash: 1200 }); // -800 expense, so there's something to clear
+    });
+    expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 800 });
+
+    await act(async () => {
+      await result.current.resetAll();
+    });
+
+    expect(cashflowDeleteMock).toHaveBeenCalledTimes(1);
+    expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 0 });
   });
 });
