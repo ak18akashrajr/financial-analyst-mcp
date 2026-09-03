@@ -256,9 +256,13 @@ export function usePortfolio() {
 
   // `excludeFromCashflow` opts a balance edit out of income/expense tracking
   // — for corrections, transfers between the user's own accounts, or any
-  // other update that isn't real new income or spending. Credit-card-debt
-  // settlement (payCreditCardBill below) and the bulk data reset always pass
-  // this, since neither represents genuine cash flow either.
+  // other update that isn't real new income or spending. The bulk data reset
+  // always passes this. payCreditCardBill deliberately does NOT: card charges
+  // are never tracked as an expense when they're made (see
+  // "does not track a credit-card-debt change" in
+  // use-portfolio-cashflow-tracking.test.tsx), so the Cash Reserve deduction
+  // at settlement time is the only point real money actually leaves — it must
+  // count, or the spend never shows up in the Expense-to-Income ratio at all.
   const updateCash = useCallback(async (newCash: Partial<CashSettings>, options?: { excludeFromCashflow?: boolean }) => {
     const dbUpdates: {
       liquid_cash?: number;
@@ -320,10 +324,10 @@ export function usePortfolio() {
       return;
     }
     const newVault = cash.vaultCash - debt;
-    // Excluded from income/expense tracking: the real spending already
-    // happened when the card was charged, so counting the bill payment too
-    // would double-count it as an expense.
-    await updateCash({ vaultCash: newVault, creditCardDebt: 0 }, { excludeFromCashflow: true });
+    // Counted as an expense (see the comment on updateCash above): charging
+    // the card is never tracked, so this Cash Reserve deduction is the only
+    // moment the spend becomes visible to the Expense-to-Income ratio.
+    await updateCash({ vaultCash: newVault, creditCardDebt: 0 });
     toast.success(`Liability settled — ₹${debt.toLocaleString('en-IN')} deducted from Cash Reserve`);
   }, [cash, updateCash]);
 
