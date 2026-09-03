@@ -411,13 +411,18 @@ export function usePortfolio() {
   }, [transactions, currentPrices]);
 
   const resetAll = useCallback(async () => {
-    const [txnRes, cashRes, priceRes] = await Promise.all([
+    const [txnRes, cashRes, priceRes, cashflowRes] = await Promise.all([
       supabase.from('transactions').delete().not('id', 'is', null),
       supabase.from('cash_settings').update({ liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 } as any).not('id', 'is', null),
       supabase.from('current_prices').delete().not('symbol', 'is', null),
+      // Wipe monthly_cashflow too, same as every other table here — otherwise
+      // a stale total_income/total_expense from before the reset keeps
+      // driving the Expense-to-Income ratio card even though the balances it
+      // was computed from no longer exist.
+      supabase.from('monthly_cashflow').delete().not('id', 'is', null),
     ]);
 
-    if (txnRes.error || cashRes.error || priceRes.error) {
+    if (txnRes.error || cashRes.error || priceRes.error || cashflowRes.error) {
       toast.error('Failed to reset data');
       return;
     }
@@ -425,6 +430,7 @@ export function usePortfolio() {
     setTransactions([]);
     setCash({ liquidCash: 0, vaultCash: 0, pfBalance: 0, creditCardDebt: 0 });
     setCurrentPrices({});
+    setMonthlyCashflow({ totalIncome: 0, totalExpense: 0 });
     toast.success('All data reset');
   }, []);
 
