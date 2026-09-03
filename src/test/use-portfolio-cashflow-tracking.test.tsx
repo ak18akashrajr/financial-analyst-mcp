@@ -2,8 +2,11 @@
 // balance updates (see TODO.md "Expense to Income Ratio" and
 // src/lib/expenseIncomeRatio.ts): an Operating Cash / Cash Reserve increase
 // is tracked as income, a decrease as an expense, unless the caller opts out
-// via excludeFromCashflow — which payCreditCardBill always does. Follows the
-// same supabase-mocking pattern as use-portfolio-net-worth-snapshot.test.tsx.
+// via excludeFromCashflow — which the bulk data reset does, but
+// payCreditCardBill deliberately does not (the Cash Reserve deduction at
+// settlement is the only point a card bill's spend is ever visible to the
+// ratio, since charging the card is never tracked). Follows the same
+// supabase-mocking pattern as use-portfolio-net-worth-snapshot.test.tsx.
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -132,7 +135,7 @@ describe('usePortfolio income/expense tracking', () => {
     expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 0 });
   });
 
-  it('payCreditCardBill settles the debt without counting it as an expense', async () => {
+  it('payCreditCardBill settles the debt and counts the Cash Reserve deduction as an expense', async () => {
     const { result } = renderHook(() => usePortfolio());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -140,7 +143,7 @@ describe('usePortfolio income/expense tracking', () => {
       await result.current.payCreditCardBill(); // vaultCash 2000 -> 1500, creditCardDebt 500 -> 0
     });
 
-    expect(upsertMock).not.toHaveBeenCalled();
-    expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 0 });
+    expect(upsertMock).toHaveBeenCalledTimes(1);
+    expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 500 });
   });
 });
