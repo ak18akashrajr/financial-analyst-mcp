@@ -22,6 +22,24 @@ export default defineConfig({
     // per-file, since the cause (suite-wide contention) isn't specific to
     // any one file and a future file with the same shape would hit it too.
     hookTimeout: 30000,
+    // Same suite-wide-contention story as hookTimeout above, but for test
+    // bodies: supabase/functions/portfolio-ai/model-preference-gate.test.ts
+    // dynamically imports index.ts per test and drives its real (mocked-
+    // provider) tool-call loop end to end, which is fast in isolation
+    // (~50-70ms) but occasionally blew past the default 5s test timeout
+    // under the full 82-file suite's CPU contention. That alone would just
+    // be a flaky failure on its own test, except vitest doesn't cancel a
+    // timed-out test's in-flight promises — this file's mocks
+    // (quotaMock/groqRunTurnMock/openRouterRunTurnMock) are shared across
+    // its `it()`s and only reset in `beforeEach`, so the killed test's
+    // abandoned async work kept running and finished mid-*next* test,
+    // recording an extra/unexpected call on that later test's mocks
+    // (reproduced 2026-09-04: confirmed via a "Test timed out in 5000ms"
+    // failure immediately followed by a `toHaveBeenCalledTimes`/
+    // `not.toHaveBeenCalled` failure on the very next test in file order).
+    // Raised globally for the same reason as hookTimeout: the trigger is
+    // suite-wide load, not this one file.
+    testTimeout: 20000,
   },
   resolve: {
     alias: {
