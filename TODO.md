@@ -17,27 +17,36 @@ other point-in-time `Date` in this app is built with (`new Date(y, m, d)`, `new 
 timezone ahead of UTC (verified under Asia/Calcutta, UTC+5:30) that skew silently drops or
 misclassifies a row whose date exactly matches the comparison boundary.
 
-**Confirmed bugs** — same root cause verified by reading the actual code, not fixed yet:
+**Still open** — verified real, held back deliberately (see decision below):
 
 | File | What's wrong | Stakes |
 |---|---|---|
 | [`src/lib/taxCalculator.ts:141-143`](src/lib/taxCalculator.ts) | `holdingDays = today.getTime() − new Date(lot.date).getTime()`, then `isLongTerm = holdingDays > thresholdDays` (365/1095-day LTCG threshold). The UTC-vs-local skew can flip STCG↔LTCG classification for a lot sitting exactly at the threshold. | **Highest** — changes reported tax liability. |
-| [`src/pages/RollingReturns.tsx:27-59`](src/pages/RollingReturns.tsx) (`computeWindowXIRR`) | Window `start`/`windowEnd` built locally; transaction and price dates parsed via bare `new Date(...)`, compared against them for inclusion and for "quantity at window start." | XIRR values on the Rolling Returns page. |
-| [`src/lib/benchmarkXirr.ts:36-40`](src/lib/benchmarkXirr.ts) (`priceOnOrBefore`) | Same pattern for benchmark price lookups. | Benchmark comparison XIRR. |
-| [`src/pages/GoalTrack.tsx:509,684`](src/pages/GoalTrack.tsx) | `goal.target_date` (DATE column) compared via `.getTime()` against `Date.now()`/local `today` for "days remaining." | Goal progress display only — lower stakes. |
+| [`src/pages/GoalTrack.tsx:92`](src/pages/GoalTrack.tsx) (`getHoldingLotSplit`) | Newly found 2026-09-04 while fixing the days-left bug in this same file (not in the original audit's table). `ageDays = (Date.now() - lot.date.getTime()) / ...` where `lot.date` is `new Date(t.date)` from `getOpenLots` — identical pattern to `taxCalculator.ts`, used to split a goal's `gainLT`/`gainST`/`taxLT`/`taxST` for its post-tax progress figure. | Same stakes as `taxCalculator.ts` — changes a goal's reported post-tax value. |
 
-Both of the previously-"inconclusive" spots in this investigation were traced and resolved on
-2026-08-28 — see the Archive section below.
-
-**Still needs a decision from the user before starting** — the 4 confirmed bugs below all remain
-unfixed: fix all four now (each on its own branch/tests, same rigor as the `periodReports.ts` fix),
-or hold `taxCalculator.ts` back for a separate, more careful pass/review since it changes reported
-tax numbers.
+**Decision (2026-09-04):** fix `RollingReturns.tsx` and `GoalTrack.tsx`'s days-left bug now (each on
+its own branch off `main`, per repo convention); hold `taxCalculator.ts` back — and, since it was
+found to be the same class of tax-number-affecting bug, `GoalTrack.tsx`'s `getHoldingLotSplit`
+too — for a separate, more careful review pass.
 
 - [ ] Fix the `taxCalculator.ts` LTCG/STCG threshold day-count bug (see table above)
-- [ ] Fix the `RollingReturns.tsx` window-boundary bug (see table above)
-- [ ] Fix the `benchmarkXirr.ts` price-lookup bug (see table above)
-- [ ] Fix the `GoalTrack.tsx` days-remaining bug (see table above)
+- [ ] Fix the `GoalTrack.tsx` `getHoldingLotSplit` LT/ST threshold day-count bug (see table above)
+- [x] Fix the `RollingReturns.tsx` window-boundary bug — `fix/date-boundary-rolling-returns`, commit
+      `8505752`. Fixed in both `computeWindowXIRR` *and* the previously-inline `portfolioWindowXIRR`
+      (the TODO only named the former; both had the identical pattern, in three places total).
+      `portfolioWindowXIRR` is now a standalone exported function so it's directly unit-tested.
+      Tests: [rolling-returns.test.ts](src/test/rolling-returns.test.ts).
+- [x] ~~Fix the `benchmarkXirr.ts` price-lookup bug~~ — **traced 2026-09-04, cleared, not a bug.**
+      `priceOnOrBefore` compares `new Date(p.date)` against a `date` argument that, at every call
+      site, is itself always `new Date(t.date)` — another bare DATE-only string, never a real
+      `Date.now()`/`new Date()` instant. The UTC-midnight misparse is a constant +5:30 offset
+      applied identically to both sides of the comparison, so it cancels out and never changes
+      ordering — the same false-positive pattern already found for `chartRange.ts` below. No code
+      change made.
+- [x] Fix the `GoalTrack.tsx` days-remaining bug — `fix/date-boundary-goaltrack-daysleft`. Both the
+      goal-card badge and the detail dialog's "Days Left" stat now parse `target_date` with
+      `parseLocalDate`. `goal.created_at` (a real `timestamptz`, not a DATE-only column) is
+      untouched. Tests: [goal-track-date-boundary.test.tsx](src/test/goal-track-date-boundary.test.tsx).
 
 ## Backlog
 

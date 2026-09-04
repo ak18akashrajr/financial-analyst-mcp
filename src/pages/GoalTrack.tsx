@@ -7,6 +7,7 @@ import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Plus, Trash2, Target, Home, GraduationCap, Plane, Car, Heart, Briefcase, PiggyBank, CalendarDays, TrendingUp, Info, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
+import { parseLocalDate } from '@/lib/dateUtils';
 import type { DerivedHolding, Transaction } from '@/types/portfolio';
 
 const ICON_OPTIONS = [
@@ -546,7 +547,7 @@ function GoalCard({
   // Days left
   const daysLeft = useMemo(() => {
     if (!goal.target_date) return null;
-    const ms = new Date(goal.target_date).getTime() - Date.now();
+    const ms = parseLocalDate(goal.target_date).getTime() - Date.now();
     return Math.ceil(ms / (1000 * 60 * 60 * 24));
   }, [goal.target_date]);
 
@@ -738,7 +739,7 @@ function GoalDetailDialog({
 
   // date math
   const today = new Date();
-  const targetDate = goal.target_date ? new Date(goal.target_date) : null;
+  const targetDate = goal.target_date ? parseLocalDate(goal.target_date) : null;
   const createdDate = goal.created_at ? new Date(goal.created_at) : null;
   const daysLeft = targetDate ? Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
   const yearsLeft = daysLeft !== null ? daysLeft / 365 : null;
