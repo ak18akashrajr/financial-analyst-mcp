@@ -9,6 +9,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Loader2, RefreshCw, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Transaction } from '@/types/portfolio';
+import { parseLocalDate } from '@/lib/dateUtils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
@@ -17,7 +18,7 @@ import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/Ch
 interface PricePoint { date: string; close: number; }
 
 // Compute window XIRR for a single symbol given transactions and price history within [start,end]
-function computeWindowXIRR(
+export function computeWindowXIRR(
   symbol: string,
   txns: Transaction[],
   prices: PricePoint[],
@@ -31,7 +32,7 @@ function computeWindowXIRR(
   let qtyAtStart = 0;
   let costAtStart = 0;
   for (const t of txns) {
-    const d = new Date(t.date);
+    const d = parseLocalDate(t.date);
     if (d > start) continue;
     if (t.type === 'BUY') { qtyAtStart += t.quantity; costAtStart += t.quantity * t.price; }
     else { qtyAtStart -= t.quantity; costAtStart -= t.quantity * t.price; }
@@ -39,8 +40,8 @@ function computeWindowXIRR(
 
   // Price at start (closest <= start)
   const sortedPrices = [...prices].sort((a, b) => a.date.localeCompare(b.date));
-  const startPrice = sortedPrices.filter(p => new Date(p.date) <= start).slice(-1)[0]?.close;
-  const endPrice = sortedPrices.filter(p => new Date(p.date) <= windowEnd).slice(-1)[0]?.close;
+  const startPrice = sortedPrices.filter(p => parseLocalDate(p.date) <= start).slice(-1)[0]?.close;
+  const endPrice = sortedPrices.filter(p => parseLocalDate(p.date) <= windowEnd).slice(-1)[0]?.close;
   if (!endPrice) return null;
 
   const cashFlows: { amount: number; date: Date }[] = [];
@@ -53,7 +54,7 @@ function computeWindowXIRR(
   // Transactions inside window
   let qty = qtyAtStart;
   for (const t of txns) {
-    const d = new Date(t.date);
+    const d = parseLocalDate(t.date);
     if (d <= start || d > windowEnd) continue;
     if (t.type === 'BUY') { cashFlows.push({ amount: -t.quantity * t.price, date: d }); qty += t.quantity; }
     else { cashFlows.push({ amount: t.quantity * t.price, date: d }); qty -= t.quantity; }
@@ -61,6 +62,69 @@ function computeWindowXIRR(
 
   // Terminal value at windowEnd
   if (qty > 0) cashFlows.push({ amount: qty * endPrice, date: windowEnd });
+
+  if (cashFlows.length < 2) return null;
+  return calculateXIRR(cashFlows);
+}
+
+// Portfolio-wide rolling XIRR: combine all txns across symbols, aggregate market value at each
+// window endpoint using each symbol's own price history.
+export function computePortfolioWindowXIRR(
+  transactions: Transaction[],
+  pricesBySymbol: Record<string, PricePoint[]>,
+  windowEnd: Date,
+  yearsBack: number,
+): number | null {
+  const start = new Date(windowEnd);
+  start.setFullYear(start.getFullYear() - yearsBack);
+
+  // Quantity per symbol at start
+  const qtyAtStart: Record<string, number> = {};
+  for (const t of transactions) {
+    const d = parseLocalDate(t.date);
+    if (d > start) continue;
+    qtyAtStart[t.symbol] = (qtyAtStart[t.symbol] || 0) + (t.type === 'BUY' ? t.quantity : -t.quantity);
+  }
+
+  const priceAt = (sym: string, dt: Date): number | null => {
+    const arr = pricesBySymbol[sym];
+    if (!arr) return null;
+    const sorted = [...arr].sort((a, b) => a.date.localeCompare(b.date));
+    const p = sorted.filter(x => parseLocalDate(x.date) <= dt).slice(-1)[0];
+    return p?.close ?? null;
+  };
+
+  const cashFlows: { amount: number; date: Date }[] = [];
+
+  let startValue = 0;
+  let allHavePrice = true;
+  for (const [sym, q] of Object.entries(qtyAtStart)) {
+    if (q <= 0) continue;
+    const p = priceAt(sym, start);
+    if (p == null) { allHavePrice = false; break; }
+    startValue += q * p;
+  }
+  if (!allHavePrice) return null;
+  if (startValue > 0) cashFlows.push({ amount: -startValue, date: start });
+
+  // Txns inside window
+  const qtyNow = { ...qtyAtStart };
+  for (const t of transactions) {
+    const d = parseLocalDate(t.date);
+    if (d <= start || d > windowEnd) continue;
+    const amt = t.quantity * t.price;
+    cashFlows.push({ amount: t.type === 'BUY' ? -amt : amt, date: d });
+    qtyNow[t.symbol] = (qtyNow[t.symbol] || 0) + (t.type === 'BUY' ? t.quantity : -t.quantity);
+  }
+
+  let endValue = 0;
+  for (const [sym, q] of Object.entries(qtyNow)) {
+    if (q <= 0) continue;
+    const p = priceAt(sym, windowEnd);
+    if (p == null) return null;
+    endValue += q * p;
+  }
+  if (endValue > 0) cashFlows.push({ amount: endValue, date: windowEnd });
 
   if (cashFlows.length < 2) return null;
   return calculateXIRR(cashFlows);
@@ -131,7 +195,7 @@ const RollingContent = () => {
   const monthEnds = useMemo(() => {
     if (transactions.length === 0) return [];
     const earliest = transactions.reduce((m, t) => {
-      const d = new Date(t.date); return d < m ? d : m;
+      const d = parseLocalDate(t.date); return d < m ? d : m;
     }, new Date());
     const start = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
     const today = new Date();
@@ -158,62 +222,8 @@ const RollingContent = () => {
     });
   }, [holdings, txnsBySymbol, pricesBySymbol]);
 
-  // Portfolio rolling: combine all txns; aggregate market value at each window endpoint using all symbol prices
-  const portfolioWindowXIRR = (windowEnd: Date, yearsBack: number): number | null => {
-    const start = new Date(windowEnd);
-    start.setFullYear(start.getFullYear() - yearsBack);
-
-    // Quantity per symbol at start
-    const qtyAtStart: Record<string, number> = {};
-    for (const t of transactions) {
-      const d = new Date(t.date);
-      if (d > start) continue;
-      qtyAtStart[t.symbol] = (qtyAtStart[t.symbol] || 0) + (t.type === 'BUY' ? t.quantity : -t.quantity);
-    }
-
-    const priceAt = (sym: string, dt: Date): number | null => {
-      const arr = pricesBySymbol[sym];
-      if (!arr) return null;
-      const sorted = [...arr].sort((a, b) => a.date.localeCompare(b.date));
-      const p = sorted.filter(x => new Date(x.date) <= dt).slice(-1)[0];
-      return p?.close ?? null;
-    };
-
-    const cashFlows: { amount: number; date: Date }[] = [];
-
-    let startValue = 0;
-    let allHavePrice = true;
-    for (const [sym, q] of Object.entries(qtyAtStart)) {
-      if (q <= 0) continue;
-      const p = priceAt(sym, start);
-      if (p == null) { allHavePrice = false; break; }
-      startValue += q * p;
-    }
-    if (!allHavePrice) return null;
-    if (startValue > 0) cashFlows.push({ amount: -startValue, date: start });
-
-    // Txns inside window
-    const qtyNow = { ...qtyAtStart };
-    for (const t of transactions) {
-      const d = new Date(t.date);
-      if (d <= start || d > windowEnd) continue;
-      const amt = t.quantity * t.price;
-      cashFlows.push({ amount: t.type === 'BUY' ? -amt : amt, date: d });
-      qtyNow[t.symbol] = (qtyNow[t.symbol] || 0) + (t.type === 'BUY' ? t.quantity : -t.quantity);
-    }
-
-    let endValue = 0;
-    for (const [sym, q] of Object.entries(qtyNow)) {
-      if (q <= 0) continue;
-      const p = priceAt(sym, windowEnd);
-      if (p == null) return null;
-      endValue += q * p;
-    }
-    if (endValue > 0) cashFlows.push({ amount: endValue, date: windowEnd });
-
-    if (cashFlows.length < 2) return null;
-    return calculateXIRR(cashFlows);
-  };
+  const portfolioWindowXIRR = (windowEnd: Date, yearsBack: number): number | null =>
+    computePortfolioWindowXIRR(transactions, pricesBySymbol, windowEnd, yearsBack);
 
   // Rolling chart data for selected
   const chartData = useMemo(() => {
