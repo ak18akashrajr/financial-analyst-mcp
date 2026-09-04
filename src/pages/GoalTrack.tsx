@@ -35,15 +35,18 @@ interface Goal {
   target_date: string | null;
   icon: string;
   notes: string | null;
+  created_at: string;
 }
 
-interface Allocation {
+export interface Allocation {
   id: string;
   goal_id: string;
   source_type: 'symbol' | 'liquid_cash' | 'vault_cash';
   symbol: string | null;
   amount: number;      // rupees (used for cash sources)
-  quantity: number | null; // units (used for symbol sources)
+  quantity: number | null; // units (used for symbol sources) — a snapshot; ignored when track_max is true
+  track_max: boolean;  // symbol allocations only: always claim 100% of the current holding (minus other
+                        // goals' fixed claims on the same symbol), so buying more units flows in automatically
 }
 
 function fmt(n: number) {
@@ -99,11 +102,12 @@ interface AllocTax {
   id: string;
   label: string;
   source: 'symbol' | 'liquid_cash' | 'vault_cash';
-  storedQty: number;      // requested units (symbol) or 0
+  storedQty: number;      // requested units (symbol) or 0 — for track_max rows, the resolved live target
   effectiveQty: number;   // clamped units (symbol) or 0
   storedAmount: number;   // requested rupees (cash) or 0
   effectiveAmount: number;// clamped rupees (cash) or 0
   clamped: boolean;
+  trackMax: boolean;      // true if this row auto-syncs to the full holding rather than a fixed unit count
   invested: number;
   market: number;
   gainLT: number;
@@ -114,8 +118,35 @@ interface AllocTax {
   postTax: number;
 }
 
+// For a symbol allocation, resolve the *live* unit count it's actually claiming right now.
+// - A fixed allocation (track_max = false) always claims exactly its stored `quantity` snapshot.
+// - A track_max allocation claims "whatever's left" of the current holding after every fixed
+//   allocation on the same symbol is subtracted — so a new BUY grows this automatically. If more
+//   than one goal auto-tracks the same symbol (a conflict — they can't both own the remainder),
+//   the remainder is split between them proportionally by their last stored quantity (equally if
+//   none has one), rather than double-counting the same units into two goals.
+export function resolveSymbolRequestQty(a: Allocation, holdings: DerivedHolding[], allAllocations: Allocation[]): number {
+  if (a.source_type !== 'symbol' || !a.symbol) return 0;
+  if (!a.track_max) return Number(a.quantity) || 0;
+  const h = holdings.find((x) => x.symbol === a.symbol);
+  const capacity = h ? h.totalQuantity : 0;
+  const sameSymbol = allAllocations.filter((x) => x.source_type === 'symbol' && x.symbol === a.symbol);
+  const fixedTotal = sameSymbol.filter((x) => !x.track_max).reduce((s, x) => s + (Number(x.quantity) || 0), 0);
+  const remaining = Math.max(0, capacity - fixedTotal);
+  const maxRows = sameSymbol.filter((x) => x.track_max);
+  if (maxRows.length <= 1) return remaining;
+  const weightSum = maxRows.reduce((s, x) => s + (Number(x.quantity) || 0), 0);
+  const myWeight = weightSum > 0 ? (Number(a.quantity) || 0) / weightSum : 1 / maxRows.length;
+  return remaining * myWeight;
+}
+
 // scaleMap: for each key ("cash:liquid" | "cash:vault" | `sym:${symbol}`) — factor <=1 to shrink over-allocations
-function computeAllocTax(a: Allocation, holdings: DerivedHolding[], scaleMap: Record<string, number>): AllocTax {
+export function computeAllocTax(
+  a: Allocation,
+  holdings: DerivedHolding[],
+  scaleMap: Record<string, number>,
+  allAllocations: Allocation[],
+): AllocTax {
   if (a.source_type !== 'symbol') {
     const key = a.source_type === 'liquid_cash' ? 'cash:liquid' : 'cash:vault';
     const scale = scaleMap[key] ?? 1;
@@ -126,18 +157,18 @@ function computeAllocTax(a: Allocation, holdings: DerivedHolding[], scaleMap: Re
       id: a.id, label, source: a.source_type,
       storedQty: 0, effectiveQty: 0,
       storedAmount: stored, effectiveAmount: eff,
-      clamped: scale < 1,
+      clamped: scale < 1, trackMax: false,
       invested: eff, market: eff, gainLT: 0, gainST: 0, taxLT: 0, taxST: 0, tax: 0, postTax: eff,
     };
   }
   const h = holdings.find((x) => x.symbol === a.symbol);
-  const storedQty = Number(a.quantity) || 0;
+  const storedQty = resolveSymbolRequestQty(a, holdings, allAllocations);
   if (!h || h.totalQuantity <= 0) {
     return {
       id: a.id, label: a.symbol ?? '—', source: 'symbol',
       storedQty, effectiveQty: 0,
       storedAmount: 0, effectiveAmount: 0,
-      clamped: storedQty > 0,
+      clamped: storedQty > 0, trackMax: a.track_max,
       invested: 0, market: 0, gainLT: 0, gainST: 0, taxLT: 0, taxST: 0, tax: 0, postTax: 0,
     };
   }
@@ -159,13 +190,13 @@ function computeAllocTax(a: Allocation, holdings: DerivedHolding[], scaleMap: Re
     id: a.id, label: a.symbol ?? '—', source: 'symbol',
     storedQty, effectiveQty,
     storedAmount: 0, effectiveAmount: 0,
-    clamped: scale < 1,
+    clamped: scale < 1, trackMax: a.track_max,
     invested, market, gainLT, gainST, taxLT, taxST, tax, postTax: market - tax,
   };
 }
 
 // Build a scale-map so per-source over-allocations shrink pro-rata to available.
-function buildScaleMap(
+export function buildScaleMap(
   allocations: Allocation[],
   holdings: DerivedHolding[],
   cash: { liquidCash: number; vaultCash: number },
@@ -180,7 +211,7 @@ function buildScaleMap(
     else if (a.source_type === 'vault_cash') totals['cash:vault'] = (totals['cash:vault'] || 0) + (Number(a.amount) || 0);
     else if (a.symbol) {
       const key = `sym:${a.symbol}`;
-      totals[key] = (totals[key] || 0) + (Number(a.quantity) || 0);
+      totals[key] = (totals[key] || 0) + resolveSymbolRequestQty(a, holdings, allocations);
       if (!(key in capacity)) {
         const h = holdings.find((x) => x.symbol === a.symbol);
         capacity[key] = h ? h.totalQuantity : 0;
@@ -273,6 +304,7 @@ function GoalTrackContent() {
     sourceType: 'symbol' | 'liquid_cash' | 'vault_cash',
     symbol: string | null,
     value: number,
+    trackMax = false,
   ) {
     if (value <= 0) return;
     // Explicitly typed to match the goal_allocations Insert shape as one flat
@@ -285,10 +317,11 @@ function GoalTrackContent() {
       symbol: string | null;
       amount: number;
       quantity: number | null;
+      track_max: boolean;
     } =
       sourceType === 'symbol'
-        ? { goal_id: goalId, source_type: sourceType, symbol, amount: 0, quantity: value }
-        : { goal_id: goalId, source_type: sourceType, symbol: null, amount: value, quantity: null };
+        ? { goal_id: goalId, source_type: sourceType, symbol, amount: 0, quantity: value, track_max: trackMax }
+        : { goal_id: goalId, source_type: sourceType, symbol: null, amount: value, quantity: null, track_max: false };
     await supabase.from('goal_allocations').insert(payload);
     await load();
   }
@@ -308,7 +341,7 @@ function GoalTrackContent() {
     const map: Record<string, { current: number; postTax: number; tax: number; invested: number }> = {};
     for (const goal of goals) map[goal.id] = { current: 0, postTax: 0, tax: 0, invested: 0 };
     for (const a of allocations) {
-      const r = computeAllocTax(a, holdings, scaleMap);
+      const r = computeAllocTax(a, holdings, scaleMap, allocations);
       const m = map[a.goal_id];
       if (!m) continue;
       m.current += r.market;
@@ -444,6 +477,7 @@ function GoalTrackContent() {
       <GoalDetailDialog
         goal={openGoal}
         allocations={openAllocs}
+        allAllocations={allocations}
         holdings={holdings}
         scaleMap={scaleMap}
         progress={openGoalId ? goalProgress[openGoalId] : null}
@@ -467,7 +501,7 @@ function GoalCard({
   scaleMap: Record<string, number>;
   holdings: DerivedHolding[];
   cash: { liquidCash: number; vaultCash: number };
-  onAddAllocation: (goalId: string, sourceType: 'symbol' | 'liquid_cash' | 'vault_cash', symbol: string | null, value: number) => Promise<void>;
+  onAddAllocation: (goalId: string, sourceType: 'symbol' | 'liquid_cash' | 'vault_cash', symbol: string | null, value: number, trackMax?: boolean) => Promise<void>;
   onRemoveAllocation: (id: string) => Promise<void>;
   onDelete: () => void;
   onEdit: () => void;
@@ -475,6 +509,9 @@ function GoalCard({
 }) {
   const [source, setSource] = useState<string>('liquid_cash');
   const [amount, setAmount] = useState('');
+  // true only right after clicking "Use max" on a holding — persisted as track_max so this
+  // allocation keeps claiming the full holding as you buy more, instead of freezing at today's count.
+  const [useMaxIntent, setUseMaxIntent] = useState(false);
 
   const isCashSource = source === 'liquid_cash' || source === 'vault_cash';
 
@@ -482,8 +519,10 @@ function GoalCard({
   const usedFromSource = useMemo(() => {
     if (source === 'liquid_cash') return allAllocations.filter((a) => a.source_type === 'liquid_cash').reduce((s, a) => s + Number(a.amount || 0), 0);
     if (source === 'vault_cash') return allAllocations.filter((a) => a.source_type === 'vault_cash').reduce((s, a) => s + Number(a.amount || 0), 0);
-    return allAllocations.filter((a) => a.source_type === 'symbol' && a.symbol === source).reduce((s, a) => s + Number(a.quantity || 0), 0);
-  }, [allAllocations, source]);
+    return allAllocations
+      .filter((a) => a.source_type === 'symbol' && a.symbol === source)
+      .reduce((s, a) => s + resolveSymbolRequestQty(a, holdings, allAllocations), 0);
+  }, [allAllocations, source, holdings]);
 
   const sourceCapacity = useMemo(() => {
     if (source === 'liquid_cash') return cash.liquidCash;
@@ -499,8 +538,9 @@ function GoalCard({
     if (!amt || amt <= 0) return;
     if (source === 'liquid_cash') await onAddAllocation(goal.id, 'liquid_cash', null, amt);
     else if (source === 'vault_cash') await onAddAllocation(goal.id, 'vault_cash', null, amt);
-    else await onAddAllocation(goal.id, 'symbol', source, amt);
+    else await onAddAllocation(goal.id, 'symbol', source, amt, useMaxIntent);
     setAmount('');
+    setUseMaxIntent(false);
   }
 
   // Days left
@@ -510,7 +550,7 @@ function GoalCard({
     return Math.ceil(ms / (1000 * 60 * 60 * 24));
   }, [goal.target_date]);
 
-  const rows = allocations.map((a) => computeAllocTax(a, holdings, scaleMap));
+  const rows = allocations.map((a) => computeAllocTax(a, holdings, scaleMap, allAllocations));
   const anyClamped = rows.some((r) => r.clamped);
 
   return (
@@ -590,10 +630,13 @@ function GoalCard({
                 <div className="flex flex-col">
                   <span className="font-medium text-foreground">
                     {r.label}{isSym ? '' : ' (cash)'}
+                    {r.trackMax && (
+                      <span className="ml-1.5 text-[9px] font-normal px-1 py-0.5 rounded bg-primary/10 text-primary align-middle">auto</span>
+                    )}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
                     {isSym
-                      ? `${fmtQty(r.effectiveQty)}${r.clamped ? ` of ${fmtQty(r.storedQty)}` : ''} units · cost ${hidden ? '•••' : fmt(r.invested)}`
+                      ? `${fmtQty(r.effectiveQty)}${r.clamped && !r.trackMax ? ` of ${fmtQty(r.storedQty)}` : ''} units${r.trackMax ? ' · tracks full holding, incl. future buys' : ''} · cost ${hidden ? '•••' : fmt(r.invested)}`
                       : `earmarked${r.clamped ? ` ${fmt(r.effectiveAmount)} of ${fmt(r.storedAmount)}` : ''}`}
                   </span>
                 </div>
@@ -616,7 +659,7 @@ function GoalCard({
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex-1 min-w-[180px]">
             <label className="text-xs text-muted-foreground">Source</label>
-            <select className="w-full mt-1 px-2 py-1.5 text-xs rounded-md border border-border bg-background" value={source} onChange={(e) => { setSource(e.target.value); setAmount(''); }}>
+            <select className="w-full mt-1 px-2 py-1.5 text-xs rounded-md border border-border bg-background" value={source} onChange={(e) => { setSource(e.target.value); setAmount(''); setUseMaxIntent(false); }}>
               <option value="liquid_cash">Operating Cash (₹{cash.liquidCash.toLocaleString('en-IN')})</option>
               <option value="vault_cash">Cash Reserve (₹{cash.vaultCash.toLocaleString('en-IN')})</option>
               {holdings.map((h) => (
@@ -629,17 +672,32 @@ function GoalCard({
               <span>{isCashSource ? 'Amount (₹)' : 'Units'}</span>
               <button
                 type="button"
-                onClick={() => setAmount(isCashSource ? String(Math.round(available)) : String(available))}
+                onClick={() => {
+                  setAmount(isCashSource ? String(Math.round(available)) : String(available));
+                  // Only symbol (unit) allocations get sticky auto-tracking — cash "max" stays a
+                  // one-time snapshot, same as before.
+                  setUseMaxIntent(!isCashSource);
+                }}
                 className="text-[10px] text-primary hover:underline"
                 disabled={available <= 0}
               >
                 Use max
               </button>
             </label>
-            <input type="number" step="any" className="w-full mt-1 px-2 py-1.5 text-xs rounded-md border border-border bg-background" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder={isCashSource ? '50000' : '10'} />
+            <input
+              type="number"
+              step="any"
+              className="w-full mt-1 px-2 py-1.5 text-xs rounded-md border border-border bg-background"
+              value={amount}
+              onChange={(e) => { setAmount(e.target.value); setUseMaxIntent(false); }}
+              placeholder={isCashSource ? '50000' : '10'}
+            />
             <p className="text-[10px] text-muted-foreground mt-1">
               Available: {isCashSource ? `₹${available.toLocaleString('en-IN')}` : `${fmtQty(available)} units`}
             </p>
+            {useMaxIntent && !isCashSource && (
+              <p className="text-[10px] text-primary mt-0.5">Will auto-track this holding — future buys add in automatically.</p>
+            )}
           </div>
           <button onClick={add} className="px-3 py-1.5 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:opacity-90">
             Allocate
@@ -652,10 +710,11 @@ function GoalCard({
 
 
 function GoalDetailDialog({
-  goal, allocations, holdings, scaleMap, progress, hidden, onClose,
+  goal, allocations, allAllocations, holdings, scaleMap, progress, hidden, onClose,
 }: {
   goal: Goal | null;
   allocations: Allocation[];
+  allAllocations: Allocation[];
   holdings: DerivedHolding[];
   scaleMap: Record<string, number>;
   progress: { current: number; postTax: number; tax: number; invested: number } | null;
@@ -663,8 +722,8 @@ function GoalDetailDialog({
   onClose: () => void;
 }) {
   const breakdown = useMemo(
-    () => allocations.map((a) => computeAllocTax(a, holdings, scaleMap)),
-    [allocations, holdings, scaleMap]
+    () => allocations.map((a) => computeAllocTax(a, holdings, scaleMap, allAllocations)),
+    [allocations, holdings, scaleMap, allAllocations]
   );
 
 
@@ -680,15 +739,15 @@ function GoalDetailDialog({
   // date math
   const today = new Date();
   const targetDate = goal.target_date ? new Date(goal.target_date) : null;
+  const createdDate = goal.created_at ? new Date(goal.created_at) : null;
   const daysLeft = targetDate ? Math.ceil((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
-  const totalDays = targetDate ? Math.ceil((targetDate.getTime() - new Date(goal.icon ? goal.icon : today).getTime()) / (1000 * 60 * 60 * 24)) : null;
-  // Use created_at proxy via target's distance from now relative to original span: we use 365 default if no created
-  // Simpler: percent of time elapsed since "today - 1 year" anchor — but more honest: just show days left vs target span from now to target
+  const yearsLeft = daysLeft !== null ? daysLeft / 365 : null;
+  // % of the goal's actual lifespan (created_at → target_date) that has elapsed so far.
   const timeProgressPct = (() => {
-    if (!targetDate) return null;
-    // assume goal "started" 365 days before target if no other anchor; cap at 100%
-    const total = Math.max(1, (targetDate.getTime() - (targetDate.getTime() - 365 * 86400000)) / 86400000); // 365
-    const elapsed = 365 - Math.max(0, daysLeft ?? 0);
+    if (!targetDate || !createdDate) return null;
+    const total = targetDate.getTime() - createdDate.getTime();
+    if (total <= 0) return 100; // target date at/before creation — degenerate case
+    const elapsed = today.getTime() - createdDate.getTime();
     return Math.max(0, Math.min(100, (elapsed / total) * 100));
   })();
 
@@ -717,9 +776,14 @@ function GoalDetailDialog({
             <p className={`text-sm font-semibold mt-1 ${daysLeft !== null && daysLeft < 0 ? 'text-destructive' : 'text-foreground'}`}>
               {daysLeft === null ? '—' : daysLeft < 0 ? `${-daysLeft}d overdue` : `${daysLeft} days`}
             </p>
+            {yearsLeft !== null && (
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {yearsLeft < 0 ? `${(-yearsLeft).toFixed(1)}y overdue` : `≈ ${yearsLeft.toFixed(1)} yr`}
+              </p>
+            )}
           </div>
           <div className="rounded-md border border-border bg-muted/30 p-3">
-            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Time Used (1y window)</p>
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Time Used (since created)</p>
             <p className="text-sm font-semibold text-foreground mt-1">
               {timeProgressPct === null ? '—' : `${timeProgressPct.toFixed(0)}%`}
             </p>
@@ -792,6 +856,7 @@ function GoalDetailDialog({
                     <td className="px-2 py-1.5 text-foreground">
                       {r.label}
                       {r.source !== 'symbol' && <span className="ml-1 text-[9px] text-muted-foreground">(cash)</span>}
+                      {r.trackMax && <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary">auto</span>}
                     </td>
                     <td className="px-2 py-1.5 text-right text-foreground">{hidden ? '•••' : fmt(r.invested)}</td>
                     <td className="px-2 py-1.5 text-right text-foreground">{hidden ? '•••' : fmt(r.market)}</td>

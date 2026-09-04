@@ -169,6 +169,7 @@ export type Database = {
           quantity: number | null
           source_type: string
           symbol: string | null
+          track_max: boolean
           updated_at: string
         }
         Insert: {
@@ -179,6 +180,7 @@ export type Database = {
           quantity?: number | null
           source_type?: string
           symbol?: string | null
+          track_max?: boolean
           updated_at?: string
         }
         Update: {
@@ -189,6 +191,7 @@ export type Database = {
           quantity?: number | null
           source_type?: string
           symbol?: string | null
+          track_max?: boolean
           updated_at?: string
         }
         Relationships: [
