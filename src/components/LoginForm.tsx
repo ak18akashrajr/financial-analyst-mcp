@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { AlertCircle, Lock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoginLoadingScreen } from '@/components/LoginLoadingScreen';
@@ -60,39 +61,49 @@ export const LoginForm = () => {
       <form
         ref={formRef}
         onSubmit={handleLogin}
-        className="w-full max-w-sm space-y-5 p-8 rounded-xl border border-border bg-card shadow-lg animate-in fade-in zoom-in-95 duration-500"
+        className="w-full max-w-sm space-y-5 p-8 rounded-xl border border-border bg-card shadow-sm animate-in fade-in zoom-in-95 duration-500"
       >
         <div className="text-center space-y-1">
-          <h1 className="text-xl font-bold text-foreground tracking-tight">🔒 Portfolio Engine</h1>
-          <p className="text-xs text-muted-foreground italic">Prove you belong here.</p>
+          <h1 className="flex items-center justify-center gap-1.5 text-xl font-bold text-foreground tracking-tight">
+            <Lock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Portfolio Engine
+          </h1>
+          <p className="text-xs text-muted-foreground">Sign in to continue</p>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Email</label>
+          <label htmlFor="login-email" className="text-xs font-medium text-muted-foreground">Email</label>
           <Input
+            id="login-email"
             type="email"
             autoComplete="email"
+            autoFocus
             placeholder="you@example.com"
             value={email}
             onChange={e => { setEmail(e.target.value); setError(''); }}
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Password</label>
+          <label htmlFor="login-password" className="text-xs font-medium text-muted-foreground">Password</label>
           <Input
+            id="login-password"
             type="password"
             autoComplete="current-password"
-            placeholder="••••••••"
             value={password}
             onChange={e => { setPassword(e.target.value); setError(''); }}
           />
         </div>
-        {error && <p className="text-xs text-destructive text-center font-medium">🚫 {error}</p>}
+        {error && (
+          <p className="flex items-center justify-center gap-1.5 text-xs text-destructive text-center font-medium">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {error}
+          </p>
+        )}
         <button
           type="submit"
           disabled={submitting}
           className="w-full py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 transition-[opacity,transform]"
         >
-          {submitting ? 'Signing in...' : 'Login'}
+          {submitting ? 'Signing in...' : 'Sign in'}
         </button>
       </form>
     </div>

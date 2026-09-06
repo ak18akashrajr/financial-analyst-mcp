@@ -34,8 +34,8 @@ describe('LoginForm', () => {
 
     renderLoginForm();
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'correct-password' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(signIn).toHaveBeenCalledWith('me@example.com', 'correct-password'));
   });
@@ -46,8 +46,8 @@ describe('LoginForm', () => {
 
     renderLoginForm();
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'wrong' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
   });
@@ -58,16 +58,16 @@ describe('LoginForm', () => {
 
     renderLoginForm();
     const emailInput = screen.getByPlaceholderText('you@example.com');
-    const passwordInput = screen.getByPlaceholderText('••••••••');
+    const passwordInput = screen.getByLabelText('Password');
     fireEvent.change(emailInput, { target: { value: 'me@example.com' } });
     fireEvent.change(passwordInput, { target: { value: 'wrong' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await screen.findByText(/invalid login credentials/i);
     // The form itself carries the shake class (see the force-reflow trick in
     // LoginForm.tsx) — the DOM node isn't remounted, so a wrong-password
     // attempt doesn't blow away what the user already typed.
-    expect(screen.getByRole('button', { name: /login/i }).closest('form')).toHaveClass('animate-shake');
+    expect(screen.getByRole('button', { name: /sign in/i }).closest('form')).toHaveClass('animate-shake');
     expect(emailInput).toHaveValue('me@example.com');
     expect(passwordInput).toHaveValue('wrong');
   });
@@ -84,8 +84,8 @@ describe('LoginForm', () => {
 
     renderLoginForm();
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'ak18@old-exploit.test' } });
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: '2003' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: '2003' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(signIn).toHaveBeenCalledWith('ak18@old-exploit.test', '2003'));
     // The old hardcoded password must now always go through the real auth call
@@ -99,8 +99,8 @@ describe('LoginForm', () => {
 
     renderLoginForm(['/login']);
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'correct-password' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     // A successful sign-in hands off to LoginLoadingScreen (real timers, ~2.2s
     // of cosmetic stages — see LoginLoadingScreen.tsx) before it navigates on.
@@ -114,8 +114,8 @@ describe('LoginForm', () => {
 
     renderLoginForm([{ pathname: '/login', state: { from: { pathname: '/reports' } } }]);
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'correct-password' } });
-    fireEvent.click(screen.getByRole('button', { name: /login/i }));
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     expect(await screen.findByText('Reports Page', undefined, { timeout: 4000 })).toBeInTheDocument();
   });
