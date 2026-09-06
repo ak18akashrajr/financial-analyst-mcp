@@ -130,6 +130,27 @@ export function computePortfolioWindowXIRR(
   return calculateXIRR(cashFlows);
 }
 
+// Whether at least `yearsBack` years of transaction history exists by `windowEnd` — i.e. the
+// earliest given transaction happened on or before windowEnd - yearsBack. Rolling-window charts
+// should only plot points where this is true: otherwise the window's real holding period is
+// shorter than yearsBack (position didn't exist yet at window start), and XIRR annualizes that
+// much-shorter actual duration — producing wildly misleading, often extreme (thousands-of-percent)
+// rolling returns right after portfolio inception.
+export function hasFullTrailingWindow(
+  txns: { date: string }[],
+  windowEnd: Date,
+  yearsBack: number,
+): boolean {
+  if (txns.length === 0) return false;
+  const start = new Date(windowEnd);
+  start.setFullYear(start.getFullYear() - yearsBack);
+  const earliest = txns.reduce((min: Date | null, t) => {
+    const d = parseLocalDate(t.date);
+    return min === null || d < min ? d : min;
+  }, null as Date | null);
+  return earliest !== null && earliest <= start;
+}
+
 const WINDOW_OPTIONS = [
   { id: '1y', label: '1Y', years: 1 },
   { id: '3y', label: '3Y', years: 3 },
@@ -228,13 +249,17 @@ const RollingContent = () => {
   // Rolling chart data for selected
   const chartData = useMemo(() => {
     const out: { date: string; xirr: number | null }[] = [];
+    const relevantTxns = selected === 'PORTFOLIO' ? transactions : (txnsBySymbol[selected] || []);
     for (const me of monthEnds) {
       let r: number | null = null;
-      if (selected === 'PORTFOLIO') r = portfolioWindowXIRR(me, windowYears);
-      else {
-        const txns = txnsBySymbol[selected] || [];
-        const prices = pricesBySymbol[selected] || [];
-        r = computeWindowXIRR(selected, txns, prices, me, windowYears);
+      // Skip windows that don't have a full yearsBack of history yet — see hasFullTrailingWindow.
+      if (hasFullTrailingWindow(relevantTxns, me, windowYears)) {
+        if (selected === 'PORTFOLIO') r = portfolioWindowXIRR(me, windowYears);
+        else {
+          const txns = txnsBySymbol[selected] || [];
+          const prices = pricesBySymbol[selected] || [];
+          r = computeWindowXIRR(selected, txns, prices, me, windowYears);
+        }
       }
       out.push({ date: me.toISOString().slice(0, 7), xirr: r != null ? +(r * 100).toFixed(2) : null });
     }
