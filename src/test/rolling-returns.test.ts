@@ -17,7 +17,7 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: { from: () => ({ select: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }) },
 }));
 
-const { computeWindowXIRR, computePortfolioWindowXIRR } = await import('@/pages/RollingReturns');
+const { computeWindowXIRR, computePortfolioWindowXIRR, hasFullTrailingWindow } = await import('@/pages/RollingReturns');
 
 function txn(overrides: Partial<Transaction>): Transaction {
   return { id: 'x', symbol: 'AAPL', type: 'BUY', quantity: 1, price: 100, date: '2023-01-01', ...overrides };
@@ -105,5 +105,34 @@ describe('computePortfolioWindowXIRR — DATE-boundary handling', () => {
     // deeply negative return a stale 50 close would produce.
     expect(result).not.toBeNull();
     expect(result!).toBeCloseTo(0.1, 2);
+  });
+});
+
+// Covers the "rolling returns chart shows irrelevant data" bug: near portfolio inception, a
+// window's start (windowEnd - yearsBack) predates the earliest transaction, so the real holding
+// period inside the window is much shorter than yearsBack. computeWindowXIRR/
+// computePortfolioWindowXIRR still return a mathematically valid XIRR for that shorter period,
+// but annualized as if it were a full yearsBack window it explodes into extreme, meaningless
+// values (e.g. thousands of percent for a few weeks' gain). hasFullTrailingWindow lets the chart
+// skip those points instead of plotting them.
+describe('hasFullTrailingWindow', () => {
+  it('is false with no transactions', () => {
+    expect(hasFullTrailingWindow([], new Date(2024, 0, 1), 1)).toBe(false);
+  });
+
+  it('is false when the earliest transaction is after the window start (partial window)', () => {
+    // windowEnd - 1y = 2023-01-01; earliest txn 2023-06-01 is after that -> not a full window yet.
+    const txns = [{ date: '2023-06-01' }];
+    expect(hasFullTrailingWindow(txns, new Date(2024, 0, 1), 1)).toBe(false);
+  });
+
+  it('is true when the earliest transaction is exactly on the window start boundary', () => {
+    const txns = [{ date: '2023-01-01' }];
+    expect(hasFullTrailingWindow(txns, new Date(2024, 0, 1), 1)).toBe(true);
+  });
+
+  it('is true when the earliest transaction predates the window start', () => {
+    const txns = [{ date: '2020-01-01' }, { date: '2023-06-01' }];
+    expect(hasFullTrailingWindow(txns, new Date(2024, 0, 1), 1)).toBe(true);
   });
 });
