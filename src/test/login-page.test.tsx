@@ -34,7 +34,7 @@ describe('Login page', () => {
   it('renders the login form when signed out', () => {
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn: vi.fn(), signOut: vi.fn() });
     renderLogin();
-    expect(screen.getByPlaceholderText('you@example.com')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email')).toBeInTheDocument();
   });
 
   it('redirects to the dashboard instead of showing the form when already signed in', () => {
@@ -46,7 +46,7 @@ describe('Login page', () => {
     });
     renderLogin();
     expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText('you@example.com')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Email')).not.toBeInTheDocument();
   });
 
   it('does not redirect away from the form once a fresh sign-in flips the session mid-render', () => {
@@ -61,7 +61,7 @@ describe('Login page', () => {
     const signIn = vi.fn().mockResolvedValue({ error: null });
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
     const { rerender } = renderLogin();
-    expect(screen.getByPlaceholderText('you@example.com')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email')).toBeInTheDocument();
 
     mockedUseAuth.mockReturnValue({
       session: { access_token: 'fresh' } as never,

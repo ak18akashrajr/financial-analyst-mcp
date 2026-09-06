@@ -3,10 +3,10 @@
 // Wrapped in a MemoryRouter because LoginForm now navigates on success (see
 // the redirect-after-login tests below) — useNavigate()/useLocation() throw
 // outside a Router.
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
-import { LoginForm } from '@/components/LoginForm';
+import { LoginForm, SWAG_LOGIN_ERRORS } from '@/components/LoginForm';
 import { useAuth } from '@/contexts/AuthContext';
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -14,6 +14,10 @@ vi.mock('@/contexts/AuthContext', () => ({
 }));
 
 const mockedUseAuth = vi.mocked(useAuth);
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function renderLoginForm(initialEntries: Array<string | { pathname: string; state?: unknown }> = ['/login']) {
   return render(
@@ -33,37 +37,56 @@ describe('LoginForm', () => {
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
     renderLoginForm();
-    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'me@example.com' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct-password' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(signIn).toHaveBeenCalledWith('me@example.com', 'correct-password'));
   });
 
-  it('shows the error message returned by a failed sign-in', async () => {
+  it('shows a swag line — not the raw Supabase text — for a wrong-credentials error', async () => {
+    // Math.random is pinned so the swag-line pick is deterministic.
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const signIn = vi.fn().mockResolvedValue({ error: 'Invalid login credentials' });
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
     renderLoginForm();
-    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'me@example.com' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
-    expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
+    expect(await screen.findByText(SWAG_LOGIN_ERRORS[0])).toBeInTheDocument();
+    expect(screen.queryByText(/invalid login credentials/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the raw error message for anything other than wrong credentials — no joke on a real failure', async () => {
+    const signIn = vi.fn().mockResolvedValue({ error: 'Email rate limit exceeded' });
+    mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
+
+    renderLoginForm();
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'wrong' } });
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
+
+    expect(await screen.findByText('Email rate limit exceeded')).toBeInTheDocument();
+    SWAG_LOGIN_ERRORS.forEach(line => {
+      expect(screen.queryByText(line)).not.toBeInTheDocument();
+    });
   });
 
   it('replays the shake animation on the form when a sign-in fails, without clearing the typed fields', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const signIn = vi.fn().mockResolvedValue({ error: 'Invalid login credentials' });
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
     renderLoginForm();
-    const emailInput = screen.getByPlaceholderText('you@example.com');
+    const emailInput = screen.getByLabelText('Email');
     const passwordInput = screen.getByLabelText('Password');
     fireEvent.change(emailInput, { target: { value: 'me@example.com' } });
     fireEvent.change(passwordInput, { target: { value: 'wrong' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
-    await screen.findByText(/invalid login credentials/i);
+    await screen.findByText(SWAG_LOGIN_ERRORS[0]);
     // The form itself carries the shake class (see the force-reflow trick in
     // LoginForm.tsx) — the DOM node isn't remounted, so a wrong-password
     // attempt doesn't blow away what the user already typed.
@@ -79,18 +102,19 @@ describe('LoginForm', () => {
     // browser-native format validation, which would otherwise block submit
     // before onSubmit even fires) — the point is the old password '2003'
     // must now always be checked server-side, never accepted locally.
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const signIn = vi.fn().mockResolvedValue({ error: 'Invalid login credentials' });
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
     renderLoginForm();
-    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'ak18@old-exploit.test' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'ak18@old-exploit.test' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: '2003' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(signIn).toHaveBeenCalledWith('ak18@old-exploit.test', '2003'));
     // The old hardcoded password must now always go through the real auth call
     // (which is mocked to fail here) rather than being accepted locally.
-    expect(await screen.findByText(/invalid login credentials/i)).toBeInTheDocument();
+    expect(await screen.findByText(SWAG_LOGIN_ERRORS[0])).toBeInTheDocument();
   });
 
   it('shows the cosmetic loading sequence, then redirects to the dashboard with no prior destination', async () => {
@@ -98,7 +122,7 @@ describe('LoginForm', () => {
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
     renderLoginForm(['/login']);
-    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'me@example.com' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct-password' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
@@ -113,7 +137,7 @@ describe('LoginForm', () => {
     mockedUseAuth.mockReturnValue({ session: null, loading: false, signIn, signOut: vi.fn() });
 
     renderLoginForm([{ pathname: '/login', state: { from: { pathname: '/reports' } } }]);
-    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'me@example.com' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'me@example.com' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'correct-password' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
 
