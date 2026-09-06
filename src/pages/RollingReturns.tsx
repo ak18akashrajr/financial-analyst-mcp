@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
+import { InfoHint } from '@/components/InfoHint';
 
 interface PricePoint { date: string; close: number; }
 
@@ -281,7 +282,17 @@ const RollingContent = () => {
 
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">Rolling Returns</h1>
+            <h1 className="text-2xl font-semibold text-foreground flex items-center gap-1.5">
+              Rolling Returns
+              <InfoHint
+                title="Rolling Returns vs. dashboard XIRR"
+                side="right"
+                formula="Window XIRR: −(value at window start) → real buys/sells in-window → +(value today)"
+                caveat="Different question from the dashboard's XIRR: that one is money-weighted since your very first transaction ever, using real purchase prices. This page only looks at the trailing 1Y/3Y/5Y and treats the market value at the start of that window as a synthetic lump-sum investment — not your original cost basis. The two can legitimately differ, even in sign: e.g. a portfolio that's up nicely since inception can still show a negative trailing-1Y number if the last year alone was flat or down."
+              >
+                Each point is the XIRR computed only over the prior 1/3/5 years ending that month — not since your original purchase.
+              </InfoHint>
+            </h1>
             <p className="text-sm text-muted-foreground mt-1">
               Time-weighted XIRR over rolling 1Y / 3Y / 5Y windows. Best for SIP portfolios — accounts for cash-flow timing.
             </p>
@@ -313,7 +324,18 @@ const RollingContent = () => {
                 </thead>
                 <tbody>
                   <tr className="border-b border-border bg-accent/30">
-                    <td className="px-4 py-2 font-semibold text-foreground">Overall Portfolio</td>
+                    <td className="px-4 py-2 font-semibold text-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        Overall Portfolio
+                        <InfoHint
+                          title="Overall Portfolio — trailing window, not since-inception"
+                          side="right"
+                          caveat="Won't match the dashboard's XIRR card. That figure is money-weighted since your first-ever transaction; these columns only cover the trailing 1/3/5 years, starting from the market value at that window's start — not your original cost basis. Both can be correct at once, even with opposite signs."
+                        >
+                          These 1Y/3Y/5Y figures are trailing-window XIRR, not the same calculation as the dashboard's headline XIRR.
+                        </InfoHint>
+                      </span>
+                    </td>
                     <td className="px-4 py-2 font-mono">{fmtPct(portfolioWindowXIRR(new Date(), 1))}</td>
                     <td className="px-4 py-2 font-mono">{fmtPct(portfolioWindowXIRR(new Date(), 3))}</td>
                     <td className="px-4 py-2 font-mono">{fmtPct(portfolioWindowXIRR(new Date(), 5))}</td>
