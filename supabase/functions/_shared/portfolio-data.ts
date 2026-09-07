@@ -13,6 +13,26 @@ export function getSupabaseClient(): SupabaseClient {
   return createClient(url, key);
 }
 
+/**
+ * Throws when a core-data query (transactions/current_prices/symbol_metadata/cash_settings/
+ * historical_prices/net_worth_history) itself failed, instead of letting the caller's `data || []`/
+ * `data?.field || 0` fallback silently treat a real DB error the same as a genuinely empty table.
+ * Without this, a transient Postgres error on `transactions` used to make get_portfolio_summary
+ * confidently report "₹0 invested, 0 holdings" — the exact fabricated-looking result the
+ * missingPriceSymbols convention elsewhere in this file exists to avoid — instead of surfacing the
+ * failure. Thrown errors already have a real path to the caller: portfolio-mcp-server's tools/call
+ * handler catches them, logs, records an audit_logs row, and returns `isError: true` with the
+ * message — this just makes the data layer actually use that path instead of masking the failure.
+ *
+ * Deliberately NOT applied to benchmark_history reads (compareToBenchmark, getRiskMetrics) — those
+ * already have a tested, intentional "degrade gracefully with a note" contract for that specific,
+ * supplementary table (see portfolio-data.test.ts's "degrades gracefully" cases), since a missing
+ * benchmark backfill is an expected, recoverable state, not an anomaly.
+ */
+function assertNoError(error: { message: string } | null, context: string): void {
+  if (error) throw new Error(`${context}: ${error.message}`);
+}
+
 export interface Holding {
   symbol: string;
   quantity: number;
@@ -107,7 +127,8 @@ export function splitByPriceAvailability(
 }
 
 export async function fetchTxns(sb: SupabaseClient): Promise<Txn[]> {
-  const { data } = await sb.from("transactions").select("*").order("date", { ascending: true });
+  const { data, error } = await sb.from("transactions").select("*").order("date", { ascending: true });
+  assertNoError(error, "fetchTxns");
   return (data || []) as Txn[];
 }
 
@@ -175,7 +196,8 @@ export async function listTransactions(
 }
 
 export async function fetchCurrentPriceMap(sb: SupabaseClient): Promise<Record<string, number>> {
-  const { data } = await sb.from("current_prices").select("*");
+  const { data, error } = await sb.from("current_prices").select("*");
+  assertNoError(error, "fetchCurrentPriceMap");
   const map: Record<string, number> = {};
   for (const p of data || []) map[p.symbol] = Number(p.price);
   return map;
@@ -184,7 +206,8 @@ export async function fetchCurrentPriceMap(sb: SupabaseClient): Promise<Record<s
 export async function fetchMetaMap(
   sb: SupabaseClient,
 ): Promise<Record<string, { geography: string; sector: string }>> {
-  const { data } = await sb.from("symbol_metadata").select("*");
+  const { data, error } = await sb.from("symbol_metadata").select("*");
+  assertNoError(error, "fetchMetaMap");
   const map: Record<string, { geography: string; sector: string }> = {};
   for (const m of data || []) map[m.symbol] = { geography: m.geography, sector: m.sector };
   return map;
@@ -200,7 +223,11 @@ export interface CashSettings {
 }
 
 export async function fetchCash(sb: SupabaseClient): Promise<CashSettings> {
-  const { data } = await sb.from("cash_settings").select("*").limit(1).single();
+  // cash_settings is seeded with exactly one row by migration (this is a single-user app — see
+  // CLAUDE.md) — .single() erroring here (zero or more than one row, or a query failure) is a real
+  // anomaly, not an expected empty state, and used to be swallowed into a silent "₹0 cash" answer.
+  const { data, error } = await sb.from("cash_settings").select("*").limit(1).single();
+  assertNoError(error, "fetchCash");
   return {
     liquid: Number(data?.liquid_cash || 0),
     vault: Number(data?.vault_cash || 0),
@@ -273,11 +300,20 @@ async function fetchDailyReturnsBySymbol(
   days: number,
 ): Promise<Record<string, number[]>> {
   if (symbols.length === 0) return {};
-  const { data } = await sb
+  const { data, error } = await sb
     .from("historical_prices")
     .select("symbol, date, close")
     .in("symbol", symbols)
     .order("date", { ascending: false });
+  // Logged, not thrown — matches the sibling benchmark_history query's degrade-gracefully
+  // contract a few lines below in getRiskMetrics (this table is also allowed to be
+  // incompletely backfilled), rather than the throwing behavior used for the core
+  // transactions/current_prices/symbol_metadata/cash_settings reads (see assertNoError's doc
+  // comment). A query failure here still reads as "0 data points" per holding below, same as
+  // genuinely no history — but is now at least visible in the logs instead of silent.
+  if (error) {
+    logger.error("fetchDailyReturnsBySymbol: historical_prices query failed", { error });
+  }
 
   const rowsBySymbol: Record<string, { date: string; close: number }[]> = {};
   for (const r of (data || []) as { symbol: string; date: string; close: number }[]) {
@@ -504,10 +540,14 @@ export function buildBenchmarkCompareNote(
   return "Insufficient history in net_worth_history for this window.";
 }
 
-/** Compares portfolio total-return % against a benchmark's return % over the same window. */
+/**
+ * Compares portfolio total-return % against a benchmark's return % over the same window. Purely a
+ * net_worth_history-vs-benchmark_history series diff — it doesn't need (and doesn't take) the
+ * current holdings list, since the portfolio-side return already comes from net_worth_history
+ * snapshots rather than being recomputed from individual positions.
+ */
 export async function compareToBenchmark(
   sb: SupabaseClient,
-  holdings: Holding[],
   benchmarkSymbol: string,
   days: number,
 ) {
@@ -640,13 +680,23 @@ function dayBefore(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Most recent historical_prices close on/before `asOf`, per symbol. */
-async function fetchPriceMapAsOf(sb: SupabaseClient, asOf: string): Promise<Record<string, number>> {
-  const { data } = await sb
+/**
+ * Most recent historical_prices close on/before `asOf`, per symbol. Scoped to `symbols` (every
+ * symbol that ever appears in `transactions`, per the caller) rather than reading the whole table
+ * — without this filter the query pulled every symbol's entire price history up to `asOf` (a full
+ * table scan bounded only by date, not by which symbols this portfolio has ever held), growing
+ * without limit as historical_prices accumulates years of data across all tracked symbols
+ * (including benchmarks and anything else the app backfills prices for).
+ */
+async function fetchPriceMapAsOf(sb: SupabaseClient, asOf: string, symbols: string[]): Promise<Record<string, number>> {
+  if (symbols.length === 0) return {};
+  const { data, error } = await sb
     .from("historical_prices")
     .select("symbol, date, close")
+    .in("symbol", symbols)
     .lte("date", asOf)
     .order("date", { ascending: false });
+  assertNoError(error, "fetchPriceMapAsOf");
   const map: Record<string, number> = {};
   for (const row of (data || []) as { symbol: string; date: string; close: number }[]) {
     if (!(row.symbol in map)) map[row.symbol] = Number(row.close); // first hit = most recent <= asOf
@@ -662,12 +712,13 @@ async function fetchCashAsOf(
   liveCash: CashSettings,
   useLiveFallback: boolean,
 ): Promise<{ cash: CashSettings; source: "history" | "live" | "none" }> {
-  const { data } = await sb
+  const { data, error } = await sb
     .from("net_worth_history")
     .select("recorded_at, liquid_cash, vault_cash, pf_balance, credit_card_debt")
     .lte("recorded_at", asOf)
     .order("recorded_at", { ascending: false })
     .limit(1);
+  assertNoError(error, "fetchCashAsOf");
   const row = (data || [])[0] as Record<string, unknown> | undefined;
   if (row) {
     return {
@@ -724,9 +775,10 @@ export async function getPeriodPerformance(
   const endAsOf = useLiveForEnd ? todayStr : dayBefore(period.end);
 
   const [txns, meta] = await Promise.all([fetchTxns(sb), fetchMetaMap(sb)]);
+  const everTradedSymbols = [...new Set(txns.map((t) => t.symbol))];
   const [startPriceMap, endPriceMap] = await Promise.all([
-    fetchPriceMapAsOf(sb, period.start),
-    useLiveForEnd ? Promise.resolve({}) : fetchPriceMapAsOf(sb, endAsOf),
+    fetchPriceMapAsOf(sb, period.start, everTradedSymbols),
+    useLiveForEnd ? Promise.resolve({}) : fetchPriceMapAsOf(sb, endAsOf, everTradedSymbols),
   ]);
 
   const { priced: startHoldings, missingSymbols: missingStartPrice } = splitByPriceAvailability(
@@ -818,10 +870,11 @@ export async function getPeriodPerformance(
  * in <month/year>" or "compare valuation on date A vs date B".
  */
 export async function getPortfolioValueAsOf(sb: SupabaseClient, asOfDate: string) {
-  const [txns, meta, priceMap] = await Promise.all([
-    fetchTxns(sb),
+  const txns = await fetchTxns(sb);
+  const everTradedSymbols = [...new Set(txns.map((t) => t.symbol))];
+  const [meta, priceMap] = await Promise.all([
     fetchMetaMap(sb),
-    fetchPriceMapAsOf(sb, asOfDate),
+    fetchPriceMapAsOf(sb, asOfDate, everTradedSymbols),
   ]);
   const { priced: holdings, missingSymbols: missingPriceSymbols } = splitByPriceAvailability(
     computeHoldingsFromTxns(txns, priceMap, meta, asOfDate),
@@ -869,15 +922,26 @@ export async function getPortfolioValueAsOf(sb: SupabaseClient, asOfDate: string
 /** Compares current geography/category exposure % vs. exposure % as of `asOfDate`. */
 export async function getExposureDrift(sb: SupabaseClient, asOfDate: string) {
   const [txns, prices, meta] = await Promise.all([fetchTxns(sb), fetchCurrentPriceMap(sb), fetchMetaMap(sb)]);
+  const everTradedSymbols = [...new Set(txns.map((t) => t.symbol))];
 
   // Price holdings as of asOfDate using the closest historical_prices row on/before that date.
-  const { data: histRows } = await sb
-    .from("historical_prices")
-    .select("symbol, date, close")
-    .lte("date", asOfDate)
-    .order("date", { ascending: false });
+  // Scoped to everTradedSymbols for the same reason as fetchPriceMapAsOf (see its doc comment) —
+  // this was a separate, un-scoped duplicate of that query rather than a call to it. Skipped
+  // entirely (rather than sending `.in("symbol", [])`, which not every Postgres client handles the
+  // same way) when there's no transaction history at all yet.
+  let histRows: { symbol: string; date: string; close: number }[] = [];
+  if (everTradedSymbols.length > 0) {
+    const { data, error: histError } = await sb
+      .from("historical_prices")
+      .select("symbol, date, close")
+      .in("symbol", everTradedSymbols)
+      .lte("date", asOfDate)
+      .order("date", { ascending: false });
+    assertNoError(histError, "getExposureDrift");
+    histRows = data || [];
+  }
   const pastPriceMap: Record<string, number> = {};
-  for (const row of histRows || []) {
+  for (const row of histRows) {
     if (!(row.symbol in pastPriceMap)) pastPriceMap[row.symbol] = Number(row.close); // first hit = most recent <= asOfDate
   }
 

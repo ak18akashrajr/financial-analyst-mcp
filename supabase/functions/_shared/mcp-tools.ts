@@ -160,29 +160,46 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
   },
   {
     name: "get_exposure_by_geography",
-    description: "Portfolio exposure breakdown by geography (e.g. India vs. US), value and percent.",
+    description:
+      "Portfolio exposure breakdown by geography (e.g. India vs. US), value and percent. A holding " +
+      "with no current price is left out of both the values and the percentages (see " +
+      "missingPriceSymbols), the same convention get_portfolio_summary/list_holdings use, rather " +
+      "than being counted at a fabricated ₹0.",
     complexity: "simple",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: READ_ONLY_ANNOTATIONS,
     handler: async (_args, sb) => {
       const p = await getCurrentPortfolio(sb);
-      return { exposure: exposureBy(p.holdings, "geography") };
+      return {
+        exposure: exposureBy(p.holdings, "geography"),
+        ...missingPriceFields(p.missingPriceSymbols, "excluded from this exposure breakdown"),
+      };
     },
   },
   {
     name: "get_exposure_by_category",
-    description: "Portfolio exposure breakdown by sector/category, value and percent.",
+    description:
+      "Portfolio exposure breakdown by sector/category, value and percent. A holding with no " +
+      "current price is left out of both the values and the percentages (see missingPriceSymbols), " +
+      "the same convention get_portfolio_summary/list_holdings use, rather than being counted at a " +
+      "fabricated ₹0.",
     complexity: "simple",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: READ_ONLY_ANNOTATIONS,
     handler: async (_args, sb) => {
       const p = await getCurrentPortfolio(sb);
-      return { exposure: exposureBy(p.holdings, "category") };
+      return {
+        exposure: exposureBy(p.holdings, "category"),
+        ...missingPriceFields(p.missingPriceSymbols, "excluded from this exposure breakdown"),
+      };
     },
   },
   {
     name: "get_concentration_risk",
-    description: "Top-N holdings by weight and their combined concentration percentage.",
+    description:
+      "Top-N holdings by weight and their combined concentration percentage. A holding with no " +
+      "current price is left out of the ranking and the weight denominator entirely (see " +
+      "missingPriceSymbols) — it cannot be flagged as a top holding even if it would otherwise be one.",
     complexity: "simple",
     inputSchema: {
       type: "object",
@@ -198,13 +215,18 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       // it reaches here — see validateArgs in mcp-schema-validate.ts, invoked
       // by portfolio-mcp-server before any handler runs.
       const topN = typeof args.topN === "number" ? args.topN : 5;
-      return concentrationRisk(p.holdings, topN);
+      return {
+        ...concentrationRisk(p.holdings, topN),
+        ...missingPriceFields(p.missingPriceSymbols, "excluded from this concentration ranking"),
+      };
     },
   },
   {
     name: "get_risk_metrics",
     description:
-      "Per-holding and portfolio-level annualized volatility and beta vs. NIFTY 50, estimated from historical prices.",
+      "Per-holding and portfolio-level annualized volatility and beta vs. NIFTY 50, estimated from " +
+      "historical prices. A holding with no current price is left out of the portfolio-level " +
+      "weighted figures entirely (see missingPriceSymbols) rather than weighted at a fabricated ₹0.",
     complexity: "complex",
     inputSchema: {
       type: "object",
@@ -217,7 +239,15 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     handler: async (args, sb) => {
       const p = await getCurrentPortfolio(sb);
       const lookbackDays = typeof args.lookbackDays === "number" ? args.lookbackDays : 90;
-      return getRiskMetrics(sb, p.holdings, lookbackDays);
+      const metrics = await getRiskMetrics(sb, p.holdings, lookbackDays);
+      // getRiskMetrics already returns its own `note` (about volatility/beta data
+      // availability) — append to it rather than spreading missingPriceFields' `note`
+      // on top and silently discarding that one.
+      if (p.missingPriceSymbols.length === 0) return metrics;
+      const { note: missingNote } = missingPriceFields(p.missingPriceSymbols, "excluded from these risk metrics") as {
+        note: string;
+      };
+      return { ...metrics, missingPriceSymbols: p.missingPriceSymbols, note: `${metrics.note} ${missingNote}` };
     },
   },
   {
@@ -230,7 +260,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       "this with no `symbols` and then subtract a partial shock yourself; the returned " +
       "totalPortfolioAfter/totalLoss/totalLossPercent are already computed correctly against the " +
       "whole portfolio (including cash, PF balance, and credit card debt, all carried through " +
-      "unchanged) and must be copied as-is, per the numeric-fidelity rule.",
+      "unchanged) and must be copied as-is, per the numeric-fidelity rule. A holding with no current " +
+      "price is left out of the portfolio entirely for this simulation (see missingPriceSymbols) — " +
+      "its own shock impact is not reflected in totalPortfolioBefore/After, even if it was named in " +
+      "`symbols`.",
     complexity: "complex",
     inputSchema: {
       type: "object",
@@ -256,19 +289,27 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       const p = await getCurrentPortfolio(sb);
       const shockPercent = args.shockPercent as number;
       const symbols = Array.isArray(args.symbols) ? (args.symbols as string[]) : undefined;
-      return runStressTest(p.holdings, p.cash, shockPercent, symbols);
+      return {
+        ...runStressTest(p.holdings, p.cash, shockPercent, symbols),
+        ...missingPriceFields(p.missingPriceSymbols, "excluded from this stress test's totals"),
+      };
     },
   },
   {
     name: "check_limit_breaches",
     description:
-      "Flags any single holding over 15%, top-5 combined over 50%, or any sector/geography over 40% of the portfolio.",
+      "Flags any single holding over 15%, top-5 combined over 50%, or any sector/geography over 40% " +
+      "of the portfolio. A holding with no current price is left out of every check entirely (see " +
+      "missingPriceSymbols) — a breach caused solely by that holding cannot be detected.",
     complexity: "complex",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: READ_ONLY_ANNOTATIONS,
     handler: async (_args, sb) => {
       const p = await getCurrentPortfolio(sb);
-      return { breaches: checkLimitBreaches(p.holdings) };
+      return {
+        breaches: checkLimitBreaches(p.holdings),
+        ...missingPriceFields(p.missingPriceSymbols, "excluded from these limit-breach checks"),
+      };
     },
   },
   {
@@ -288,11 +329,13 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       additionalProperties: false,
     },
     annotations: READ_ONLY_ANNOTATIONS,
+    // No getCurrentPortfolio() call here — compareToBenchmark only reads net_worth_history/
+    // benchmark_history (see its doc comment), so fetching the current holdings/txns/cash first
+    // would just be four unused DB queries on every call.
     handler: async (args, sb) => {
-      const p = await getCurrentPortfolio(sb);
       const benchmarkSymbol = typeof args.benchmarkSymbol === "string" ? args.benchmarkSymbol : "NIFTY50";
       const days = typeof args.days === "number" ? args.days : 90;
-      return compareToBenchmark(sb, p.holdings, benchmarkSymbol, days);
+      return compareToBenchmark(sb, benchmarkSymbol, days);
     },
   },
   {

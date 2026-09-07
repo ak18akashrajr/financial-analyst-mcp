@@ -71,12 +71,21 @@ The real risks are specific and checkable:
    transaction table ever grows an order of magnitude larger than expected — the fix there is
    date-bounding the query or pushing the computation server-side, not touching the DB schema.
 
-4. **The MCP tool layer is already bounded correctly** — worth noting as a contrast, not a
-   problem. Every time-series read in [`_shared/portfolio-data.ts`](../supabase/functions/_shared/portfolio-data.ts)
-   (`fetchDailyReturns`, `getRiskMetrics`, `compareToBenchmark`) already does
-   `.order(...).limit(lookbackDays + 1)` — bounded lookback windows, not full-table scans. This
-   pattern is the one to replicate wherever new time-series reads get added later, including any
-   archive-query path this plan eventually produces.
+4. **Most of the MCP tool layer is bounded correctly, with one exception now fixed.** `getRiskMetrics`'s
+   own `benchmark_history` read and `compareToBenchmark` both do `.order(...).limit(lookbackDays + 1)`
+   — a real bounded lookback window, not a full-table scan. `getRiskMetrics`'s per-holding read
+   (`fetchDailyReturnsBySymbol` in [`_shared/portfolio-data.ts`](../supabase/functions/_shared/portfolio-data.ts),
+   not `fetchDailyReturns` — renamed when it was batched, see `docs/perf-findings.md#4`) is *not*
+   `.limit()`-bounded — a single query can't express "most recent N rows per symbol", so it reads
+   every row for the portfolio's own symbols and slices to `lookbackDays + 1` per symbol in memory
+   instead; this doc previously described it as already having the same bound as its sibling
+   queries, which wasn't accurate. `getPeriodPerformance`/`getPortfolioValueAsOf`/`getExposureDrift`
+   (point-in-time valuation) had a worse version of the same gap — their `historical_prices` reads
+   used to have no symbol filter at all, scanning every symbol the app has ever priced rather than
+   just the ones this portfolio has traded — that part is now fixed (scoped to the portfolio's own
+   symbols via `.in("symbol", ...)`). The remaining unbounded-by-date read in
+   `fetchDailyReturnsBySymbol` is still worth bounding by a calendar-date cutoff the same way
+   `lookbackDays + 1` bounds its sibling queries, the next time this file is touched.
 
 ## Not everything needs an archive
 

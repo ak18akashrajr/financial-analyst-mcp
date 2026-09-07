@@ -216,6 +216,9 @@ function makeQueryBuilder(table: FakeTable) {
     const builder: any = {
       select: () => builder,
       eq: () => builder,
+      in: () => builder,
+      lte: () => builder,
+      gte: () => builder,
       order: () => builder,
       limit: () => builder,
       single: () => Promise.resolve(err),
@@ -287,8 +290,6 @@ describe("buildBenchmarkCompareNote", () => {
 });
 
 describe("compareToBenchmark", () => {
-  const holdings: Holding[] = [];
-
   it("computes portfolio vs. benchmark return when both series have data", async () => {
     const sb = makeFakeSb({
       net_worth_history: {
@@ -304,7 +305,7 @@ describe("compareToBenchmark", () => {
         ],
       },
     });
-    const result = await compareToBenchmark(sb, holdings, "NIFTY50", 90);
+    const result = await compareToBenchmark(sb, "NIFTY50", 90);
     expect(result.portfolioReturnPercent).toBeCloseTo(10);
     expect(result.benchmarkReturnPercent).toBeCloseTo(5);
     expect(result.outperformancePercent).toBeCloseTo(5);
@@ -321,7 +322,7 @@ describe("compareToBenchmark", () => {
       },
       benchmark_history: { rows: [] },
     });
-    const result = await compareToBenchmark(sb, holdings, "NIFTY50", 90);
+    const result = await compareToBenchmark(sb, "NIFTY50", 90);
     expect(result.benchmarkReturnPercent).toBeNull();
     expect(result.outperformancePercent).toBeNull();
     expect(result.note).toContain("fetch-benchmark-prices");
@@ -338,7 +339,7 @@ describe("compareToBenchmark", () => {
       },
       benchmark_history: { error: 'relation "public.benchmark_history" does not exist' },
     });
-    const result = await compareToBenchmark(sb, holdings, "NIFTY50", 90);
+    const result = await compareToBenchmark(sb, "NIFTY50", 90);
     expect(result.benchmarkReturnPercent).toBeNull();
     expect(result.note).toContain("fetch-benchmark-prices");
     expect(consoleSpy).toHaveBeenCalled();
@@ -390,6 +391,29 @@ describe("getCurrentPortfolio", () => {
     // 1500 (TCS) + 1000 liquid + 0 vault + 5000 PF - 2000 debt = 5500
     expect(p.totalPortfolioValue).toBe(5500);
   });
+
+  it("throws (rather than reporting a fabricated empty portfolio) when the transactions query itself fails", async () => {
+    const sb = makeFakeSb({
+      transactions: { error: 'relation "public.transactions" does not exist' },
+      current_prices: { rows: [] },
+      symbol_metadata: { rows: [] },
+      cash_settings: { rows: [{ liquid_cash: 0, vault_cash: 0 }] },
+    });
+    // Before assertNoError, a failed transactions query silently produced "0 holdings, ₹0
+    // invested" — indistinguishable from a genuinely empty portfolio. This propagates the failure
+    // instead, so it reaches portfolio-mcp-server's tools/call catch block as a real error.
+    await expect(getCurrentPortfolio(sb)).rejects.toThrow(/fetchTxns/);
+  });
+
+  it("throws when cash_settings has no row (a single-user app invariant violation), instead of reporting ₹0 cash", async () => {
+    const sb = makeFakeSb({
+      transactions: { rows: [] },
+      current_prices: { rows: [] },
+      symbol_metadata: { rows: [] },
+      cash_settings: { rows: [] }, // cash_settings is seeded with exactly one row by migration
+    });
+    await expect(getCurrentPortfolio(sb)).rejects.toThrow(/fetchCash/);
+  });
 });
 
 describe("getExposureDrift", () => {
@@ -424,6 +448,41 @@ describe("getExposureDrift", () => {
     expect(techDrift.pastPercent).toBe(100);
     expect(result.note).toContain("HDFC");
     expect(result.note).toContain("excluded from past-side exposure");
+  });
+
+  it("only queries historical_prices for symbols the portfolio has actually traded, not the whole table", async () => {
+    const inSpy = vi.fn((col: string, vals: unknown[]) => vals);
+    const sb = makeFakeSb({
+      transactions: txns,
+      current_prices: { rows: [{ symbol: "TCS", price: 150 }, { symbol: "HDFC", price: 120 }] },
+      symbol_metadata: meta,
+      historical_prices: { rows: [{ symbol: "TCS", date: "2026-01-01", close: 100 }] },
+    });
+    const originalFrom = sb.from.bind(sb);
+    (sb as any).from = (table: string) => {
+      const builder = originalFrom(table);
+      if (table === "historical_prices") {
+        const originalIn = builder.in.bind(builder);
+        builder.in = (col: string, vals: unknown[]) => {
+          inSpy(col, vals);
+          return originalIn(col, vals);
+        };
+      }
+      return builder;
+    };
+    await getExposureDrift(sb, "2026-01-15");
+    expect(inSpy).toHaveBeenCalledWith("symbol", expect.arrayContaining(["TCS", "HDFC"]));
+    expect(inSpy.mock.calls[0][1]).toHaveLength(2); // exactly the two traded symbols, not the whole table
+  });
+
+  it("throws (rather than a silent 0% drift) when the historical_prices query itself fails", async () => {
+    const sb = makeFakeSb({
+      transactions: txns,
+      current_prices: { rows: [{ symbol: "TCS", price: 150 }, { symbol: "HDFC", price: 120 }] },
+      symbol_metadata: meta,
+      historical_prices: { error: "connection reset" },
+    });
+    await expect(getExposureDrift(sb, "2026-01-15")).rejects.toThrow(/getExposureDrift/);
   });
 });
 
@@ -474,6 +533,18 @@ describe("getPortfolioValueAsOf", () => {
     expect(result.portfolioValue).toBe(0);
     expect(result.note).toContain("TCS");
     expect(result.note).toContain("No net_worth_history snapshot");
+  });
+
+  it("throws (rather than reporting a fabricated ₹0 valuation) when the historical_prices query itself fails", async () => {
+    const sb = makeFakeSb({
+      transactions: {
+        rows: [{ symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2025-06-01" }],
+      },
+      symbol_metadata: meta,
+      historical_prices: { error: "connection reset" },
+      net_worth_history: { rows: [] },
+    });
+    await expect(getPortfolioValueAsOf(sb, "2025-07-31")).rejects.toThrow(/fetchPriceMapAsOf/);
   });
 });
 
