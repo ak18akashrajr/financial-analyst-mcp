@@ -12,6 +12,9 @@ npm run lint                     # eslint . (NOT run in CI — has pre-existing 
 npm test                         # vitest run — full suite (frontend + edge functions)
 npm run test:watch               # vitest watch mode
 npx tsc --noEmit -p tsconfig.app.json   # typecheck — required CI gate, run before every PR
+ANTHROPIC_API_KEY=... npm run eval:prompt-injection   # manual only, NOT in npm test/CI — real, billed
+                                                       # LLM calls against adversarial prompts; see
+                                                       # docs/prompt-injection-hardening.md
 ```
 
 Single test file: `npx vitest run src/test/exposure-section.test.tsx`

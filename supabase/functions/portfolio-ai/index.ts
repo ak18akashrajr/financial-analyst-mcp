@@ -32,6 +32,7 @@ import { chunkText, createSseStream } from "../_shared/sse.ts";
 import { classifyChatError, ToolLoopExceededError } from "../_shared/chat-error-classifier.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { createDbLogSink } from "../_shared/db-log-sink.ts";
+import { detectSuspiciousInput, scanOutputForLeakage, SAFE_FALLBACK_MESSAGE } from "../_shared/injection-guard.ts";
 
 const logger = createLogger("portfolio-ai");
 
@@ -39,7 +40,10 @@ const corsHeaders = buildCorsHeaders(
   "x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 );
 
-const CLAUDE_MODEL = "claude-sonnet-5";
+// Exported alongside SYSTEM_PROMPT purely for test/eval consumption (see
+// system-prompt.test.ts and eval/prompt-injection.eval.ts) — not used as an
+// import anywhere else in the runtime path itself.
+export const CLAUDE_MODEL = "claude-sonnet-5";
 const MAX_TOOL_TURNS = 5;
 // A single turn can request several independent tool calls at once (e.g. a
 // "what's my exposure and my risk metrics" question). They're independent
@@ -208,6 +212,20 @@ Deno.serve(async (req: Request) => {
     const history = messages.slice(0, -1);
     const latest = messages[messages.length - 1];
 
+    // Heuristic, best-effort check — never blocks the request (see
+    // _shared/injection-guard.ts's doc comment for why). A match only (a)
+    // gets logged for visibility and (b) escalates Groq routing below to the
+    // harder-to-steer tier, same mechanism as the existing complexity-based
+    // escalation.
+    const inputCheck = detectSuspiciousInput(latest.content);
+    if (inputCheck.suspicious) {
+      logger.warn("Suspicious input detected (possible prompt-injection attempt)", {
+        userId: user.id,
+        matchedPatterns: inputCheck.matched,
+        messagePreview: latest.content.slice(0, 200),
+      });
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const mcpClient = new McpClient(`${supabaseUrl}/functions/v1/portfolio-mcp-server`, `Bearer ${serviceRoleKey}`);
@@ -223,8 +241,15 @@ Deno.serve(async (req: Request) => {
     let attribution = fixedAttribution;
     let escalated = false;
     if (!usingAnthropic) {
-      model = isComplexQuery(latest.content) ? GROQ_COMPLEX_MODEL : GROQ_SIMPLE_MODEL;
-      attribution = model === GROQ_COMPLEX_MODEL ? "GPT-OSS 120B via Groq" : "GPT-OSS 20B via Groq";
+      // Suspicious-input escalation: the smallest/cheapest model is also the
+      // easiest to steer off its instructions, and it's the default entry
+      // point for "simple"-looking queries — so a message that *looks*
+      // simple by isComplexQuery's keyword heuristic but also matched an
+      // injection-style pattern above still gets routed to the bigger tier.
+      model = (isComplexQuery(latest.content) || inputCheck.suspicious) ? GROQ_COMPLEX_MODEL : GROQ_SIMPLE_MODEL;
+      attribution = model === GROQ_COMPLEX_MODEL
+        ? (inputCheck.suspicious ? "GPT-OSS 120B via Groq (escalated — suspicious input)" : "GPT-OSS 120B via Groq")
+        : "GPT-OSS 20B via Groq";
 
       // Opt-in OpenRouter path (Anthropic still wins outright above, unconditionally
       // — this never overrides that, matching docs/openrouter-nemotron-plan.md's
@@ -363,6 +388,24 @@ Deno.serve(async (req: Request) => {
           }
         }
 
+        // Output-side guardrail: SYSTEM_PROMPT instructs the model never to
+        // leak itself or recommend a trade, but a prompt is not a guarantee
+        // (see system-prompt.test.ts's own doc comment) — this is the
+        // code-level backstop, run on every path (any provider, any turn)
+        // since finalText always funnels through here before streaming.
+        const outputCheck = scanOutputForLeakage(finalText, SYSTEM_PROMPT);
+        if (outputCheck.flagged) {
+          logger.error("Output guardrail triggered — response withheld before streaming", {
+            category: outputCheck.category,
+            detail: outputCheck.detail,
+            model,
+            attribution,
+            userId: user.id,
+            withheldTextPreview: finalText.slice(0, 500),
+          });
+          finalText = SAFE_FALLBACK_MESSAGE;
+        }
+
         for (const chunk of chunkText(finalText)) {
           send("delta", { text: chunk });
         }
@@ -374,6 +417,8 @@ Deno.serve(async (req: Request) => {
           escalated,
           openRouterFallback,
           toolCallCount,
+          suspiciousInput: inputCheck.suspicious,
+          outputGuardrailTriggered: outputCheck.flagged,
           duration_ms: Date.now() - requestStartedAt,
         });
       } catch (err) {
