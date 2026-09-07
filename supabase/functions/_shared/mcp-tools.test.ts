@@ -175,10 +175,75 @@ describe("get_period_performance", () => {
   });
 
   it("rejects a periodIndex out of range for the requested periodType", async () => {
-    const sb = makeFakeSb({});
+    // cash_settings needs a real row here (unlike an all-empty fake DB) since fetchCash now throws
+    // on a missing row instead of silently defaulting to ₹0 — this test wants to reach the
+    // periodIndex check inside getPeriodPerformance, not fail earlier on cash.
+    const sb = makeFakeSb({ cash_settings: { rows: [{ liquid_cash: 0, vault_cash: 0 }] } });
     await expect(
       findTool("get_period_performance")!.handler({ periodType: "half", periodIndex: 3 }, sb),
     ).rejects.toThrow(/periodIndex must be between 1 and 2/);
+  });
+});
+
+describe("missingPriceSymbols propagation", () => {
+  // get_portfolio_summary/list_holdings already surfaced missingPriceSymbols; these tools compute
+  // from the same already-filtered p.holdings but used to drop the flag silently, so a symbol
+  // excluded from a percentage/ranking/weighting calculation gave no indication anything was left
+  // out — exactly the "fabricated ₹0" failure mode missingPriceSymbols exists to prevent elsewhere.
+  const sbWithMissingPrice = () =>
+    makeFakeSb({
+      ...BASE_TABLES,
+      current_prices: { rows: [{ symbol: "TCS", price: 150 }] }, // HDFC missing
+    });
+
+  it("get_exposure_by_geography flags the excluded symbol", async () => {
+    const result = (await findTool("get_exposure_by_geography")!.handler({}, sbWithMissingPrice())) as Record<
+      string,
+      unknown
+    >;
+    expect(result.missingPriceSymbols).toEqual(["HDFC"]);
+    expect(String(result.note)).toContain("HDFC");
+  });
+
+  it("get_exposure_by_category flags the excluded symbol", async () => {
+    const result = (await findTool("get_exposure_by_category")!.handler({}, sbWithMissingPrice())) as Record<
+      string,
+      unknown
+    >;
+    expect(result.missingPriceSymbols).toEqual(["HDFC"]);
+  });
+
+  it("get_concentration_risk flags the excluded symbol", async () => {
+    const result = (await findTool("get_concentration_risk")!.handler({}, sbWithMissingPrice())) as Record<
+      string,
+      unknown
+    >;
+    expect(result.missingPriceSymbols).toEqual(["HDFC"]);
+  });
+
+  it("check_limit_breaches flags the excluded symbol", async () => {
+    const result = (await findTool("check_limit_breaches")!.handler({}, sbWithMissingPrice())) as Record<
+      string,
+      unknown
+    >;
+    expect(result.missingPriceSymbols).toEqual(["HDFC"]);
+  });
+
+  it("run_stress_test flags the excluded symbol", async () => {
+    const result = (await findTool("run_stress_test")!.handler({ shockPercent: -10 }, sbWithMissingPrice())) as Record<
+      string,
+      unknown
+    >;
+    expect(result.missingPriceSymbols).toEqual(["HDFC"]);
+  });
+
+  it("get_risk_metrics flags the excluded symbol without discarding its own volatility/beta note", async () => {
+    const result = (await findTool("get_risk_metrics")!.handler({}, sbWithMissingPrice())) as Record<string, unknown>;
+    expect(result.missingPriceSymbols).toEqual(["HDFC"]);
+    expect(String(result.note)).toContain("HDFC");
+    // getRiskMetrics' own note (beta unavailable — no benchmark_history seeded in this fixture)
+    // must still be present, not clobbered by the missingPriceSymbols note.
+    expect(String(result.note)).toContain("beta");
   });
 });
 
