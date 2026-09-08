@@ -31,30 +31,8 @@ too — for a separate, more careful review pass.
 
 - [ ] Fix the `taxCalculator.ts` LTCG/STCG threshold day-count bug (see table above)
 - [ ] Fix the `GoalTrack.tsx` `getHoldingLotSplit` LT/ST threshold day-count bug (see table above)
-- [x] Fix the `RollingReturns.tsx` window-boundary bug — `fix/date-boundary-rolling-returns`, commit
-      `8505752`. Fixed in both `computeWindowXIRR` *and* the previously-inline `portfolioWindowXIRR`
-      (the TODO only named the former; both had the identical pattern, in three places total).
-      `portfolioWindowXIRR` is now a standalone exported function so it's directly unit-tested.
-      Tests: [rolling-returns.test.ts](src/test/rolling-returns.test.ts).
-- [x] ~~Fix the `benchmarkXirr.ts` price-lookup bug~~ — **traced 2026-09-04, cleared, not a bug.**
-      `priceOnOrBefore` compares `new Date(p.date)` against a `date` argument that, at every call
-      site, is itself always `new Date(t.date)` — another bare DATE-only string, never a real
-      `Date.now()`/`new Date()` instant. The UTC-midnight misparse is a constant +5:30 offset
-      applied identically to both sides of the comparison, so it cancels out and never changes
-      ordering — the same false-positive pattern already found for `chartRange.ts` below. No code
-      change made.
-- [x] Fix the `GoalTrack.tsx` days-remaining bug — `fix/date-boundary-goaltrack-daysleft`. Both the
-      goal-card badge and the detail dialog's "Days Left" stat now parse `target_date` with
-      `parseLocalDate`. `goal.created_at` (a real `timestamptz`, not a DATE-only column) is
-      untouched. Tests: [goal-track-date-boundary.test.tsx](src/test/goal-track-date-boundary.test.tsx).
 
 ## Backlog
-
-- [ ] **Wire Claude Agent SDK into the codebase.** So that users with Claude Agent SDK support can
-      get the most out of the application. Needs scoping before implementation — how this relates
-      to the existing `portfolio-ai` agent loop / MCP-tools setup
-      ([supabase/functions/portfolio-ai/](supabase/functions/portfolio-ai/index.ts),
-      [_shared/mcp-client.ts](supabase/functions/_shared/mcp-client.ts)) is still an open question.
 
 - [ ] **Scaling & archival plan.** Implement the plan in
       [docs/scaling-and-archival-plan.md](docs/scaling-and-archival-plan.md) — currently
@@ -67,10 +45,6 @@ too — for a separate, more careful review pass.
 
 - [ ] All risk ratios to be added(Alpha, Beta, Volatility, Sharpe Ratio)
 - [ ] Time series forecasting
-- [x] Evaluate OpenRouter + Nemotron plan — see
-      [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md). Opt-in Nemotron/MiniMax
-      path shipped and live (PRs #105-108); auto-escalation default still pending the bench-off
-      documented in that doc's task 9.
 - [ ] **Set up OpenRouter Guardrails** for the opt-in Nemotron/MiniMax path —
       [openrouter.ai/activity/guardrails](https://openrouter.ai/activity/guardrails) offers content
       filters, spending limits, and usage policies on top of an OpenRouter account/API key.
@@ -83,6 +57,30 @@ too — for a separate, more careful review pass.
 
 <details>
 <summary>Archive (completed)</summary>
+
+- [x] Fix the `RollingReturns.tsx` window-boundary bug — `fix/date-boundary-rolling-returns`, commit
+      `8505752`. Fixed in both `computeWindowXIRR` *and* the previously-inline `portfolioWindowXIRR`
+      (the TODO only named the former; both had the identical pattern, in three places total).
+      `portfolioWindowXIRR` is now a standalone exported function so it's directly unit-tested.
+      Tests: [rolling-returns.test.ts](src/test/rolling-returns.test.ts).
+
+- [x] ~~Fix the `benchmarkXirr.ts` price-lookup bug~~ — **traced 2026-09-04, cleared, not a bug.**
+      `priceOnOrBefore` compares `new Date(p.date)` against a `date` argument that, at every call
+      site, is itself always `new Date(t.date)` — another bare DATE-only string, never a real
+      `Date.now()`/`new Date()` instant. The UTC-midnight misparse is a constant +5:30 offset
+      applied identically to both sides of the comparison, so it cancels out and never changes
+      ordering — the same false-positive pattern already found for `chartRange.ts` below. No code
+      change made.
+
+- [x] Fix the `GoalTrack.tsx` days-remaining bug — `fix/date-boundary-goaltrack-daysleft`. Both the
+      goal-card badge and the detail dialog's "Days Left" stat now parse `target_date` with
+      `parseLocalDate`. `goal.created_at` (a real `timestamptz`, not a DATE-only column) is
+      untouched. Tests: [goal-track-date-boundary.test.tsx](src/test/goal-track-date-boundary.test.tsx).
+
+- [x] Evaluate OpenRouter + Nemotron plan — see
+      [docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md). Opt-in Nemotron/MiniMax
+      path shipped and live (PRs #105-108); auto-escalation default still pending the bench-off
+      documented in that doc's task 9.
 
 - [x] **Groq 429 error-surfacing — already done, pre-dates this TODO item.** Checked
       2026-09-01: [`chat-error-classifier.ts`](supabase/functions/_shared/chat-error-classifier.ts)
