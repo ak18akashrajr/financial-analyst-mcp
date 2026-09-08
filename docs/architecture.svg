@@ -227,14 +227,14 @@
     <line x1="683" y1="978" x2="655" y2="1006" />
     <line x1="655" y1="1006" x2="655" y2="920" marker-end="url(#arrow)"/>
   </g>
-  <text class="edge" x="700" y="1000">upsert: current_prices / historical_prices / benchmark_history / fx_rates</text>
+  <text class="edge" x="55" y="967">upsert: current_prices / historical_prices / benchmark_history / fx_rates</text>
 
   <!-- live-proxy fetchers: no DB write, response goes straight back to the caller -->
   <g stroke="#c9c8c0" stroke-width="1.1" fill="none" opacity="0.6" stroke-dasharray="2 3">
     <path d="M 869 978 C 869 1000, 940 1006, 940 978" marker-end="url(#arrow)"/>
     <path d="M 1055 978 C 1055 1000, 1010 1006, 1010 978" marker-end="url(#arrow)"/>
   </g>
-  <text class="edge" x="820" y="1000">returned straight to the caller, not persisted</text>
+  <text class="edge" x="800" y="967">returned straight to the caller, not persisted</text>
 
   <g>
     <rect class="box" x="50" y="978" width="150" height="70" rx="6" fill="#182c42" stroke="#5c96d6"/>
