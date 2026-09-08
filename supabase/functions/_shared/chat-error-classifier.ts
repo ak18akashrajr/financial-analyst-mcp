@@ -70,7 +70,8 @@ const MESSAGES: Record<ChatErrorCategory, string> = {
  *   502 Bad Gateway               — the provider's own upstream is unreachable
  *   503 Service Unavailable      — the provider is down/overloaded/in maintenance
  *   504 Gateway Timeout           — the provider's upstream timed out
- *   529 (Anthropic-specific) "overloaded_error" — Anthropic's capacity-exceeded status
+ *   529 "overloaded_error" — a capacity-exceeded status some providers use (not in the standard
+ *       IANA registry, but harmless to bucket the same as the other 5xx statuses above)
  *
  * 401/403/404 are genuinely OUR fault (bad key, wrong model name) but are
  * bucketed with the other "unavailable" statuses rather than a distinct

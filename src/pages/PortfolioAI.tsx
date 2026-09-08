@@ -11,8 +11,8 @@ import { supabase } from '@/integrations/supabase/client';
 type Msg = { role: 'user' | 'assistant'; content: string; toolTrace?: string[] };
 
 // Opt-in escalation models via OpenRouter (docs/openrouter-nemotron-plan.md)
-// — 'auto' is today's existing behavior (Anthropic-if-set, else Groq's
-// two-tier router) and is the default. Both opt-in models are free-tier
+// — 'auto' is today's existing behavior (Groq's two-tier router) and is the
+// default. Both opt-in models are free-tier
 // rate-limited on OpenRouter; the backend falls back to Groq transparently
 // (with an honest attribution note) if the daily quota's used up or the
 // call itself fails, so there's no error state to handle here beyond that.

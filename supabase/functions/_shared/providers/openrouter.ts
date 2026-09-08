@@ -1,7 +1,7 @@
 // OpenRouter provider — OpenAI-compatible chat-completions API, backing the
 // opt-in Nemotron 3 Ultra / MiniMax M2.7 escalation path (see
 // docs/openrouter-nemotron-plan.md). Same message/tool-call shape as
-// groq.ts; unlike groq.ts/anthropic.ts this one serves more than one model
+// groq.ts; unlike groq.ts this one serves more than one model
 // id through the same endpoint — the model id is chosen per-request by the
 // caller (portfolio-ai/index.ts) and passed into runTurn, same as it already
 // does for Groq's two-tier gpt-oss-20b/120b models.
@@ -34,7 +34,7 @@ const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 // receives warn/error entries, and nothing warns/errors on a request that
 // never resolves) — the SSE stream just sits open and the client is stuck on
 // "Understanding your question..." forever, since neither a `done` nor an
-// `error` event ever gets sent. Groq/Anthropic haven't shown this failure
+// `error` event ever gets sent. Groq hasn't shown this failure
 // mode in practice, but nothing stopped it: no provider call anywhere in this
 // codebase previously had a request timeout. Bounding it here converts a
 // silent, permanent hang into a classified, retryable timeout that the

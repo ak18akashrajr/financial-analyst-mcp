@@ -1,7 +1,7 @@
 // Covers createSseStream's event framing and — the security-relevant part —
 // that a thrown error's real message is never sent to the client (see
 // docs/security-review.md finding #5: raw provider error text was being
-// relayed verbatim, e.g. "Anthropic request failed: 401 ..."). The real
+// relayed verbatim, e.g. "Groq request failed: 401 ..."). The real
 // error must still reach the caller's logger via the onError callback.
 // Classification of *which* safe message a given error maps to (429 vs.
 // 503 vs. network, etc.) is unit-tested in chat-error-classifier.test.ts;
@@ -36,17 +36,17 @@ describe("createSseStream", () => {
 
   it("never leaks the real error message to the client on failure", async () => {
     const stream = createSseStream(async () => {
-      throw new Error("Anthropic request failed: 401 {\"error\":\"invalid api key: sk-ant-abc123\"}");
+      throw new Error("Groq request failed: 401 {\"error\":\"invalid api key: gsk_abc123\"}");
     });
     const text = await readAllEvents(stream);
-    expect(text).not.toContain("sk-ant-abc123");
+    expect(text).not.toContain("gsk_abc123");
     expect(text).not.toContain("401");
     expect(text).toContain("event: error");
   });
 
   it("still reports the real error to the caller's onError callback", async () => {
     const onError = vi.fn();
-    const boom = new Error("Anthropic request failed: 401 secret-detail");
+    const boom = new Error("Groq request failed: 401 secret-detail");
     const stream = createSseStream(async () => {
       throw boom;
     }, onError);
@@ -66,7 +66,7 @@ describe("createSseStream", () => {
 
   it("sends a specific unavailable message for a 503 HttpCallError, distinct from the rate-limited message", async () => {
     const stream = createSseStream(async () => {
-      throw new HttpCallError("Anthropic", 503, "overloaded");
+      throw new HttpCallError("Groq", 503, "overloaded");
     });
     const text = await readAllEvents(stream);
     expect(text).toMatch(/temporarily unavailable/i);

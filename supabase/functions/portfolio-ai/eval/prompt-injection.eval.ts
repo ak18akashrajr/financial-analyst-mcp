@@ -11,9 +11,7 @@
 // for why, and docs/prompt-injection-hardening.md for the cost/CI tradeoff
 // this was deliberately left out of automatic runs for. Run explicitly:
 //
-//   ANTHROPIC_API_KEY=sk-ant-... npm run eval:prompt-injection
-//   GROQ_API_KEY=gsk_...         npm run eval:prompt-injection
-//   (set both to evaluate every configured provider/tier in one run)
+//   GROQ_API_KEY=gsk_... npm run eval:prompt-injection
 //
 // Each case below is judged by the exact same scanOutputForLeakage() index.ts
 // uses in production to decide whether to show the raw answer or the safe
@@ -22,7 +20,6 @@
 // attack was going for." That is deliberately the real end-to-end question,
 // not an abstract judgment about model safety in general.
 import { describe, expect, it } from "vitest";
-import { AnthropicProvider } from "../../_shared/providers/anthropic.ts";
 import { GroqProvider } from "../../_shared/providers/groq.ts";
 import type { LlmProvider, ToolResultForProvider } from "../../_shared/providers/types.ts";
 import type { McpToolDef } from "../../_shared/mcp-client.ts";
@@ -32,13 +29,13 @@ import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL } from "../../_shared/router.ts";
 
 // Minimal Deno stub, same trick every *-gate.test.ts in this directory
 // already uses — just enough for index.ts's top-level `Deno.env.get` calls
-// (all unused by this import, which only reaches in for SYSTEM_PROMPT/
-// CLAUDE_MODEL) and its `Deno.serve()` module-load call not to throw.
+// (all unused by this import, which only reaches in for SYSTEM_PROMPT) and
+// its `Deno.serve()` module-load call not to throw.
 (globalThis as unknown as { Deno: unknown }).Deno = {
   env: { get: () => undefined },
   serve: () => {},
 };
-const { SYSTEM_PROMPT, CLAUDE_MODEL } = await import("../index.ts");
+const { SYSTEM_PROMPT } = await import("../index.ts");
 
 // The real tool schemas production actually sends the model — not their
 // handlers (never invoked here; see runToolLoop's canned response below).
@@ -130,13 +127,12 @@ const ATTACK_CASES: AttackCase[] = [
 
 interface ProviderConfig {
   label: string;
-  envKey: "ANTHROPIC_API_KEY" | "GROQ_API_KEY";
+  envKey: "GROQ_API_KEY";
   model: string;
   build: (apiKey: string) => LlmProvider;
 }
 
 const PROVIDER_CONFIGS: ProviderConfig[] = [
-  { label: "Anthropic (Claude Sonnet 5)", envKey: "ANTHROPIC_API_KEY", model: CLAUDE_MODEL, build: (k) => new AnthropicProvider(k) },
   { label: "Groq (gpt-oss-20b, simple tier)", envKey: "GROQ_API_KEY", model: GROQ_SIMPLE_MODEL, build: (k) => new GroqProvider(k) },
   { label: "Groq (gpt-oss-120b, complex/escalated tier)", envKey: "GROQ_API_KEY", model: GROQ_COMPLEX_MODEL, build: (k) => new GroqProvider(k) },
 ];
@@ -147,11 +143,11 @@ if (configuredProviders.length === 0) {
   // A file with zero declared tests is a confusing silent no-op rather than
   // a clear "you forgot to set a key" — this makes the missing-key case an
   // explicit, visible skip instead.
-  it.skip("no ANTHROPIC_API_KEY or GROQ_API_KEY set — set one and re-run `npm run eval:prompt-injection`", () => {});
+  it.skip("no GROQ_API_KEY set — set one and re-run `npm run eval:prompt-injection`", () => {});
   // eslint-disable-next-line no-console
   console.warn(
-    "\n⚠ No ANTHROPIC_API_KEY or GROQ_API_KEY set in the environment — every case was skipped.\n" +
-      "  Run e.g.: ANTHROPIC_API_KEY=sk-ant-... npm run eval:prompt-injection\n",
+    "\n⚠ No GROQ_API_KEY set in the environment — every case was skipped.\n" +
+      "  Run e.g.: GROQ_API_KEY=gsk_... npm run eval:prompt-injection\n",
   );
 } else {
   describe.each(configuredProviders)("prompt-injection eval — $label", (providerConfig) => {

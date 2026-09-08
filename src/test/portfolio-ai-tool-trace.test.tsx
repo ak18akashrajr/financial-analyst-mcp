@@ -78,7 +78,7 @@ describe('PortfolioAI MCP tool-call transparency', () => {
           sseEvent('tool_call', { name: 'get_portfolio_summary', args: {} }),
           sseEvent('tool_call', { name: 'get_concentration_risk', args: {} }),
           sseEvent('delta', { text: 'Your portfolio is diversified.' }),
-          sseEvent('done', { attribution: 'Claude Sonnet 5' }),
+          sseEvent('done', { attribution: 'GPT-OSS 20B via Groq' }),
         ]),
       ),
     );
@@ -102,7 +102,7 @@ describe('PortfolioAI MCP tool-call transparency', () => {
       vi.fn().mockResolvedValue(
         fakeSseResponse([
           sseEvent('delta', { text: "I can only answer questions about your own portfolio." }),
-          sseEvent('done', { attribution: 'Claude Sonnet 5' }),
+          sseEvent('done', { attribution: 'GPT-OSS 20B via Groq' }),
         ]),
       ),
     );

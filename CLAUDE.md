@@ -12,9 +12,9 @@ npm run lint                     # eslint . (NOT run in CI — has pre-existing 
 npm test                         # vitest run — full suite (frontend + edge functions)
 npm run test:watch               # vitest watch mode
 npx tsc --noEmit -p tsconfig.app.json   # typecheck — required CI gate, run before every PR
-ANTHROPIC_API_KEY=... npm run eval:prompt-injection   # manual only, NOT in npm test/CI — real, billed
-                                                       # LLM calls against adversarial prompts; see
-                                                       # docs/prompt-injection-hardening.md
+GROQ_API_KEY=gsk_... npm run eval:prompt-injection   # manual only, NOT in npm test/CI — real, billed
+                                                      # LLM calls against adversarial prompts; see
+                                                      # docs/prompt-injection-hardening.md
 ```
 
 Single test file: `npx vitest run src/test/exposure-section.test.tsx`
@@ -73,14 +73,15 @@ are registered in
 `run_stress_test`, `compare_to_benchmark`, etc.), each backed by a real SQL query.
 
 [supabase/functions/portfolio-ai/](supabase/functions/portfolio-ai/index.ts) is the agent loop that
-calls those tools through [_shared/mcp-client.ts](supabase/functions/_shared/mcp-client.ts). Provider
-selection is an env-var switch, not a code branch a developer maintains: Groq
-(`_shared/providers/groq.ts`) is default, Claude Sonnet 5 (`_shared/providers/anthropic.ts`) is used
-instead, exclusively, the moment `ANTHROPIC_API_KEY` is set — both implement the same `LlmProvider`
-interface in `_shared/providers/types.ts`. On the Groq path only,
+calls those tools through [_shared/mcp-client.ts](supabase/functions/_shared/mcp-client.ts).
+Groq (`_shared/providers/groq.ts`) is the only always-on provider, implementing the `LlmProvider`
+interface in `_shared/providers/types.ts`. On the Groq path,
 [_shared/router.ts](supabase/functions/_shared/router.ts) does zero-cost keyword-based routing
 between `gpt-oss-20b`/`gpt-oss-120b`, with an escalation safety net in `portfolio-ai/index.ts` if a
-"simple" turn needs too many tool calls. Full design rationale:
+"simple" turn needs too many tool calls. OpenRouter (`_shared/providers/openrouter.ts`) is a second,
+opt-in provider — the user picks Nemotron 3 Ultra or MiniMax M2.7 per-turn from the chat UI, falling
+back to Groq automatically on failure or quota exhaustion (see
+[docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)). Full design rationale:
 [docs/llm-mcp-agent-plan.md](docs/llm-mcp-agent-plan.md).
 
 ### Structured logging

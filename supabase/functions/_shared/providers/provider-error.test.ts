@@ -9,7 +9,6 @@
 // counts under fake timers.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GroqProvider } from "./groq.ts";
-import { AnthropicProvider } from "./anthropic.ts";
 import { OPENROUTER_MAX_ATTEMPTS, OpenRouterProvider } from "./openrouter.ts";
 import { HttpCallError } from "../http-call-error.ts";
 
@@ -43,36 +42,6 @@ describe("GroqProvider.runTurn", () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response("bad request", { status: 400 })));
     vi.stubGlobal("fetch", fetchMock);
     const provider = new GroqProvider("test-key");
-    provider.addUserMessage("hi");
-
-    await expect(provider.runTurn("model", "system", [])).rejects.toBeInstanceOf(HttpCallError);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("AnthropicProvider.runTurn", () => {
-  it("throws an HttpCallError with the real status once retries are exhausted", async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response("overloaded", { status: 529 })));
-    vi.stubGlobal("fetch", fetchMock);
-    const provider = new AnthropicProvider("test-key");
-    provider.addUserMessage("hi");
-
-    const pending = provider.runTurn("model", "system", []).catch((err) => err);
-    await vi.runAllTimersAsync();
-    const caught = await pending;
-
-    expect(caught).toBeInstanceOf(HttpCallError);
-    expect((caught as HttpCallError).status).toBe(529);
-    expect((caught as HttpCallError).source).toBe("Anthropic");
-    // 529 (Anthropic's overloaded status) is retryable — the default 3 attempts, not just 1.
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-
-  it("does not retry a non-retryable status (fails on the first attempt)", async () => {
-    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response("bad request", { status: 400 })));
-    vi.stubGlobal("fetch", fetchMock);
-    const provider = new AnthropicProvider("test-key");
     provider.addUserMessage("hi");
 
     await expect(provider.runTurn("model", "system", [])).rejects.toBeInstanceOf(HttpCallError);
@@ -178,7 +147,7 @@ describe("OpenRouterProvider.runTurn", () => {
     const caught = await pending;
 
     expect((caught as DOMException).name).toBe("TimeoutError");
-    // Fewer attempts than Groq/Anthropic's default 3 — a hung free-tier model
+    // Fewer attempts than Groq's default 3 — a hung free-tier model
     // shouldn't compound into an even longer wait before falling back to Groq.
     expect(fetchMock).toHaveBeenCalledTimes(OPENROUTER_MAX_ATTEMPTS);
   });

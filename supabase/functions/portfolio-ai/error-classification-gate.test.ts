@@ -78,7 +78,7 @@ describe("portfolio-ai top-level catch, classified errors", () => {
   });
 
   it("falls back to a generic 500 for an unclassified error, without leaking its message", async () => {
-    initializeMock.mockRejectedValue(new Error("No LLM API keys configured (set GROQ_API_KEY or ANTHROPIC_API_KEY)"));
+    initializeMock.mockRejectedValue(new Error("No LLM API key configured (set GROQ_API_KEY)"));
     const res = await handler(chatRequest());
     expect(res.status).toBe(500);
     const body = await res.json();
