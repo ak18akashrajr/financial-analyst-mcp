@@ -28,9 +28,19 @@ export function getSupabaseClient(): SupabaseClient {
  * already have a tested, intentional "degrade gracefully with a note" contract for that specific,
  * supplementary table (see portfolio-data.test.ts's "degrades gracefully" cases), since a missing
  * benchmark backfill is an expected, recoverable state, not an anomaly.
+ *
+ * The thrown message deliberately does NOT include the raw `error.message` — that's a real Postgrest
+ * error and can carry schema detail (column/constraint/table names). It still reaches
+ * portfolio-mcp-server's tools/call catch block as `isError: true`, which an LLM turn can paraphrase
+ * into a chat reply, so anything DB-internal in that string would end up user-facing. The raw error
+ * is logged here instead (server-side only) for actual debugging; only the generic context tag
+ * propagates to the caller. See docs/security-review.md's follow-up log for 2026-09-08.
  */
 function assertNoError(error: { message: string } | null, context: string): void {
-  if (error) throw new Error(`${context}: ${error.message}`);
+  if (error) {
+    logger.error(`${context}: database query failed`, { error });
+    throw new Error(`${context}: a database error occurred`);
+  }
 }
 
 export interface Holding {

@@ -49,19 +49,6 @@ verified solid); two residual items below.
       history/message each call and run up billed LLM input tokens within their own quota. Add a
       max-length check alongside the existing `ValidationError` checks at that call site.
 
-- [ ] **Decide: should raw Postgres error text be sanitized before it can reach the chat?**
-      [`_shared/portfolio-data.ts:32-33`](supabase/functions/_shared/portfolio-data.ts) —
-      `assertNoError` does `throw new Error(\`${context}: ${error.message}\`)`, and that message
-      propagates up through `portfolio-mcp-server`'s tool-call handler as `isError: true`, where the
-      LLM may paraphrase it into a chat reply. This is **deliberate** (see the comment directly
-      above `assertNoError`) — added specifically so a transient DB error surfaces instead of being
-      silently masked as fabricated-looking data (e.g. "₹0 invested, 0 holdings"). Since
-      `portfolio-mcp-server` is internal-only (service-role-gated) and the sole consumer is the
-      app's one authenticated user talking to their own assistant, the blast radius is "you see a
-      raw Postgres error in your own chat," not a third-party leak. Open question, not yet decided:
-      leave as-is (accept the tradeoff, it's already documented) vs. generalize the message (e.g.
-      strip `error.message`, keep `context`) before it reaches the LLM.
-
 ## Backlog
 
 - [ ] **Scaling & archival plan.** Implement the plan in
@@ -266,5 +253,19 @@ verified solid); two residual items below.
       (`P0001`, guard trigger) for a PATCH that also touches `ip`, `403` (`42501`) for `DELETE`, and
       an empty result for any `session_fingerprints` read — confirmed via DevZone's Security tab
       that the real acknowledge flow and incident display are unaffected.
+
+- [x] **Sanitize raw Postgres error text before it can reach the chat.** Flagged 2026-09-08 during
+      the repo-wide security scan above, as an open decision rather than a firm bug — resolved by
+      generalizing the message (over leaving it as-is). Branch `chore/security-audit-followups-sept2026`;
+      see [docs/security-review.md](docs/security-review.md)'s Fourth pass, finding #13, for the
+      full writeup. `assertNoError` in
+      [`_shared/portfolio-data.ts`](supabase/functions/_shared/portfolio-data.ts) now logs the raw
+      Postgrest error server-side (via the module's existing logger) instead of embedding
+      `error.message` in the thrown `Error`; the thrown/propagated message is now `` `${context}: a
+      database error occurred` `` — no schema detail can reach `portfolio-mcp-server`'s `isError`
+      result or an LLM-paraphrased chat reply. Tests:
+      [`portfolio-data.test.ts`](supabase/functions/_shared/portfolio-data.test.ts) — new case
+      asserts the raw simulated error text is absent from the thrown message and still present in
+      the server-side log.
 
 </details>

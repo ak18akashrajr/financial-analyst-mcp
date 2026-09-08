@@ -414,6 +414,31 @@ describe("getCurrentPortfolio", () => {
     });
     await expect(getCurrentPortfolio(sb)).rejects.toThrow(/fetchCash/);
   });
+
+  it("does not leak the raw Postgres error text into the thrown message, but still logs it server-side", async () => {
+    // portfolio-mcp-server's tools/call handler forwards this thrown message verbatim as
+    // `isError: true`, which an LLM turn can paraphrase into a chat reply — the real Postgrest
+    // error (which can carry schema detail, e.g. this relation name) must never reach the caller,
+    // only the generic context tag. It should still be logged server-side for real debugging.
+    const sb = makeFakeSb({
+      transactions: { error: 'relation "public.transactions" does not exist' },
+      current_prices: { rows: [] },
+      symbol_metadata: { rows: [] },
+      cash_settings: { rows: [{ liquid_cash: 0, vault_cash: 0 }] },
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let caught: Error | undefined;
+    try {
+      await getCurrentPortfolio(sb);
+    } catch (e) {
+      caught = e as Error;
+    }
+    expect(caught?.message).toBe("fetchTxns: a database error occurred");
+    expect(caught?.message).not.toContain("does not exist");
+    const loggedLines = errorSpy.mock.calls.map(([line]) => String(line));
+    expect(loggedLines.some((line) => line.includes("does not exist"))).toBe(true);
+    errorSpy.mockRestore();
+  });
 });
 
 describe("getExposureDrift", () => {
