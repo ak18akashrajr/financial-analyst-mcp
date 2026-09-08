@@ -838,7 +838,10 @@ the `isError: true` result all use whatever message `assertNoError` throws, unch
 
 ### 2026-09-08 — Fixed #13: sanitized `assertNoError`'s propagated message
 
-**Branch:** `chore/security-audit-followups-sept2026`.
+**Branch:** `fix/portfolio-mcp-error-sanitization` (correction: originally landed as a stray direct
+commit to `main` — caught and moved to this branch before opening PR #130, since `main` had moved
+out from under the session mid-task; noting here since the fix's own remediation entry, written
+before that correction, still named the wrong branch).
 
 **Changes:**
 - [supabase/functions/_shared/portfolio-data.ts](../supabase/functions/_shared/portfolio-data.ts) —
@@ -854,3 +857,46 @@ the `isError: true` result all use whatever message `assertNoError` throws, unch
 
 **Verification:** `npx tsc --noEmit -p tsconfig.app.json` clean; full `vitest` suite passing
 (87 files / 583 tests, up from 582 with the new test); `npm audit` — 0 findings.
+
+### 14. No request-size cap on `portfolio-ai` — ✅ FIXED
+
+> **Status: fixed** on branch `fix/portfolio-ai-request-size-cap` (see
+> [Remediation log](#remediation-log) entry below). `portfolio-ai` now rejects a `messages` array
+> over 200 entries or any message with more than 8,000 characters of `content`, with a 400 before
+> any provider is built.
+
+**File:** [supabase/functions/portfolio-ai/index.ts:222-223](../supabase/functions/portfolio-ai/index.ts)
+(prior to this fix) only validated that `messages` was non-empty.
+
+**Why it mattered:** the per-minute rate limiter added for finding #2
+([`_shared/rate-limit.ts`](../supabase/functions/_shared/rate-limit.ts)) bounds request *count*
+(10/user/minute), not payload *size* per request. Nothing stopped a single authenticated user,
+still within that quota, from sending an oversized conversation history or one very long message
+on every call — each forwarded as-is into the billed LLM provider call
+(`provider.loadHistory(history)` / `provider.addUserMessage(latest.content)`) and billed as input
+tokens. Low-Medium severity: same "your own quota, your own cost" blast radius as the rest of this
+pass (single-user app, no third party involved), but a real gap in the one control meant to bound
+LLM spend.
+
+**Fix:** two new constants, `MAX_MESSAGES = 200` and `MAX_MESSAGE_CONTENT_LENGTH = 8_000`, checked
+alongside the existing non-empty/`modelPreference` `ValidationError` checks — generous enough that
+no real chat session should ever hit either limit, while still bounding the worst case. Both are
+exported from `index.ts` purely for test consumption, same pattern as the existing `CLAUDE_MODEL`
+export.
+
+### 2026-09-08 — Fixed #14: request-size cap on `portfolio-ai`
+
+**Branch:** `fix/portfolio-ai-request-size-cap`.
+
+**Changes:**
+- [supabase/functions/portfolio-ai/index.ts](../supabase/functions/portfolio-ai/index.ts) — added
+  `MAX_MESSAGES`/`MAX_MESSAGE_CONTENT_LENGTH` constants and two `ValidationError` checks, placed
+  right after the existing non-empty-`messages` check and before the `modelPreference` check.
+- [supabase/functions/portfolio-ai/request-size-cap.test.ts](../supabase/functions/portfolio-ai/request-size-cap.test.ts) —
+  new test file: rejects an over-limit `messages` array, rejects an over-limit message `content`,
+  and confirms a request exactly at both limits still succeeds (boundary is inclusive).
+- [TODO.md](../TODO.md) — this was the last open item in the Security section from the 2026-09-08
+  pass; moved to the completed archive, closing out that section for now.
+
+**Verification:** `npx tsc --noEmit -p tsconfig.app.json` clean; full `vitest` suite passing
+(88 files / 586 tests, up from 583 with the 3 new tests).
