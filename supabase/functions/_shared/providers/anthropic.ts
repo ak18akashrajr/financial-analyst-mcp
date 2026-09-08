@@ -3,7 +3,7 @@
 import type { McpToolDef } from "../mcp-client.ts";
 import { HttpCallError } from "../http-call-error.ts";
 import { withRetry } from "../retry.ts";
-import type { LlmProvider, ToolCallRequest, ToolResultForProvider, TurnResult } from "./types.ts";
+import type { LlmProvider, ToolCallRequest, ToolChoice, ToolResultForProvider, TurnResult } from "./types.ts";
 
 const ANTHROPIC_ENDPOINT = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -40,6 +40,12 @@ export class AnthropicProvider implements LlmProvider {
     return tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema }));
   }
 
+  // Anthropic's tool_choice shape differs from the OpenAI-compatible string
+  // used by groq.ts/openrouter.ts: "any" (not "required") forces a tool call.
+  private toAnthropicToolChoice(toolChoice: ToolChoice): { type: "auto" | "any" } {
+    return { type: toolChoice === "required" ? "any" : "auto" };
+  }
+
   private headers() {
     return {
       "x-api-key": this.apiKey,
@@ -48,7 +54,7 @@ export class AnthropicProvider implements LlmProvider {
     };
   }
 
-  async runTurn(model: string, systemPrompt: string, tools: McpToolDef[]): Promise<TurnResult> {
+  async runTurn(model: string, systemPrompt: string, tools: McpToolDef[], toolChoice: ToolChoice = "auto"): Promise<TurnResult> {
     const data = await withRetry(async () => {
       const res = await fetch(ANTHROPIC_ENDPOINT, {
         method: "POST",
@@ -59,6 +65,7 @@ export class AnthropicProvider implements LlmProvider {
           system: systemPrompt,
           messages: this.messages,
           tools: this.toAnthropicTools(tools),
+          tool_choice: this.toAnthropicToolChoice(toolChoice),
         }),
       });
       if (!res.ok) throw new HttpCallError("Anthropic", res.status, await res.text());

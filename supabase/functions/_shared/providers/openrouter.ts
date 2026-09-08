@@ -8,7 +8,7 @@
 import type { McpToolDef } from "../mcp-client.ts";
 import { HttpCallError } from "../http-call-error.ts";
 import { withRetry } from "../retry.ts";
-import type { LlmProvider, ToolCallRequest, ToolResultForProvider, TurnResult } from "./types.ts";
+import type { LlmProvider, ToolCallRequest, ToolChoice, ToolResultForProvider, TurnResult } from "./types.ts";
 
 interface OpenRouterToolCall {
   id: string;
@@ -68,7 +68,7 @@ export class OpenRouterProvider implements LlmProvider {
     }));
   }
 
-  async runTurn(model: string, systemPrompt: string, tools: McpToolDef[]): Promise<TurnResult> {
+  async runTurn(model: string, systemPrompt: string, tools: McpToolDef[], toolChoice: ToolChoice = "auto"): Promise<TurnResult> {
     const data = await withRetry(async () => {
       const res = await fetch(OPENROUTER_ENDPOINT, {
         method: "POST",
@@ -85,6 +85,9 @@ export class OpenRouterProvider implements LlmProvider {
           model,
           messages: [{ role: "system", content: systemPrompt }, ...this.messages],
           tools: this.toOpenRouterTools(tools),
+          // Same OpenAI-compatible field as groq.ts — see its comment. Only
+          // ever "required" for the one-shot grounding retry.
+          tool_choice: toolChoice,
           stream: false,
         }),
         signal: AbortSignal.timeout(OPENROUTER_TIMEOUT_MS),

@@ -55,4 +55,19 @@ describe("SYSTEM_PROMPT guardrails", () => {
     expect(SYSTEM_PROMPT).toContain("run_stress_test");
     expect(SYSTEM_PROMPT).toMatch(/symbols:\s*\["X"\]/);
   });
+
+  // 2026-09-08: gpt-oss-20b answered "is there any tax for me?" with a fully
+  // invented table of trades the user never made, instead of calling
+  // list_transactions (or declining). These two guardrails are the prompt
+  // half of the fix — the code-level half is the forced-grounding-retry
+  // guard in index.ts, covered by tool-grounding-gate.test.ts.
+  it("forbids fabricating transactions/holdings and requires surfacing an empty tool result as a real answer", () => {
+    expect(SYSTEM_PROMPT).toMatch(/never guess or fabricate financial figures, holdings, or transactions/i);
+    expect(SYSTEM_PROMPT).toMatch(/an empty result is a real, complete answer/i);
+  });
+
+  it("declines to compute tax figures, since no tax tool exists", () => {
+    expect(SYSTEM_PROMPT).toMatch(/there is no tool that computes tax liability/i);
+    expect(SYSTEM_PROMPT).toMatch(/tax computation\s+isn't supported here/i);
+  });
 });

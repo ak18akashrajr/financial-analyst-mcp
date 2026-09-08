@@ -128,6 +128,15 @@ describe("portfolio-ai modelPreference validation", () => {
   });
 });
 
+// A trivial real tool call, queued as the first runTurn response in tests
+// below that previously mocked a single `done:true` reply — the
+// forced-grounding-retry guard in index.ts (added alongside the
+// hallucinated-transactions fix) requires at least one real tool call before
+// accepting a turn-0 text-only answer as final, so a single-shot mock now
+// gets called a second time; queuing a tool call first models a real
+// provider's actual behavior instead and keeps the call count honest.
+const groundedFirstTurn = { done: false, calls: [{ id: "call-1", name: "get_portfolio_summary", arguments: {} }] };
+
 describe("portfolio-ai opt-in OpenRouter routing", () => {
   it("uses the requested OpenRouter model when the key is set and quota allows", async () => {
     stubEnv({ GROQ_API_KEY: "test-key", OPENROUTER_API_KEY: "or-key" });
@@ -135,13 +144,13 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
     await import("./index.ts");
 
     quotaMock.mockResolvedValue(true);
-    openRouterRunTurnMock.mockResolvedValue({ done: true, text: "answer" });
+    openRouterRunTurnMock.mockResolvedValueOnce(groundedFirstTurn).mockResolvedValueOnce({ done: true, text: "answer" });
 
     const res = await handler(chatRequest("nemotron"));
     const text = await readAllEvents(res.body as ReadableStream<Uint8Array>);
 
     expect(quotaMock).toHaveBeenCalledWith(expect.anything(), "nvidia/nemotron-3-ultra-550b-a55b:free");
-    expect(openRouterRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(openRouterRunTurnMock).toHaveBeenCalledTimes(2);
     expect(groqRunTurnMock).not.toHaveBeenCalled();
     expect(text).toContain("NVIDIA Nemotron 3 Ultra via OpenRouter");
   });
@@ -151,13 +160,13 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
     ({ HttpCallError } = await import("../_shared/http-call-error.ts"));
     await import("./index.ts");
 
-    anthropicRunTurnMock.mockResolvedValue({ done: true, text: "answer" });
+    anthropicRunTurnMock.mockResolvedValueOnce(groundedFirstTurn).mockResolvedValueOnce({ done: true, text: "answer" });
 
     const res = await handler(chatRequest("nemotron"));
     const text = await readAllEvents(res.body as ReadableStream<Uint8Array>);
 
     expect(quotaMock).not.toHaveBeenCalled();
-    expect(anthropicRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(anthropicRunTurnMock).toHaveBeenCalledTimes(2);
     expect(text).toContain("Claude Sonnet 5");
   });
 
@@ -166,13 +175,13 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
     ({ HttpCallError } = await import("../_shared/http-call-error.ts"));
     await import("./index.ts");
 
-    groqRunTurnMock.mockResolvedValue({ done: true, text: "answer" });
+    groqRunTurnMock.mockResolvedValueOnce(groundedFirstTurn).mockResolvedValueOnce({ done: true, text: "answer" });
 
     const res = await handler(chatRequest("minimax"));
     const text = await readAllEvents(res.body as ReadableStream<Uint8Array>);
 
     expect(quotaMock).not.toHaveBeenCalled();
-    expect(groqRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(groqRunTurnMock).toHaveBeenCalledTimes(2);
     expect(text).toContain("event: done");
   });
 
@@ -182,13 +191,13 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
     await import("./index.ts");
 
     quotaMock.mockResolvedValue(false);
-    groqRunTurnMock.mockResolvedValue({ done: true, text: "answer" });
+    groqRunTurnMock.mockResolvedValueOnce(groundedFirstTurn).mockResolvedValueOnce({ done: true, text: "answer" });
 
     const res = await handler(chatRequest("minimax"));
     const text = await readAllEvents(res.body as ReadableStream<Uint8Array>);
 
     expect(openRouterRunTurnMock).not.toHaveBeenCalled();
-    expect(groqRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(groqRunTurnMock).toHaveBeenCalledTimes(2);
     expect(text).toMatch(/daily quota is used up for today/);
   });
 
@@ -199,13 +208,13 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
 
     quotaMock.mockResolvedValue(true);
     openRouterRunTurnMock.mockRejectedValue(new HttpCallError("OpenRouter", 429, "rate limited"));
-    groqRunTurnMock.mockResolvedValue({ done: true, text: "answer" });
+    groqRunTurnMock.mockResolvedValueOnce(groundedFirstTurn).mockResolvedValueOnce({ done: true, text: "answer" });
 
     const res = await handler(chatRequest("nemotron"));
     const text = await readAllEvents(res.body as ReadableStream<Uint8Array>);
 
     expect(openRouterRunTurnMock).toHaveBeenCalledTimes(1);
-    expect(groqRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(groqRunTurnMock).toHaveBeenCalledTimes(2);
     expect(text).toContain("OpenRouter fallback");
     expect(text).not.toContain("429");
   });
@@ -221,13 +230,13 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
 
     quotaMock.mockResolvedValue(true);
     openRouterRunTurnMock.mockRejectedValue(new DOMException("The operation timed out.", "TimeoutError"));
-    groqRunTurnMock.mockResolvedValue({ done: true, text: "answer" });
+    groqRunTurnMock.mockResolvedValueOnce(groundedFirstTurn).mockResolvedValueOnce({ done: true, text: "answer" });
 
     const res = await handler(chatRequest("nemotron"));
     const text = await readAllEvents(res.body as ReadableStream<Uint8Array>);
 
     expect(openRouterRunTurnMock).toHaveBeenCalledTimes(1);
-    expect(groqRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(groqRunTurnMock).toHaveBeenCalledTimes(2);
     expect(text).toContain("OpenRouter fallback");
   });
 
@@ -259,13 +268,13 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
     ({ HttpCallError } = await import("../_shared/http-call-error.ts"));
     await import("./index.ts");
 
-    groqRunTurnMock.mockResolvedValue({ done: true, text: "answer" });
+    groqRunTurnMock.mockResolvedValueOnce(groundedFirstTurn).mockResolvedValueOnce({ done: true, text: "answer" });
 
     const res = await handler(chatRequest());
     await readAllEvents(res.body as ReadableStream<Uint8Array>);
 
     expect(quotaMock).not.toHaveBeenCalled();
     expect(openRouterRunTurnMock).not.toHaveBeenCalled();
-    expect(groqRunTurnMock).toHaveBeenCalledTimes(1);
+    expect(groqRunTurnMock).toHaveBeenCalledTimes(2);
   });
 });
