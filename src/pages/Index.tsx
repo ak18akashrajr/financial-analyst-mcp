@@ -135,7 +135,7 @@ const IndexContent = () => {
         <DebtChart refreshKey={0} />
 
         {/* Add Transaction */}
-        <AddTransactionForm onAdd={handleAddTransaction} />
+        <AddTransactionForm transactions={transactions} onAdd={handleAddTransaction} />
 
         {/* Holdings */}
         <div>
