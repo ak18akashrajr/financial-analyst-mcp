@@ -52,6 +52,17 @@ const MAX_TOOL_TURNS = 5;
 // number of them at once would burst against that server's own Postgres
 // connections. This caps how many run concurrently per turn.
 const MAX_CONCURRENT_TOOL_CALLS = 3;
+// Bounds the billed LLM input tokens a single request can carry. The
+// per-minute rate limiter above caps request *count*, not payload *size*
+// per request — without this, a single authenticated user, still within
+// their own quota, could send an oversized conversation history or one very
+// long message on every call and run up cost. Generous enough that no real
+// chat session should ever hit either limit (financial questions here run a
+// sentence or two; even a very long back-and-forth is well under 200 turns).
+// Exported purely for test consumption (request-size-cap.test.ts), same as
+// CLAUDE_MODEL above — not used as an import anywhere else.
+export const MAX_MESSAGES = 200;
+export const MAX_MESSAGE_CONTENT_LENGTH = 8_000;
 
 /** Thrown for expected, safe-to-show request validation problems (e.g. a
  * malformed body) — distinct from unexpected/internal errors (provider
@@ -221,6 +232,14 @@ Deno.serve(async (req: Request) => {
     };
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new ValidationError("Request must include a non-empty `messages` array");
+    }
+    if (messages.length > MAX_MESSAGES) {
+      throw new ValidationError(`Conversation is too long (max ${MAX_MESSAGES} messages) — please start a new chat.`);
+    }
+    for (const m of messages) {
+      if (typeof m.content !== "string" || m.content.length > MAX_MESSAGE_CONTENT_LENGTH) {
+        throw new ValidationError(`Each message must be a string of ${MAX_MESSAGE_CONTENT_LENGTH} characters or fewer.`);
+      }
     }
     if (rawModelPreference !== undefined && !MODEL_PREFERENCE_VALUES.includes(rawModelPreference as ModelPreference)) {
       throw new ValidationError(`modelPreference must be one of: ${MODEL_PREFERENCE_VALUES.join(", ")}`);

@@ -32,23 +32,6 @@ too — for a separate, more careful review pass.
 - [ ] Fix the `taxCalculator.ts` LTCG/STCG threshold day-count bug (see table above)
 - [ ] Fix the `GoalTrack.tsx` `getHoldingLotSplit` LT/ST threshold day-count bug (see table above)
 
-## Security
-
-Flagged 2026-09-08 during a repo-wide security scan requested by the user (edge function
-auth/CORS/secrets, RLS policies, frontend XSS/storage, `portfolio-ai` prompt-injection defenses,
-and `npm audit`) — full findings in chat history around that date. Most of the app checked out
-clean (auth gating, RLS, SQL injection, XSS, secrets handling, prompt-injection defenses all
-verified solid); two residual items below.
-
-- [ ] **Add a request-size cap to `portfolio-ai`.**
-      [`portfolio-ai/index.ts:222-223`](supabase/functions/portfolio-ai/index.ts) only validates
-      that `messages` is non-empty — no cap on `messages.length` (conversation history size) or a
-      single message's `content.length`. The existing per-minute request-count limiter
-      ([`rate-limit.ts`](supabase/functions/_shared/rate-limit.ts)) bounds request *count*, not
-      *payload size* per request, so a single authenticated user could still send an oversized
-      history/message each call and run up billed LLM input tokens within their own quota. Add a
-      max-length check alongside the existing `ValidationError` checks at that call site.
-
 ## Backlog
 
 - [ ] **Scaling & archival plan.** Implement the plan in
@@ -256,7 +239,7 @@ verified solid); two residual items below.
 
 - [x] **Sanitize raw Postgres error text before it can reach the chat.** Flagged 2026-09-08 during
       the repo-wide security scan above, as an open decision rather than a firm bug — resolved by
-      generalizing the message (over leaving it as-is). Branch `chore/security-audit-followups-sept2026`;
+      generalizing the message (over leaving it as-is). Branch `fix/portfolio-mcp-error-sanitization`;
       see [docs/security-review.md](docs/security-review.md)'s Fourth pass, finding #13, for the
       full writeup. `assertNoError` in
       [`_shared/portfolio-data.ts`](supabase/functions/_shared/portfolio-data.ts) now logs the raw
@@ -267,5 +250,17 @@ verified solid); two residual items below.
       [`portfolio-data.test.ts`](supabase/functions/_shared/portfolio-data.test.ts) — new case
       asserts the raw simulated error text is absent from the thrown message and still present in
       the server-side log.
+
+- [x] **Add a request-size cap to `portfolio-ai`.** Flagged 2026-09-08 during the same scan —
+      closes out that section's last open item. Branch `fix/portfolio-ai-request-size-cap`; see
+      [docs/security-review.md](docs/security-review.md)'s Fourth pass, finding #14, for the full
+      writeup. [`portfolio-ai/index.ts`](supabase/functions/portfolio-ai/index.ts) now rejects a
+      `messages` array over `MAX_MESSAGES` (200) entries, or any message whose `content` exceeds
+      `MAX_MESSAGE_CONTENT_LENGTH` (8,000 chars), with a 400 — before any (billed) provider call is
+      made. The existing per-minute rate limiter bounds request *count*; this bounds payload *size*
+      per request. Tests:
+      [`request-size-cap.test.ts`](supabase/functions/portfolio-ai/request-size-cap.test.ts) — new
+      file covering the over-limit array, the over-limit message, and a boundary case exactly at
+      both limits.
 
 </details>
