@@ -3,7 +3,7 @@
 import type { McpToolDef } from "../mcp-client.ts";
 import { HttpCallError } from "../http-call-error.ts";
 import { withRetry } from "../retry.ts";
-import type { LlmProvider, ToolCallRequest, ToolResultForProvider, TurnResult } from "./types.ts";
+import type { LlmProvider, ToolCallRequest, ToolChoice, ToolResultForProvider, TurnResult } from "./types.ts";
 
 interface GroqToolCall {
   id: string;
@@ -45,7 +45,7 @@ export class GroqProvider implements LlmProvider {
     }));
   }
 
-  async runTurn(model: string, systemPrompt: string, tools: McpToolDef[]): Promise<TurnResult> {
+  async runTurn(model: string, systemPrompt: string, tools: McpToolDef[], toolChoice: ToolChoice = "auto"): Promise<TurnResult> {
     const data = await withRetry(async () => {
       const res = await fetch(GROQ_ENDPOINT, {
         method: "POST",
@@ -54,6 +54,11 @@ export class GroqProvider implements LlmProvider {
           model,
           messages: [{ role: "system", content: systemPrompt }, ...this.messages],
           tools: this.toGroqTools(tools),
+          // OpenAI-compatible: "auto" lets the model skip tools and answer in
+          // prose; "required" forces at least one tool call. Only ever
+          // "required" for the one-shot grounding retry in
+          // portfolio-ai/index.ts — every other call is "auto", unchanged.
+          tool_choice: toolChoice,
           stream: false,
         }),
       });

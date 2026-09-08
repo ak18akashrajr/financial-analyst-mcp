@@ -19,7 +19,7 @@ import { findTool } from "../_shared/mcp-tools.ts";
 import { GroqProvider } from "../_shared/providers/groq.ts";
 import { AnthropicProvider } from "../_shared/providers/anthropic.ts";
 import { OpenRouterProvider } from "../_shared/providers/openrouter.ts";
-import type { LlmProvider, ToolResultForProvider, TurnResult } from "../_shared/providers/types.ts";
+import type { LlmProvider, ToolChoice, ToolResultForProvider, TurnResult } from "../_shared/providers/types.ts";
 import {
   checkAndIncrementQuota,
   MINIMAX_MODEL_ID,
@@ -61,7 +61,7 @@ class ValidationError extends Error {}
 
 export const SYSTEM_PROMPT = `You are Portfolio Intelligence AI, an analytics assistant with real tool access to the user's own live portfolio data via the Model Context Protocol (MCP). You are not a registered investment adviser, and nothing you say is investment advice.
 
-You do not have any portfolio data memorized — call the provided tools to get real, current numbers before answering. Never guess or fabricate financial figures.
+You do not have any portfolio data memorized — call the provided tools to get real, current numbers before answering. Never guess or fabricate financial figures, holdings, or transactions: every specific number, date, symbol, or record in your answer must come from an actual tool result returned earlier in this conversation, never from general knowledge of what a plausible-looking portfolio or trade history might contain. If a tool returns an empty result (e.g. zero transactions in the requested period), say so plainly — an empty result is a real, complete answer, not a gap to fill in with invented data.
 
 ## Scope boundary
 - Only answer questions about the user's own portfolio, using the provided tools. You have no
@@ -128,6 +128,15 @@ You do not have any portfolio data memorized — call the provided tools to get 
   questions. Never decline a transaction-history question by claiming you don't have access to
   transaction-level data; that data is real and queryable.
 
+## Tax questions
+- There is no tool that computes tax liability, capital gains tax, or any other tax figure —
+  never calculate, estimate, or guess one yourself. If asked about tax (e.g. "do I owe any tax",
+  "what's my capital gains tax", "is there any tax for me"), say plainly that tax computation
+  isn't supported here.
+- You may still call list_transactions if the user names or implies a period, to show them their
+  real buy/sell records so they can hand those to a tax tool or advisor — but never label any
+  number in that response as "tax owed" or apply a tax rate to it yourself.
+
 ## Formatting & tone
 - Keep answers concise and scannable. Default to a short table or a few bullet points; only
   write a longer narrative report if the user asks for a summary, review, or analysis.
@@ -138,6 +147,15 @@ You do not have any portfolio data memorized — call the provided tools to get 
 - Be conversational but data-driven.
 - The user's message may contain typos or informal phrasing — interpret their intent rather than
   asking for clarification on minor spelling issues.`;
+
+// Sent as a one-off corrective user turn when a model answers on turn 0
+// without having called any tool at all — see the forced-grounding-retry
+// block below. SYSTEM_PROMPT's "never fabricate" instruction is advisory
+// only (a prompt is not a guarantee, same caveat as the output guardrail
+// below); this nudge is paired with tool_choice: "required" on the retry
+// itself, which is enforced by the provider's API, not just requested.
+const GROUNDING_RETRY_NUDGE =
+  "You answered without calling any tool. Every claim in your answer — including \"there is no such data\" — must come from a real tool call, not from memory or a plausible guess. Call whichever tool(s) actually answer the question now, then answer from their results.";
 
 interface ChatRequestMessage {
   role: "user" | "assistant";
@@ -286,12 +304,22 @@ Deno.serve(async (req: Request) => {
       let invokedComplexTool = false;
       let finalText = "";
       let openRouterFallback = false;
+      // Grounding guard: true once any turn has actually made a tool call.
+      // A turn-0 answer with this still false is exactly the shape of the
+      // 2026-09-08 hallucinated-transactions bug (gpt-oss-20b invented a
+      // trade history instead of calling list_transactions) — see the
+      // `!anyToolCalled` branch below. `forcedGroundingRetryUsed` caps this
+      // at one retry ever per request so a provider that somehow still
+      // returns done:true under tool_choice:"required" can't loop forever.
+      let anyToolCalled = false;
+      let forcedGroundingRetryUsed = false;
+      let toolChoice: ToolChoice = "auto";
 
       try {
         for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
           let result: TurnResult;
           try {
-            result = await provider.runTurn(model, SYSTEM_PROMPT, tools);
+            result = await provider.runTurn(model, SYSTEM_PROMPT, tools, toolChoice);
           } catch (err) {
             // OpenRouter's own retries (withRetry, inside openrouter.ts) are already
             // exhausted by the time this is reached. Falls back on ANY turn
@@ -336,15 +364,35 @@ Deno.serve(async (req: Request) => {
             provider.addUserMessage(latest.content);
             model = GROQ_COMPLEX_MODEL;
             attribution = "GPT-OSS 120B via Groq (OpenRouter fallback)";
-            result = await provider.runTurn(model, SYSTEM_PROMPT, tools);
+            result = await provider.runTurn(model, SYSTEM_PROMPT, tools, toolChoice);
           }
+          // toolChoice was only ever meant to force the one call it was just
+          // used for (see the forced-grounding-retry branch below) — reset
+          // before the next turn regardless of which path produced `result`.
+          toolChoice = "auto";
 
           // Explicit `=== true` (not a bare truthy check) so TS reliably narrows
           // this boolean-discriminated union in the `else` path below.
           if (result.done === true) {
+            // Forced-grounding retry: this is a turn-0-shaped answer that
+            // never called a tool at all — the exact mechanism behind the
+            // hallucinated-transactions bug. Give the model one corrective
+            // nudge and force a real tool call via tool_choice: "required"
+            // (API-enforced, not just requested) before trusting any answer
+            // as final. Only ever fires once (forcedGroundingRetryUsed), and
+            // only when NO turn so far made a real call — a model that
+            // already grounded itself with at least one tool this request is
+            // never re-prompted, even if a later turn also has no calls.
+            if (!anyToolCalled && !forcedGroundingRetryUsed) {
+              forcedGroundingRetryUsed = true;
+              provider.addUserMessage(GROUNDING_RETRY_NUDGE);
+              toolChoice = "required";
+              continue;
+            }
             finalText = result.text;
             break;
           }
+          anyToolCalled = true;
 
           // Groq-only escalation safety net: if the cheap tier needs too many tool
           // calls or touches a "complex" tool, restart this turn on the bigger model.
@@ -417,6 +465,7 @@ Deno.serve(async (req: Request) => {
           escalated,
           openRouterFallback,
           toolCallCount,
+          forcedGroundingRetryUsed,
           suspiciousInput: inputCheck.suspicious,
           outputGuardrailTriggered: outputCheck.flagged,
           duration_ms: Date.now() - requestStartedAt,

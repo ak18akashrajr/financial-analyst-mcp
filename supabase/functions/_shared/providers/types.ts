@@ -8,6 +8,13 @@ export interface ToolCallRequest {
 
 export type TurnResult = { done: true; text: string } | { done: false; calls: ToolCallRequest[] };
 
+// "required" forces the model to invoke at least one tool this turn (it
+// cannot return a plain-text final answer) — used exactly once, as a
+// grounding retry, when a turn comes back with no tool calls at all (see
+// portfolio-ai/index.ts's forced-grounding-retry loop). Every other call
+// uses "auto" (the default), same as before this existed.
+export type ToolChoice = "auto" | "required";
+
 export interface ToolResultForProvider {
   id: string;
   name: string;
@@ -24,6 +31,6 @@ export interface LlmProvider {
   loadHistory(history: { role: "user" | "assistant"; content: string }[]): void;
   addUserMessage(text: string): void;
   /** One non-streamed turn with tools enabled — either a final text answer or a request to call tools. */
-  runTurn(model: string, systemPrompt: string, tools: McpToolDef[]): Promise<TurnResult>;
+  runTurn(model: string, systemPrompt: string, tools: McpToolDef[], toolChoice?: ToolChoice): Promise<TurnResult>;
   appendToolResults(results: ToolResultForProvider[]): void;
 }
