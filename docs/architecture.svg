@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 1180 1220" xmlns="http://www.w3.org/2000/svg" role="img"
-     aria-label="Portfolio AI architecture: the chat UI sends a request through Supabase Edge auth and rate limiting to the portfolio-ai coordinator agent, which for Groq picks a model via keyword routing or switches to Claude Sonnet 5 entirely once an Anthropic key is set, calls MCP tools over JSON-RPC against portfolio-mcp-server, which runs SQL against Postgres under RLS, and streams a token response back over SSE. Dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop. Below, a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX rates and fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX) into the same Postgres tables.">
+     aria-label="Portfolio AI architecture: the chat UI sends a request through Supabase Edge auth and rate limiting to the portfolio-ai coordinator agent, which for Groq picks a model via keyword routing or switches to Claude Sonnet 5 entirely once an Anthropic key is set, calls MCP tools over JSON-RPC against portfolio-mcp-server, which runs SQL against Postgres under RLS, and streams a token response back over SSE. A third provider, OpenRouter (Nemotron 3 Ultra / MiniMax M2.7), is available as an opt-in escalation the user selects per-turn from the chat UI rather than a third leg of the env-var switch, and falls back to Groq automatically on failure or quota exhaustion. Dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop. Below, a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX rates and fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX) into the same Postgres tables.">
   <style>
     text { font-family: 'IBM Plex Sans', 'Segoe UI', ui-sans-serif, system-ui, sans-serif; }
     .mono { font-family: 'IBM Plex Mono', 'Cascadia Code', ui-monospace, Consolas, monospace; }
@@ -26,7 +26,7 @@
     <line x1="150" y1="178" x2="150" y2="212" marker-end="url(#arrow)"/>
     <line x1="150" y1="252" x2="150" y2="284" marker-end="url(#arrow)"/>
     <line x1="255" y1="322" x2="330" y2="322" marker-end="url(#arrow)"/>
-    <line x1="440" y1="322" x2="560" y2="322" marker-end="url(#arrow)"/>
+    <line x1="480" y1="322" x2="560" y2="322" marker-end="url(#arrow)"/>
     <line x1="180" y1="376" x2="330" y2="432" marker-end="url(#arrow)"/>
     <line x1="425" y1="446" x2="560" y2="446" marker-end="url(#arrow)"/>
     <line x1="655" y1="474" x2="655" y2="500" marker-end="url(#arrow)"/>
@@ -64,7 +64,7 @@
   <g>
     <rect class="box" x="330" y="120" width="130" height="54" rx="6" fill="#182c42" stroke="#5c96d6"/>
     <text class="label" x="395" y="143" text-anchor="middle" fill="#a9cdf2">Supabase Auth</text>
-    <text class="mono sub" x="395" y="159" text-anchor="middle" fill="#a9cdf2">auth.ts · single-user JWT</text>
+    <text class="mono sub" x="395" y="159" text-anchor="middle" fill="#a9cdf2">auth.ts · 1-user JWT</text>
   </g>
 
   <g>
@@ -81,14 +81,14 @@
     <rect class="box" x="80" y="288" width="175" height="60" rx="6" fill="#173323" stroke="#4fae76"/>
     <text class="label" x="167" y="312" text-anchor="middle" fill="#8fd8ab">Coordinator agent</text>
     <text class="mono sub" x="167" y="328" text-anchor="middle" fill="#8fd8ab">portfolio-ai/index.ts</text>
-    <text class="mono sub" x="167" y="341" text-anchor="middle" fill="#8fd8ab">tool-call loop, bounded concurrency</text>
+    <text class="mono sub" x="167" y="341" text-anchor="middle" fill="#8fd8ab">bounded concurrency loop</text>
   </g>
 
   <g>
-    <rect class="box" x="330" y="292" width="110" height="60" rx="6" fill="#173323" stroke="#4fae76"/>
-    <text class="label" x="385" y="314" text-anchor="middle" fill="#8fd8ab">Router</text>
-    <text class="mono sub" x="385" y="329" text-anchor="middle" fill="#8fd8ab">router.ts</text>
-    <text class="mono sub" x="385" y="341" text-anchor="middle" fill="#8fd8ab">keyword-routed, Groq only</text>
+    <rect class="box" x="330" y="292" width="150" height="60" rx="6" fill="#173323" stroke="#4fae76"/>
+    <text class="label" x="405" y="314" text-anchor="middle" fill="#8fd8ab">Router</text>
+    <text class="mono sub" x="405" y="329" text-anchor="middle" fill="#8fd8ab">router.ts</text>
+    <text class="mono sub" x="405" y="341" text-anchor="middle" fill="#8fd8ab">keyword-routed (Groq)</text>
   </g>
 
   <g>
@@ -100,11 +100,31 @@
     <text class="mono sub" x="610" y="352" text-anchor="middle" fill="#eccd8a">default</text>
     <text class="mono sub" x="710" y="328" text-anchor="middle" fill="#eccd8a">Anthropic</text>
     <text class="mono sub" x="710" y="341" text-anchor="middle" fill="#eccd8a">Claude Sonnet 5</text>
-    <text class="mono sub" x="710" y="352" text-anchor="middle" fill="#eccd8a">replaces Groq entirely</text>
+    <text class="mono sub" x="710" y="352" text-anchor="middle" fill="#eccd8a">replaces Groq</text>
   </g>
 
   <text class="edge" x="620" y="280">escalates simple→complex if a "simple" turn needs too many tool calls</text>
   <text class="edge" x="660" y="373" text-anchor="middle">env-var switch: exclusive once ANTHROPIC_API_KEY is set — not per-query routing</text>
+
+  <!-- OpenRouter — opt-in third provider, not part of the env-var switch above.
+       Selected per-turn by the coordinator from a chat-UI model-preference control
+       (bypasses router.ts, which only ever picks between the two Groq tiers), and
+       falls back to Groq automatically on failure or free-tier quota exhaustion. -->
+  <g stroke="#d1a447" stroke-width="1.1" fill="none" opacity="0.75" stroke-dasharray="3 3">
+    <path d="M 255 300 C 420 200, 700 200, 850 305" marker-end="url(#arrow)"/>
+    <path d="M 850 335 C 750 255, 700 255, 615 289" marker-end="url(#arrow)"/>
+  </g>
+  <text class="edge" x="430" y="197">opt-in escalation — user picks Nemotron/MiniMax per-turn in chat UI, bypasses router.ts</text>
+  <text class="edge" x="710" y="250" text-anchor="middle">falls back to Groq on failure / quota exhaustion (25s×2 timeout)</text>
+
+  <g>
+    <rect class="box" x="850" y="300" width="180" height="90" rx="6" fill="#3a2e13" stroke="#d1a447"/>
+    <text class="label" x="940" y="320" text-anchor="middle" fill="#eccd8a">OpenRouter (opt-in)</text>
+    <text class="mono sub" x="940" y="335" text-anchor="middle" fill="#eccd8a">Nemotron 3 Ultra /</text>
+    <text class="mono sub" x="940" y="347" text-anchor="middle" fill="#eccd8a">MiniMax M2.7</text>
+    <text class="mono sub" x="940" y="362" text-anchor="middle" fill="#eccd8a">user-selected in chat UI,</text>
+    <text class="mono sub" x="940" y="374" text-anchor="middle" fill="#eccd8a">off by default</text>
+  </g>
 
   <!-- Logger, standalone — a cross-cutting sink for auth rejections, rate-limit -->
   <!-- rejections, and the agent loop, not a member of the agent loop itself -->
@@ -156,11 +176,11 @@
   </g>
 
   <g>
-    <path d="M 570 866 v -40 a85,10 0 0 1 170,0 v 40 a85,10 0 0 1 -170,0 z" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
-    <ellipse cx="655" cy="826" rx="85" ry="10" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
-    <text class="label" x="655" y="848" text-anchor="middle" fill="#c7c5bc">Postgres</text>
-    <text class="mono sub" x="655" y="862" text-anchor="middle" fill="#c7c5bc">transactions · cash_settings · symbol_metadata</text>
-    <text class="mono sub" x="655" y="873" text-anchor="middle" fill="#c7c5bc">current_prices · historical_prices</text>
+    <path d="M 505 886 v -60 a150,13 0 0 1 300,0 v 60 a150,13 0 0 1 -300,0 z" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
+    <ellipse cx="655" cy="826" rx="150" ry="13" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
+    <text class="label" x="655" y="846" text-anchor="middle" fill="#c7c5bc">Postgres</text>
+    <text class="mono sub" x="655" y="860" text-anchor="middle" fill="#c7c5bc">transactions · cash_settings · symbol_metadata</text>
+    <text class="mono sub" x="655" y="872" text-anchor="middle" fill="#c7c5bc">current_prices · historical_prices</text>
     <text class="mono sub" x="655" y="884" text-anchor="middle" fill="#c7c5bc">benchmark_history · fx_rates</text>
   </g>
 
@@ -175,20 +195,20 @@
     <text class="mono sub" x="940" y="155" text-anchor="middle" fill="#a9cdf2">browser → Supabase (anon key)</text>
   </g>
   <g>
-    <rect class="box" x="850" y="212" width="180" height="46" rx="6" fill="#26282a" stroke="#6f716c"/>
-    <text class="label" x="940" y="231" text-anchor="middle" fill="#c7c5bc">src/lib pure functions</text>
-    <text class="mono sub" x="940" y="245" text-anchor="middle" fill="#c7c5bc">xirr · taxCalculator · projectionEngine</text>
+    <rect class="box" x="850" y="212" width="240" height="46" rx="6" fill="#26282a" stroke="#6f716c"/>
+    <text class="label" x="970" y="231" text-anchor="middle" fill="#c7c5bc">src/lib pure functions</text>
+    <text class="mono sub" x="970" y="245" text-anchor="middle" fill="#c7c5bc">xirr · taxCalculator · projectionEngine</text>
   </g>
   <line x1="940" y1="78" x2="940" y2="118" stroke="#c9c8c0" stroke-width="1.3" opacity="0.8" marker-end="url(#arrow)"/>
   <line x1="940" y1="170" x2="940" y2="212" stroke="#c9c8c0" stroke-width="1.3" opacity="0.8" marker-end="url(#arrow)"/>
   <line x1="850" y1="145" x2="750" y2="145" stroke="#c9c8c0" stroke-width="1.3" stroke-dasharray="3 3" opacity="0.65" marker-end="url(#arrow)"/>
   <text class="edge" x="797" y="138" text-anchor="middle">same RLS, no MCP hop</text>
-  <path d="M 940 258 C 940 500, 745 810, 745 816" stroke="#c9c8c0" stroke-width="1.3" fill="none" stroke-dasharray="3 3" opacity="0.65" marker-end="url(#arrow)"/>
+  <path d="M 970 258 C 970 270, 800 275, 800 310 C 795 450, 795 600, 800 700 C 803 750, 760 800, 745 816" stroke="#c9c8c0" stroke-width="1.3" fill="none" stroke-dasharray="3 3" opacity="0.65" marker-end="url(#arrow)"/>
 
   <text class="edge mono" x="10" y="325" transform="rotate(-90 10 325)">SSE stream</text>
   <text class="edge mono" x="212" y="141">verify JWT</text>
   <text class="edge mono" x="212" y="230">per-user, per-minute</text>
-  <text class="edge mono" x="260" y="317">simple / complex?</text>
+  <text class="edge mono" x="292" y="308" text-anchor="middle">simple/complex?</text>
   <text class="edge mono" x="435" y="429">tools/call</text>
   <text class="edge mono" x="490" y="441">tools/list, tools/call</text>
   <text class="edge mono" x="660" y="491">dispatches per call</text>
