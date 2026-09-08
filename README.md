@@ -61,10 +61,12 @@ software/infra components · 🟠 **amber** = third-party APIs (LLM providers an
 <img src="docs/architecture.svg" alt="Portfolio AI architecture: chat UI through Supabase auth and rate
 limiting into the portfolio-ai coordinator agent, which routes between Groq and Claude, calls MCP tools
 over JSON-RPC against portfolio-mcp-server and Postgres under RLS, and streams the response back over
-SSE; dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop. Below,
-a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX rates, and
-fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX) into the
-same Postgres tables." width="100%" />
+SSE; a third provider, OpenRouter (Nemotron 3 Ultra / MiniMax M2.7), is available as an opt-in
+per-turn escalation the user selects from the chat UI, falling back to Groq automatically on failure
+or quota exhaustion. Dashboard pages query Postgres directly via usePortfolio, bypassing the agent and
+MCP hop. Below, a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX
+rates, and fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX)
+into the same Postgres tables." width="100%" />
 
 There is exactly one Supabase Auth account for this application. Row Level Security policies gate
 on `auth.role() = 'authenticated'` only; there is no `user_id`/`auth.uid()` partitioning, because
@@ -95,6 +97,15 @@ is used instead, exclusively, once `ANTHROPIC_API_KEY` is set — both implement
 performs zero-cost keyword-based routing between `gpt-oss-20b`/`gpt-oss-120b`, with an escalation
 safety net if a query classified as "simple" ends up needing too many tool calls. Full design
 rationale: [`docs/llm-mcp-agent-plan.md`](docs/llm-mcp-agent-plan.md).
+
+A third provider, OpenRouter ([`_shared/providers/openrouter.ts`](supabase/functions/_shared/providers/openrouter.ts)),
+is not a third leg of that environment-variable switch — it's an opt-in escalation the user picks
+per-turn from a model-preference control in the chat UI (`Nemotron 3 Ultra` or `MiniMax M2.7`),
+bypassing `router.ts` entirely for that turn, and falling back to Groq automatically if the
+OpenRouter call fails or its free-tier quota
+([`_shared/openrouter-quota.ts`](supabase/functions/_shared/openrouter-quota.ts)) is exhausted. See
+[`docs/openrouter-nemotron-plan.md`](docs/openrouter-nemotron-plan.md) for the full design and its
+production-hardening history.
 
 When a single LLM turn requests several independent tool calls at once,
 [`_shared/concurrency.ts`](supabase/functions/_shared/concurrency.ts)'s `mapWithConcurrency` runs at
