@@ -32,6 +32,36 @@ too — for a separate, more careful review pass.
 - [ ] Fix the `taxCalculator.ts` LTCG/STCG threshold day-count bug (see table above)
 - [ ] Fix the `GoalTrack.tsx` `getHoldingLotSplit` LT/ST threshold day-count bug (see table above)
 
+## Security
+
+Flagged 2026-09-08 during a repo-wide security scan requested by the user (edge function
+auth/CORS/secrets, RLS policies, frontend XSS/storage, `portfolio-ai` prompt-injection defenses,
+and `npm audit`) — full findings in chat history around that date. Most of the app checked out
+clean (auth gating, RLS, SQL injection, XSS, secrets handling, prompt-injection defenses all
+verified solid); two residual items below.
+
+- [ ] **Add a request-size cap to `portfolio-ai`.**
+      [`portfolio-ai/index.ts:222-223`](supabase/functions/portfolio-ai/index.ts) only validates
+      that `messages` is non-empty — no cap on `messages.length` (conversation history size) or a
+      single message's `content.length`. The existing per-minute request-count limiter
+      ([`rate-limit.ts`](supabase/functions/_shared/rate-limit.ts)) bounds request *count*, not
+      *payload size* per request, so a single authenticated user could still send an oversized
+      history/message each call and run up billed LLM input tokens within their own quota. Add a
+      max-length check alongside the existing `ValidationError` checks at that call site.
+
+- [ ] **Decide: should raw Postgres error text be sanitized before it can reach the chat?**
+      [`_shared/portfolio-data.ts:32-33`](supabase/functions/_shared/portfolio-data.ts) —
+      `assertNoError` does `throw new Error(\`${context}: ${error.message}\`)`, and that message
+      propagates up through `portfolio-mcp-server`'s tool-call handler as `isError: true`, where the
+      LLM may paraphrase it into a chat reply. This is **deliberate** (see the comment directly
+      above `assertNoError`) — added specifically so a transient DB error surfaces instead of being
+      silently masked as fabricated-looking data (e.g. "₹0 invested, 0 holdings"). Since
+      `portfolio-mcp-server` is internal-only (service-role-gated) and the sole consumer is the
+      app's one authenticated user talking to their own assistant, the blast radius is "you see a
+      raw Postgres error in your own chat," not a third-party leak. Open question, not yet decided:
+      leave as-is (accept the tradeoff, it's already documented) vs. generalize the message (e.g.
+      strip `error.message`, keep `context`) before it reaches the LLM.
+
 ## Backlog
 
 - [ ] **Scaling & archival plan.** Implement the plan in
