@@ -12,6 +12,13 @@ picks a winner between Nemotron and MiniMax, per Goal 5 — that bench-off has r
 data now (see task 9) but isn't concluded yet. Companion to
 [llm-mcp-agent-plan.md](llm-mcp-agent-plan.md), which this extends rather than replaces.
 
+**2026-09-08 update:** the Anthropic (Claude Sonnet 5) provider this plan describes as "unchanged,
+untouched by this work" and winning outright over OpenRouter has since been descoped and removed
+from the codebase entirely — Groq is now the only always-on/default provider, and OpenRouter's
+opt-in behavior (per-turn `modelPreference`, fallback to Groq) is otherwise unchanged from what's
+documented below. Anthropic references in the rest of this doc describe the state at the time this
+plan was written and executed, not current behavior.
+
 ## Production hardening (found only after real deploy traffic, not caught by mocked-provider tests)
 
 - **[PR #106](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/106)** — Nemotron

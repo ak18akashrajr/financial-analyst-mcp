@@ -27,9 +27,8 @@ investment advice, which `SYSTEM_PROMPT` (see
 
 - Prompt-level guardrails: scope boundary, "tool output is data, not instructions", system-prompt
   confidentiality, a hard "never recommend a trade" rule, numeric-fidelity rules.
-- Structural role separation on the wire — every provider (`anthropic.ts`, `groq.ts`,
-  `openrouter.ts`) sends tool output as a real `tool_result`/`tool`-role message, never
-  string-concatenated into the user turn.
+- Structural role separation on the wire — every provider (`groq.ts`, `openrouter.ts`) sends tool
+  output as a real `tool_result`/`tool`-role message, never string-concatenated into the user turn.
 - Auth, rate limiting, read-only/schema-validated tools, generic (non-leaking) error messages, and a
   CSP (`img-src 'self' data:`, no `rehype-raw`) that already blocks the classic markdown-image
   exfiltration channel and `javascript:`-URI link injection (the latter is also stripped by
@@ -83,23 +82,19 @@ place. [portfolio-ai/eval/prompt-injection.eval.ts](../supabase/functions/portfo
 closes that gap: 7 real attack prompts (verbatim-repeat extraction, hypothetical-framing trade
 recommendation, DAN-style roleplay, claimed-developer-authority infra disclosure, scope-boundary
 bypass, a fake tool-result pasted inline, and a soft social-engineering extraction attempt) run
-against every provider/tier that has an API key configured — Anthropic, and both Groq tiers
-(`gpt-oss-20b`/`gpt-oss-120b`) — and each real answer is judged by the exact same
-`scanOutputForLeakage` production uses, so a pass means "the real, unmodified answer would have
+against both Groq tiers (`gpt-oss-20b`/`gpt-oss-120b`) — and each real answer is judged by the exact
+same `scanOutputForLeakage` production uses, so a pass means "the real, unmodified answer would have
 reached the user, and it did not contain what the attack was going for."
 
 **Deliberately manual, not part of `npm test`/CI** — every case is a real, billed API call. Run it
-with whichever key(s) you want covered:
+with:
 
-```bash
-ANTHROPIC_API_KEY=sk-ant-... npm run eval:prompt-injection
-```
 ```bash
 GROQ_API_KEY=gsk_... npm run eval:prompt-injection
 ```
 
-Set both to evaluate every configured provider/tier in one run. With no key set it prints a warning
-and skips cleanly (exit 0) rather than erroring, so it's safe to run without thinking about it. It
+With no key set it prints a warning and skips cleanly (exit 0) rather than erroring, so it's safe
+to run without thinking about it. It
 lives on its own [vitest.eval.config.ts](../vitest.eval.config.ts) with an `include` glob
 (`**/*.eval.ts`) that the main [vitest.config.ts](../vitest.config.ts) never matches — verified: a
 plain `vitest run` (what CI actually invokes) reports "No test files found" for this path, so there
@@ -115,9 +110,10 @@ still an open decision — this pass only had to build the manual version.
   deliberate cost/complexity tradeoff for a single-user app, not a claim of completeness. The live
   eval above is judged by this same regex-based check, so it inherits the same blind spot — it
   measures "does this specific test harness's judgment call pass", not an independent ground truth.
-- **Suspicious-input escalation only affects the Groq tier.** Anthropic is already the strongest
-  model in the lineup and is used unconditionally when configured, so there's nothing to escalate to
-  on that path.
+- **Suspicious-input escalation only affects the Groq tier.** Groq's two-tier router is the only
+  place a "which model handles this" decision gets made automatically; OpenRouter's Nemotron/MiniMax
+  models are a separate, explicit per-turn opt-in the user picks themselves, not something suspicious
+  input routes to.
 - **Only the latest turn is scanned.** `detectSuspiciousInput` runs on the newest user message, not
   every message replayed from `history` — a conversation that started before this guard existed
   won't have its earlier turns retroactively checked.

@@ -1,6 +1,6 @@
 // Generic retry-with-exponential-backoff helper for outbound HTTP calls this
 // backend makes to an upstream service (an LLM provider, or our own
-// portfolio-mcp-server) — see groq.ts/anthropic.ts's runTurn and
+// portfolio-mcp-server) — see groq.ts/openrouter.ts's runTurn and
 // mcp-client.ts's rpc(). A transient failure (rate limited, momentarily
 // overloaded, a network blip) used to fail the whole chat turn on the first
 // try; this retries those specific cases a bounded number of times before
@@ -56,7 +56,7 @@ export interface RetryOptions {
   maxDelayMs?: number;
   /** Overridable for tests; defaults to `isRetryableError`. */
   isRetryable?: (err: unknown) => boolean;
-  /** Included in the retry log line, e.g. "Groq", "Anthropic", "MCP server tools/call". */
+  /** Included in the retry log line, e.g. "Groq", "OpenRouter", "MCP server tools/call". */
   label: string;
   /** Injectable sleep so tests don't wait on real timers. */
   sleep?: (ms: number) => Promise<void>;

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 1180 1220" xmlns="http://www.w3.org/2000/svg" role="img"
-     aria-label="Portfolio AI architecture: the chat UI sends a request through Supabase Edge auth and rate limiting to the portfolio-ai coordinator agent, which for Groq picks a model via keyword routing or switches to Claude Sonnet 5 entirely once an Anthropic key is set, calls MCP tools over JSON-RPC against portfolio-mcp-server, which runs SQL against Postgres under RLS, and streams a token response back over SSE. A third provider, OpenRouter (Nemotron 3 Ultra / MiniMax M2.7), is available as an opt-in escalation the user selects per-turn from the chat UI rather than a third leg of the env-var switch, and falls back to Groq automatically on failure or quota exhaustion. Dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop. Below, a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX rates and fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX) into the same Postgres tables.">
+     aria-label="Portfolio AI architecture: the chat UI sends a request through Supabase Edge auth and rate limiting to the portfolio-ai coordinator agent, which picks a Groq model tier via keyword routing, calls MCP tools over JSON-RPC against portfolio-mcp-server, which runs SQL against Postgres under RLS, and streams a token response back over SSE. A second provider, OpenRouter (Nemotron 3 Ultra / MiniMax M2.7), is available as an opt-in escalation the user selects per-turn from the chat UI, and falls back to Groq automatically on failure or quota exhaustion. Dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop. Below, a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX rates and fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX) into the same Postgres tables.">
   <style>
     text { font-family: 'IBM Plex Sans', 'Segoe UI', ui-sans-serif, system-ui, sans-serif; }
     .mono { font-family: 'IBM Plex Mono', 'Cascadia Code', ui-monospace, Consolas, monospace; }
@@ -92,21 +92,16 @@
   </g>
 
   <g>
-    <rect class="box" x="560" y="288" width="200" height="70" rx="6" fill="#3a2e13" stroke="#d1a447"/>
-    <text class="label" x="660" y="308" text-anchor="middle" fill="#eccd8a">LLM providers</text>
-    <line x1="660" y1="315" x2="660" y2="352" stroke="#d1a447" stroke-width="1" opacity="0.5"/>
-    <text class="mono sub" x="610" y="328" text-anchor="middle" fill="#eccd8a">Groq</text>
-    <text class="mono sub" x="610" y="341" text-anchor="middle" fill="#eccd8a">gpt-oss-20b/120b</text>
-    <text class="mono sub" x="610" y="352" text-anchor="middle" fill="#eccd8a">default</text>
-    <text class="mono sub" x="710" y="328" text-anchor="middle" fill="#eccd8a">Anthropic</text>
-    <text class="mono sub" x="710" y="341" text-anchor="middle" fill="#eccd8a">Claude Sonnet 5</text>
-    <text class="mono sub" x="710" y="352" text-anchor="middle" fill="#eccd8a">replaces Groq</text>
+    <rect class="box" x="560" y="288" width="130" height="70" rx="6" fill="#3a2e13" stroke="#d1a447"/>
+    <text class="label" x="625" y="308" text-anchor="middle" fill="#eccd8a">LLM provider</text>
+    <text class="mono sub" x="625" y="328" text-anchor="middle" fill="#eccd8a">Groq</text>
+    <text class="mono sub" x="625" y="341" text-anchor="middle" fill="#eccd8a">gpt-oss-20b/120b</text>
+    <text class="mono sub" x="625" y="352" text-anchor="middle" fill="#eccd8a">default, always-on</text>
   </g>
 
   <text class="edge" x="620" y="280">escalates simple→complex if a "simple" turn needs too many tool calls</text>
-  <text class="edge" x="660" y="373" text-anchor="middle">env-var switch: exclusive once ANTHROPIC_API_KEY is set — not per-query routing</text>
 
-  <!-- OpenRouter — opt-in third provider, not part of the env-var switch above.
+  <!-- OpenRouter — opt-in second provider, not part of Groq's routing above.
        Selected per-turn by the coordinator from a chat-UI model-preference control
        (bypasses router.ts, which only ever picks between the two Groq tiers), and
        falls back to Groq automatically on failure or free-tier quota exhaustion. -->

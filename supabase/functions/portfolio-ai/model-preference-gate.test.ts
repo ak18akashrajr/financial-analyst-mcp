@@ -1,7 +1,7 @@
 // Confirms portfolio-ai's opt-in OpenRouter path (docs/openrouter-nemotron-plan.md):
-// modelPreference validation, Anthropic still winning outright over a
-// user-selected OpenRouter model, quota-exhausted falling back to Groq, and
-// an OpenRouter HttpCallError falling back to Groq mid-turn. The provider
+// modelPreference validation, a user-selected OpenRouter model overriding
+// the default Groq tiering, quota-exhausted falling back to Groq, and an
+// OpenRouter HttpCallError falling back to Groq mid-turn. The provider
 // files' own runTurn/HTTP behavior is unit-tested in
 // _shared/providers/provider-error.test.ts and the quota arithmetic in
 // _shared/openrouter-quota.test.ts; this only checks index.ts wires them
@@ -64,17 +64,6 @@ vi.mock("../_shared/providers/groq.ts", () => ({
   })),
 }));
 
-const anthropicRunTurnMock = vi.fn();
-vi.mock("../_shared/providers/anthropic.ts", () => ({
-  AnthropicProvider: vi.fn().mockImplementation(() => ({
-    name: "anthropic",
-    loadHistory: vi.fn(),
-    addUserMessage: vi.fn(),
-    appendToolResults: vi.fn(),
-    runTurn: anthropicRunTurnMock,
-  })),
-}));
-
 let handler: (req: Request) => Promise<Response> | Response;
 let HttpCallError: typeof HttpCallErrorType;
 
@@ -92,7 +81,6 @@ beforeEach(async () => {
   quotaMock.mockReset();
   openRouterRunTurnMock.mockReset();
   groqRunTurnMock.mockReset();
-  anthropicRunTurnMock.mockReset();
 });
 
 function chatRequest(modelPreference?: string): Request {
@@ -153,21 +141,6 @@ describe("portfolio-ai opt-in OpenRouter routing", () => {
     expect(openRouterRunTurnMock).toHaveBeenCalledTimes(2);
     expect(groqRunTurnMock).not.toHaveBeenCalled();
     expect(text).toContain("NVIDIA Nemotron 3 Ultra via OpenRouter");
-  });
-
-  it("falls back to Groq without calling OpenRouter when ANTHROPIC_API_KEY is set (Anthropic wins outright)", async () => {
-    stubEnv({ ANTHROPIC_API_KEY: "anthropic-key", GROQ_API_KEY: "test-key", OPENROUTER_API_KEY: "or-key" });
-    ({ HttpCallError } = await import("../_shared/http-call-error.ts"));
-    await import("./index.ts");
-
-    anthropicRunTurnMock.mockResolvedValueOnce(groundedFirstTurn).mockResolvedValueOnce({ done: true, text: "answer" });
-
-    const res = await handler(chatRequest("nemotron"));
-    const text = await readAllEvents(res.body as ReadableStream<Uint8Array>);
-
-    expect(quotaMock).not.toHaveBeenCalled();
-    expect(anthropicRunTurnMock).toHaveBeenCalledTimes(2);
-    expect(text).toContain("Claude Sonnet 5");
   });
 
   it("falls back to Groq, with an honest attribution note, when OPENROUTER_API_KEY is not configured", async () => {

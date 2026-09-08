@@ -2,6 +2,13 @@
 
 Status: **Shipped** — merged via [PR #3](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/3) from `feature/claude-mcp-agent`. Kept here as the architecture record for the MCP server + provider routing.
 
+**2026-09-08 update:** the Anthropic (Claude Sonnet 5) provider described throughout this doc as
+the env-var swap-in has since been descoped and removed from the codebase — Groq is now the only
+always-on provider, with OpenRouter as a separate opt-in path (see
+[openrouter-nemotron-plan.md](openrouter-nemotron-plan.md)). The rest of this doc is left as
+written for the historical record of what actually shipped in PR #3; don't take its Anthropic
+references as describing current behavior.
+
 ## Why
 
 The current `portfolio-ai` Supabase Edge Function calls Gemini (via Lovable AI Gateway) with a

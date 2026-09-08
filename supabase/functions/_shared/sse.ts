@@ -1,7 +1,7 @@
 // Normalized SSE event format for portfolio-ai. We own the whole generation
 // (unlike the old code, which relayed a vendor's raw SSE stream), so the
 // frontend only ever needs to understand these three event types regardless
-// of which provider (Groq/Anthropic) or model tier actually served the
+// of which provider (Groq/OpenRouter) or model tier actually served the
 // request:
 //   event: tool_call   data: { name, args }               — a tool is being invoked
 //   event: delta        data: { text }                     — a chunk of the final answer
@@ -10,7 +10,7 @@
 //
 // The client-facing error message always comes from classifyChatError's
 // fixed vocabulary — never the caught error's own message. Provider errors
-// (e.g. "Anthropic request failed: 401 ...") embed upstream response
+// (e.g. "Groq request failed: 401 ...") embed upstream response
 // bodies/status codes, and forwarding those to the browser both contradicts
 // the AI system prompt's "never reveal infrastructure/provider details"
 // instruction and hands an attacker a way to fingerprint or probe the

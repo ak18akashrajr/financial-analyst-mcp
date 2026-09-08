@@ -1,9 +1,11 @@
 // Portfolio AI agent backend.
 //
-// Provider selection: Claude Sonnet 5 (Anthropic) if ANTHROPIC_API_KEY is
-// set, otherwise Groq with a two-tier gpt-oss-20b/120b heuristic router for
-// token optimization (see _shared/router.ts). Switching providers later is
-// an env-var change only — no code changes needed.
+// Provider selection: Groq with a two-tier gpt-oss-20b/120b heuristic router
+// for token optimization (see _shared/router.ts) by default, with an opt-in
+// per-turn OpenRouter escalation (Nemotron 3 Ultra / MiniMax M2.7 — see
+// docs/openrouter-nemotron-plan.md). An Anthropic (Claude Sonnet 5) provider
+// existed here previously and was removed once that path was descoped —
+// see git history around 2026-09-08 if reviving it.
 //
 // Tools: no more prose-pretend tools or single mega context-dump. Every
 // portfolio fact is fetched on demand through a real MCP tools/call request
@@ -17,7 +19,6 @@ import { McpClient } from "../_shared/mcp-client.ts";
 import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, isComplexQuery, shouldEscalate } from "../_shared/router.ts";
 import { findTool } from "../_shared/mcp-tools.ts";
 import { GroqProvider } from "../_shared/providers/groq.ts";
-import { AnthropicProvider } from "../_shared/providers/anthropic.ts";
 import { OpenRouterProvider } from "../_shared/providers/openrouter.ts";
 import type { LlmProvider, ToolChoice, ToolResultForProvider, TurnResult } from "../_shared/providers/types.ts";
 import {
@@ -40,10 +41,6 @@ const corsHeaders = buildCorsHeaders(
   "x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 );
 
-// Exported alongside SYSTEM_PROMPT purely for test/eval consumption (see
-// system-prompt.test.ts and eval/prompt-injection.eval.ts) — not used as an
-// import anywhere else in the runtime path itself.
-export const CLAUDE_MODEL = "claude-sonnet-5";
 const MAX_TOOL_TURNS = 5;
 // A single turn can request several independent tool calls at once (e.g. a
 // "what's my exposure and my risk metrics" question). They're independent
@@ -178,7 +175,7 @@ interface ChatRequestMessage {
 // complexity-based route to either model yet: that's gated behind a
 // bench-off between the two (see the plan doc's Goal 5 / rollout task 9)
 // that hasn't happened. "auto" (or omitting the field) is identical to
-// today's behavior — Anthropic-if-set, else Groq's existing two-tier router.
+// today's behavior — Groq's existing two-tier router.
 type ModelPreference = "auto" | "nemotron" | "minimax";
 const MODEL_PREFERENCE_VALUES: ModelPreference[] = ["auto", "nemotron", "minimax"];
 const OPENROUTER_MODEL_ID_FOR: Record<"nemotron" | "minimax", string> = {
@@ -187,13 +184,8 @@ const OPENROUTER_MODEL_ID_FOR: Record<"nemotron" | "minimax", string> = {
 };
 
 function buildProvider(): { provider: LlmProvider; model: string; attribution: string } {
-  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (anthropicKey) {
-    return { provider: new AnthropicProvider(anthropicKey), model: CLAUDE_MODEL, attribution: "Claude Sonnet 5" };
-  }
-
   const groqKey = Deno.env.get("GROQ_API_KEY");
-  if (!groqKey) throw new Error("No LLM API keys configured (set GROQ_API_KEY or ANTHROPIC_API_KEY)");
+  if (!groqKey) throw new Error("No LLM API key configured (set GROQ_API_KEY)");
   return { provider: new GroqProvider(groqKey), model: "", attribution: "" }; // model/attribution set per-request by the router
 }
 
@@ -270,44 +262,41 @@ Deno.serve(async (req: Request) => {
     const tools = await mcpClient.listTools();
 
     const { provider: baseProvider, model: fixedModel, attribution: fixedAttribution } = buildProvider();
-    const usingAnthropic = fixedModel === CLAUDE_MODEL;
 
     // Groq two-tier routing: pick the model up front from the heuristic, escalate mid-loop if needed.
     let provider: LlmProvider = baseProvider;
     let model = fixedModel;
     let attribution = fixedAttribution;
     let escalated = false;
-    if (!usingAnthropic) {
-      // Suspicious-input escalation: the smallest/cheapest model is also the
-      // easiest to steer off its instructions, and it's the default entry
-      // point for "simple"-looking queries — so a message that *looks*
-      // simple by isComplexQuery's keyword heuristic but also matched an
-      // injection-style pattern above still gets routed to the bigger tier.
-      model = (isComplexQuery(latest.content) || inputCheck.suspicious) ? GROQ_COMPLEX_MODEL : GROQ_SIMPLE_MODEL;
-      attribution = model === GROQ_COMPLEX_MODEL
-        ? (inputCheck.suspicious ? "GPT-OSS 120B via Groq (escalated — suspicious input)" : "GPT-OSS 120B via Groq")
-        : "GPT-OSS 20B via Groq";
+    // Suspicious-input escalation: the smallest/cheapest model is also the
+    // easiest to steer off its instructions, and it's the default entry
+    // point for "simple"-looking queries — so a message that *looks*
+    // simple by isComplexQuery's keyword heuristic but also matched an
+    // injection-style pattern above still gets routed to the bigger tier.
+    model = (isComplexQuery(latest.content) || inputCheck.suspicious) ? GROQ_COMPLEX_MODEL : GROQ_SIMPLE_MODEL;
+    attribution = model === GROQ_COMPLEX_MODEL
+      ? (inputCheck.suspicious ? "GPT-OSS 120B via Groq (escalated — suspicious input)" : "GPT-OSS 120B via Groq")
+      : "GPT-OSS 20B via Groq";
 
-      // Opt-in OpenRouter path (Anthropic still wins outright above, unconditionally
-      // — this never overrides that, matching docs/openrouter-nemotron-plan.md's
-      // explicit out-of-scope note). Falls back to the Groq tiering already computed
-      // above whenever the key is missing or the model's daily quota is exhausted —
-      // never a hard error for an opt-in choice that just isn't available right now.
-      if (modelPreference === "nemotron" || modelPreference === "minimax") {
-        const openRouterModelId = OPENROUTER_MODEL_ID_FOR[modelPreference];
-        const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
-        if (!openRouterKey) {
-          logger.warn("modelPreference requested but OPENROUTER_API_KEY not configured — using Groq", { modelPreference });
+    // Opt-in OpenRouter path — overrides the Groq tiering just computed above
+    // whenever the user explicitly requested it on this turn (modelPreference).
+    // Falls back to that Groq tiering whenever the key is missing or the
+    // model's daily quota is exhausted — never a hard error for an opt-in
+    // choice that just isn't available right now.
+    if (modelPreference === "nemotron" || modelPreference === "minimax") {
+      const openRouterModelId = OPENROUTER_MODEL_ID_FOR[modelPreference];
+      const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
+      if (!openRouterKey) {
+        logger.warn("modelPreference requested but OPENROUTER_API_KEY not configured — using Groq", { modelPreference });
+      } else {
+        const withinQuota = await checkAndIncrementQuota(serviceClient, openRouterModelId);
+        if (!withinQuota) {
+          logger.info("OpenRouter daily quota exhausted — using Groq", { modelId: openRouterModelId });
+          attribution = `${attribution} (requested model's daily quota is used up for today)`;
         } else {
-          const withinQuota = await checkAndIncrementQuota(serviceClient, openRouterModelId);
-          if (!withinQuota) {
-            logger.info("OpenRouter daily quota exhausted — using Groq", { modelId: openRouterModelId });
-            attribution = `${attribution} (requested model's daily quota is used up for today)`;
-          } else {
-            provider = new OpenRouterProvider(openRouterKey);
-            model = openRouterModelId;
-            attribution = OPENROUTER_MODEL_ATTRIBUTION[openRouterModelId];
-          }
+          provider = new OpenRouterProvider(openRouterKey);
+          model = openRouterModelId;
+          attribution = OPENROUTER_MODEL_ATTRIBUTION[openRouterModelId];
         }
       }
     }
@@ -413,9 +402,9 @@ Deno.serve(async (req: Request) => {
           }
           anyToolCalled = true;
 
-          // Groq-only escalation safety net: if the cheap tier needs too many tool
+          // Escalation safety net: if the cheap Groq tier needs too many tool
           // calls or touches a "complex" tool, restart this turn on the bigger model.
-          if (!usingAnthropic && model === GROQ_SIMPLE_MODEL) {
+          if (model === GROQ_SIMPLE_MODEL) {
             toolCallCount += result.calls.length;
             invokedComplexTool ||= result.calls.some((c) => findTool(c.name)?.complexity === "complex");
             if (shouldEscalate(toolCallCount, invokedComplexTool) && !escalated) {
@@ -504,7 +493,7 @@ Deno.serve(async (req: Request) => {
     logger.error("portfolio-ai error", { error: e });
     // Validation errors are safe (and useful) to show verbatim. Anything
     // else is an internal/provider failure whose real detail (e.g. "No LLM
-    // API keys configured" or an upstream provider's error body) must never
+    // API key configured" or an upstream provider's error body) must never
     // leak to the client — classifyChatError maps it to a fixed, safe
     // message and an appropriate HTTP status instead of one flat 500 for
     // every possible cause. Same rule, same classifier, as errors raised

@@ -46,8 +46,8 @@ hosted product for others to sign up to.
   annualized XIRR figure.
 - **Portfolio AI assistant** — a conversational assistant backed by a real MCP server exposing
   live portfolio tools (holdings, exposure, risk metrics, stress tests, benchmark comparison).
-  Runs on Groq (`gpt-oss-20b`/`gpt-oss-120b`, routed by query complexity) by default, or on Claude
-  Sonnet 5 automatically when an Anthropic API key is configured. See
+  Runs on Groq (`gpt-oss-20b`/`gpt-oss-120b`, routed by query complexity) by default, with an
+  opt-in per-turn escalation to OpenRouter (Nemotron 3 Ultra / MiniMax M2.7). See
   [`docs/llm-mcp-agent-plan.md`](docs/llm-mcp-agent-plan.md) for the architecture.
 - **Periodic reports** — generated quarterly/annual summaries, performance commentary, and
   outlook notes.
@@ -59,14 +59,14 @@ software/infra components · 🟠 **amber** = third-party APIs (LLM providers an
 ⚪ **gray** = data stores and leaf endpoints.
 
 <img src="docs/architecture.svg" alt="Portfolio AI architecture: chat UI through Supabase auth and rate
-limiting into the portfolio-ai coordinator agent, which routes between Groq and Claude, calls MCP tools
-over JSON-RPC against portfolio-mcp-server and Postgres under RLS, and streams the response back over
-SSE; a third provider, OpenRouter (Nemotron 3 Ultra / MiniMax M2.7), is available as an opt-in
-per-turn escalation the user selects from the chat UI, falling back to Groq automatically on failure
-or quota exhaustion. Dashboard pages query Postgres directly via usePortfolio, bypassing the agent and
-MCP hop. Below, a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX
-rates, and fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX)
-into the same Postgres tables." width="100%" />
+limiting into the portfolio-ai coordinator agent, which routes between Groq's two model tiers by
+query complexity, calls MCP tools over JSON-RPC against portfolio-mcp-server and Postgres under RLS,
+and streams the response back over SSE; a second provider, OpenRouter (Nemotron 3 Ultra / MiniMax
+M2.7), is available as an opt-in per-turn escalation the user selects from the chat UI, falling back
+to Groq automatically on failure or quota exhaustion. Dashboard pages query Postgres directly via
+usePortfolio, bypassing the agent and MCP hop. Below, a separate on-demand data-ingestion pipeline of
+six edge functions pulls prices, FX rates, and fundamentals from Yahoo Finance (with a
+Frankfurter/open.er-api.com fallback chain for FX) into the same Postgres tables." width="100%" />
 
 There is exactly one Supabase Auth account for this application. Row Level Security policies gate
 on `auth.role() = 'authenticated'` only; there is no `user_id`/`auth.uid()` partitioning, because
@@ -89,14 +89,12 @@ hand-rolled JSON-RPC 2.0 / MCP "Streamable HTTP" endpoint. Its tools are registe
 `run_stress_test`, `compare_to_benchmark`, and others), each backed by a SQL query.
 [`supabase/functions/portfolio-ai/`](supabase/functions/portfolio-ai/index.ts) is the agent loop
 that calls those tools through [`_shared/mcp-client.ts`](supabase/functions/_shared/mcp-client.ts).
-Provider selection is an environment-variable switch: Groq
-([`_shared/providers/groq.ts`](supabase/functions/_shared/providers/groq.ts)) is the default;
-Claude Sonnet 5 ([`_shared/providers/anthropic.ts`](supabase/functions/_shared/providers/anthropic.ts))
-is used instead, exclusively, once `ANTHROPIC_API_KEY` is set — both implement the same
-`LlmProvider` interface. On the Groq path, [`_shared/router.ts`](supabase/functions/_shared/router.ts)
-performs zero-cost keyword-based routing between `gpt-oss-20b`/`gpt-oss-120b`, with an escalation
-safety net if a query classified as "simple" ends up needing too many tool calls. Full design
-rationale: [`docs/llm-mcp-agent-plan.md`](docs/llm-mcp-agent-plan.md).
+Groq ([`_shared/providers/groq.ts`](supabase/functions/_shared/providers/groq.ts)) is the only
+always-on provider, implementing the `LlmProvider` interface. On the Groq path,
+[`_shared/router.ts`](supabase/functions/_shared/router.ts) performs zero-cost keyword-based routing
+between `gpt-oss-20b`/`gpt-oss-120b`, with an escalation safety net if a query classified as
+"simple" ends up needing too many tool calls. Full design rationale:
+[`docs/llm-mcp-agent-plan.md`](docs/llm-mcp-agent-plan.md).
 
 A third provider, OpenRouter ([`_shared/providers/openrouter.ts`](supabase/functions/_shared/providers/openrouter.ts)),
 is not a third leg of that environment-variable switch — it's an opt-in escalation the user picks
@@ -271,14 +269,14 @@ To point the application at your own Supabase instance:
    ```
 
    `GROQ_API_KEY` is required; it backs the default provider (`gpt-oss-20b`/`gpt-oss-120b`, routed
-   by query complexity). To use Claude Sonnet 5 instead, also set:
+   by query complexity). To also enable the opt-in OpenRouter escalation (Nemotron 3 Ultra /
+   MiniMax M2.7, picked per-turn from the chat UI), additionally set:
 
    ```bash
-   npx supabase secrets set ANTHROPIC_API_KEY="your_anthropic_key"
+   npx supabase secrets set OPENROUTER_API_KEY="your_openrouter_key"
    ```
 
-   When `ANTHROPIC_API_KEY` is present, the agent uses Claude exclusively; no code change is
-   required to switch. See [`docs/llm-mcp-agent-plan.md`](docs/llm-mcp-agent-plan.md) for details.
+   See [`docs/openrouter-nemotron-plan.md`](docs/openrouter-nemotron-plan.md) for details.
 
 6. **Create a login account.** The application is gated by real Supabase Auth (email + password),
    single-user, with no signup flow in the app itself. Create one account under your project's

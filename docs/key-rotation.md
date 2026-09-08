@@ -2,7 +2,9 @@
 
 **Status:** process documentation only — no code change required. Written in response to finding
 #9 of the [second security audit addendum](security-review.md#addendum-second-audit-2026-08-22)
-("no key rotation strategy for Groq/Anthropic keys"). Low severity for a single-user hobby app —
+("no key rotation strategy for Groq/Anthropic keys" — the Anthropic provider has since been
+removed, see [llm-mcp-agent-plan.md](llm-mcp-agent-plan.md)'s status note; this doc now covers only
+the secrets still in use). Low severity for a single-user hobby app —
 there's no team to coordinate across and no customer-facing SLA — but worth having a documented
 process rather than none, since a leaked key (accidental commit, compromised laptop, provider-side
 breach) is the realistic trigger, not a calendar.
@@ -17,9 +19,8 @@ no scheduled or automatic rotation for any of them.
 
 | Secret | Used by | Set via |
 |---|---|---|
-| `GROQ_API_KEY` | `portfolio-ai` (default LLM provider) | `npx supabase secrets set GROQ_API_KEY=...` |
-| `ANTHROPIC_API_KEY` | `portfolio-ai` (used exclusively once set — see [_shared/providers](../supabase/functions/_shared/providers)) | `npx supabase secrets set ANTHROPIC_API_KEY=...` |
-| `OPENROUTER_API_KEY` | `portfolio-ai` (opt-in Nemotron 3 Ultra / MiniMax M2.7 path — see [docs/openrouter-nemotron-plan.md](openrouter-nemotron-plan.md)); its absence doesn't affect the Groq/Anthropic paths at all, same as `ANTHROPIC_API_KEY`'s optionality | `npx supabase secrets set OPENROUTER_API_KEY=...` |
+| `GROQ_API_KEY` | `portfolio-ai` (default LLM provider, required) | `npx supabase secrets set GROQ_API_KEY=...` |
+| `OPENROUTER_API_KEY` | `portfolio-ai` (opt-in Nemotron 3 Ultra / MiniMax M2.7 path — see [docs/openrouter-nemotron-plan.md](openrouter-nemotron-plan.md)); its absence doesn't affect the Groq path at all — it's purely optional | `npx supabase secrets set OPENROUTER_API_KEY=...` |
 | `ALLOWED_ORIGIN` | every DB-touching edge function (CORS) | `npx supabase secrets set ALLOWED_ORIGIN=...` |
 | `SUPABASE_SERVICE_ROLE_KEY` | `portfolio-ai`, `portfolio-mcp-server`, `fetch-*` | injected automatically by Supabase per-project — not user-set |
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | all edge functions | injected automatically by Supabase per-project — not user-set |
@@ -33,7 +34,7 @@ section below, which is the more sensitive of the two since it bypasses RLS.
 - **Suspected exposure** — a key committed to git (even briefly, even on a branch since deleted),
   pasted into a chat/ticket/log by mistake, or a laptop/CI runner with local access to it was lost
   or compromised. Rotate immediately, don't wait for a schedule.
-- **Provider-side incident** — Groq, Anthropic, or Supabase announces a breach or forced rotation.
+- **Provider-side incident** — Groq, OpenRouter, or Supabase announces a breach or forced rotation.
 - **Routine hygiene** — no hard requirement for a single-user app, but annually is a reasonable
   default if nothing else prompts it.
 - **Before/after handing off** — if this project is ever handed to someone else or a collaborator
@@ -41,12 +42,11 @@ section below, which is the more sensitive of the two since it bypasses RLS.
   [auth-rls-plan.md](auth-rls-plan.md) for why this app has no per-user isolation to fall back on
   in the meantime).
 
-## Rotating `GROQ_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY`
+## Rotating `GROQ_API_KEY` / `OPENROUTER_API_KEY`
 
-1. Generate a new key in the provider's console (Groq Console / Anthropic Console / OpenRouter
-   dashboard) — don't revoke the old one yet.
-2. `npx supabase secrets set GROQ_API_KEY="<new key>"` (or `ANTHROPIC_API_KEY` /
-   `OPENROUTER_API_KEY`). This takes effect
+1. Generate a new key in the provider's console (Groq Console / OpenRouter dashboard) — don't
+   revoke the old one yet.
+2. `npx supabase secrets set GROQ_API_KEY="<new key>"` (or `OPENROUTER_API_KEY`). This takes effect
    on the next cold start of `portfolio-ai` — no redeploy needed, but see the note on in-flight
    requests below.
 3. Send one real chat message through `/portfolio-ai` in the deployed app and confirm it succeeds
@@ -79,7 +79,7 @@ This is the most sensitive credential in the system — it bypasses RLS entirely
    function's environment; no manual `secrets set` step for this one.
 3. Redeploy edge functions if you need the new key live immediately rather than waiting for the
    next natural cold start: `npx supabase functions deploy --use-api`.
-4. Confirm `portfolio-ai` still works end-to-end (step 3 of the Groq/Anthropic section, above) —
+4. Confirm `portfolio-ai` still works end-to-end (step 3 of the rotation section above) —
    this also exercises `portfolio-mcp-server`'s `requestHasServiceRole()` check, which compares
    against this exact value.
 
