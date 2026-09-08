@@ -777,3 +777,80 @@ code change:
   never edited after the fact, even for a comment-only change; a new migration is added instead.
 - No tests apply (a Postgres comment isn't application behavior); typecheck and full suite
   unaffected since no `.ts`/`.tsx` file changed.
+
+## Fourth pass (2026-09-08) — repo-wide scan, general hardening check
+
+Requested by the user as a general "any security enhancements to add" scan, not triggered by a
+specific incident or new feature. Covered edge function auth/CORS/secrets, RLS policies, frontend
+XSS/storage, `portfolio-ai` prompt-injection defenses, and `npm audit`. Everything from the prior
+three passes re-verified still holds — in particular `ALLOWED_ORIGIN`'s `"*"` fallback (finding
+#4/#12) is still open pending that secret being confirmed set in the deployed project; not
+re-fixed this pass. One new, actionable finding:
+
+### Status
+
+| # | Issue | Severity | Status |
+|---|-------|----------|--------|
+| 13 | Raw Postgres error text (`error.message`) could reach the chat via `portfolio-mcp-server`'s tool-call error path | Low | ✅ **Fixed** |
+
+Also flagged this pass, not code-level vulnerabilities by themselves, tracked in
+[TODO.md](../TODO.md) instead:
+- No request-size cap on `portfolio-ai`'s `messages` array / message `content` — the existing
+  per-minute rate limiter bounds request *count*, not payload size per request.
+- Three `npm audit` findings (`browserslist`, `@humanfs/node`, `postcss-selector-parser`), all
+  transitive dev/build-tooling deps — patched same day via `npm audit fix` (no `--force`, no major
+  bumps), 0 findings remain.
+
+### 13. Raw Postgres error text could reach the chat via `portfolio-mcp-server` — ✅ FIXED
+
+> **Status: fixed** on branch `chore/security-audit-followups-sept2026` (see
+> [Remediation log](#remediation-log) entry below). `assertNoError` no longer includes the raw
+> Postgrest `error.message` in the `Error` it throws — only a generic phrase plus the existing
+> `context` tag. The raw error is still logged server-side (via the module's shared logger) for
+> real debugging.
+
+**File:** [supabase/functions/_shared/portfolio-data.ts:16-38](../supabase/functions/_shared/portfolio-data.ts)
+
+**Why it mattered:** `assertNoError`'s thrown message (`` `${context}: ${error.message}` ``)
+propagated unchanged up through `portfolio-mcp-server`'s `tools/call` catch block as
+`isError: true`
+([portfolio-mcp-server/index.ts:141-157](../supabase/functions/portfolio-mcp-server/index.ts)),
+which an LLM turn can read and paraphrase into a chat reply. A real Postgrest `error.message` can
+carry schema detail — column/constraint/table names, occasionally a fragment of the failing
+predicate. `assertNoError` was added deliberately (see its own doc comment) so a transient DB
+failure surfaces as a real error instead of silently degrading into a fabricated-looking "₹0
+invested, 0 holdings" answer — that reasoning still holds; only the wording of what propagates to
+the caller needed narrowing.
+
+**Blast radius (why this was Low, not Medium/High):** `portfolio-mcp-server` is internal-only
+(requires the actual `SUPABASE_SERVICE_ROLE_KEY` as bearer auth — see finding #1's fix), and its
+only caller is `portfolio-ai`, itself gated by `requireUser`. The sole consumer of a leaked message
+was ever the app's own single authenticated user, in their own chat — not a third party. Fixed
+anyway since generalizing the message was the low-cost side of the tradeoff once flagged, and it
+costs nothing in the "surface the failure" behavior `assertNoError` exists for.
+
+**Fix:** `assertNoError` now logs the real Postgrest error via the module's existing
+`createLogger("portfolio-data")` logger before throwing, then throws
+`` `${context}: a database error occurred` `` — the generic phrase plus the same `context` tag
+existing tests already assert on (e.g. `/fetchTxns/`), with no raw DB detail. Nothing downstream
+needed to change: `portfolio-mcp-server`'s catch block, `recordToolCall`'s `audit_logs` write, and
+the `isError: true` result all use whatever message `assertNoError` throws, unchanged.
+
+### 2026-09-08 — Fixed #13: sanitized `assertNoError`'s propagated message
+
+**Branch:** `chore/security-audit-followups-sept2026`.
+
+**Changes:**
+- [supabase/functions/_shared/portfolio-data.ts](../supabase/functions/_shared/portfolio-data.ts) —
+  `assertNoError` logs the raw error server-side (`logger.error(...)`) instead of embedding
+  `error.message` in the thrown `Error`; the thrown message is now `` `${context}: a database
+  error occurred` ``.
+- [supabase/functions/_shared/portfolio-data.test.ts](../supabase/functions/_shared/portfolio-data.test.ts) —
+  new test asserting the raw simulated Postgrest error text does *not* appear in the thrown error
+  (only the generic phrase + `context` tag), and that it's still captured by the server-side
+  logger (spies on `console.error`).
+- [TODO.md](../TODO.md) — this item moved from the Security section to the completed archive; the
+  request-size-cap item from the same pass stays open there.
+
+**Verification:** `npx tsc --noEmit -p tsconfig.app.json` clean; full `vitest` suite passing
+(87 files / 583 tests, up from 582 with the new test); `npm audit` — 0 findings.
