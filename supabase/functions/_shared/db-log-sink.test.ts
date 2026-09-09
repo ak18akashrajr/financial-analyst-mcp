@@ -43,7 +43,23 @@ describe("createDbLogSink", () => {
       fn: "fetch-prices",
       message: "Failed to fetch price",
       context: { symbol: "TCS" },
+      request_id: null,
     });
+  });
+
+  it("promotes context.requestId to its own request_id column, alongside leaving it in context", async () => {
+    const { from, insert } = fakeClient({ error: null });
+    const sink = createDbLogSink({ from } as never);
+
+    sink({ ...SAMPLE_ENTRY, context: { symbol: "TCS", requestId: "req-abc" } });
+    await vi.waitFor(() => expect(insert).toHaveBeenCalled());
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: { symbol: "TCS", requestId: "req-abc" },
+        request_id: "req-abc",
+      }),
+    );
   });
 
   it("is fire-and-forget — the sink call itself never throws or returns a promise", () => {

@@ -27,6 +27,17 @@ function waitUntil(promise: Promise<unknown>): void {
   edgeRuntime?.waitUntil?.(promise);
 }
 
+/** Pulls the chat-request correlation id back out of a log entry's context,
+ * when the call site included one (see portfolio-ai/index.ts's `requestId`
+ * and portfolio-mcp-server's per-tool-call logging) — promoted to its own
+ * column so DevZone can filter/join on it directly instead of reaching into
+ * the jsonb `context` blob. Left in `context` too; this is additive, not an
+ * extraction that removes it from there. */
+function extractRequestId(context: Record<string, unknown>): string | null {
+  const value = context.requestId;
+  return typeof value === "string" ? value : null;
+}
+
 export function createDbLogSink(sb: SupabaseClient): LogSink {
   return (entry: SinkableLogEntry) => {
     const write = sb
@@ -37,6 +48,7 @@ export function createDbLogSink(sb: SupabaseClient): LogSink {
         fn: entry.fn,
         message: entry.message,
         context: entry.context,
+        request_id: extractRequestId(entry.context),
       })
       .then(({ error }) => {
         if (error) {

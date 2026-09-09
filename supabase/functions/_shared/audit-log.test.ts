@@ -24,6 +24,7 @@ describe("recordToolCall", () => {
     await recordToolCall(sb as any, logger, {
       tool: "get_portfolio_summary",
       actor: "user-1",
+      requestId: "req-abc",
       args: { topN: 5 },
       durationMs: 42,
       success: true,
@@ -31,6 +32,7 @@ describe("recordToolCall", () => {
     expect(sb.from).toHaveBeenCalledWith("audit_logs");
     expect(sb.insert).toHaveBeenCalledWith({
       actor: "user-1",
+      request_id: "req-abc",
       tool_name: "get_portfolio_summary",
       arguments: { topN: 5 },
       duration_ms: 42,
@@ -39,7 +41,7 @@ describe("recordToolCall", () => {
     });
   });
 
-  it("defaults actor and error to null when not supplied", async () => {
+  it("defaults actor, request_id, and error to null when not supplied", async () => {
     const sb = fakeSupabase();
     const logger = fakeLogger();
     await recordToolCall(sb as any, logger, {
@@ -50,7 +52,7 @@ describe("recordToolCall", () => {
       error: "boom",
     });
     expect(sb.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ actor: null, error: "boom", success: false }),
+      expect.objectContaining({ actor: null, request_id: null, error: "boom", success: false }),
     );
   });
 
