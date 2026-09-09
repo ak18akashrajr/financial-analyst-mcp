@@ -151,6 +151,28 @@ describe("portfolio-mcp-server", () => {
     expect(content.error).toMatch(/Missing required argument: shockPercent/);
   });
 
+  it("accepts an optional top-level requestId param without it counting as an extra tool argument", async () => {
+    // `requestId` (the calling chat request's correlation id — see
+    // mcp-client.ts's `requestId` param) rides as a sibling of `arguments`
+    // in the JSON-RPC params, same treatment as `actor` above. Reuses the
+    // same missing-required-argument case for the same reason: a pure
+    // dispatch/validation test, no live DB needed — the audit-row write
+    // itself (including request_id) is unit-tested in isolation in
+    // _shared/audit-log.test.ts.
+    const res = await handler(
+      rpcRequest({
+        jsonrpc: "2.0",
+        id: 26,
+        method: "tools/call",
+        params: { name: "run_stress_test", arguments: {}, requestId: "req-abc" },
+      }),
+    );
+    const body = await res.json();
+    expect(body.result.isError).toBe(true);
+    const content = JSON.parse(body.result.content[0].text);
+    expect(content.error).toMatch(/Missing required argument: shockPercent/);
+  });
+
   it("rejects tools/call with an unexpected extra argument", async () => {
     const res = await handler(
       rpcRequest({

@@ -33,6 +33,7 @@ import { chunkText, createSseStream } from "../_shared/sse.ts";
 import { classifyChatError, ToolLoopExceededError } from "../_shared/chat-error-classifier.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { createDbLogSink } from "../_shared/db-log-sink.ts";
+import { recordLlmRequest } from "../_shared/llm-request-log.ts";
 import { detectSuspiciousInput, scanOutputForLeakage, SAFE_FALLBACK_MESSAGE } from "../_shared/injection-guard.ts";
 
 const logger = createLogger("portfolio-ai");
@@ -192,6 +193,14 @@ function buildProvider(): { provider: LlmProvider; model: string; attribution: s
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  // Correlation id for this one chat request — stamped onto every log line
+  // below, every MCP tool call it makes (mcp-client.ts's `requestId` param,
+  // landing on the resulting audit_logs row), and the llm_requests row
+  // written once routing/provider selection has actually happened (see
+  // recordLlmRequest below). Generated unconditionally, before auth, so
+  // even a rejected request's own log line carries it.
+  const requestId = crypto.randomUUID();
+
   // This function reads the user's entire portfolio via the service-role
   // key below, which bypasses RLS by design — so it must independently
   // verify a real logged-in user made this call. The platform's own
@@ -199,7 +208,7 @@ Deno.serve(async (req: Request) => {
   // which isn't a user session.
   const user = await requireUser(req);
   if (!user) {
-    logger.warn("Rejected unauthenticated portfolio-ai request");
+    logger.warn("Rejected unauthenticated portfolio-ai request", { requestId });
     return unauthorizedResponse(corsHeaders);
   }
 
@@ -210,7 +219,7 @@ Deno.serve(async (req: Request) => {
   logger.attachSink(createDbLogSink(serviceClient));
   const withinLimit = await checkRateLimit(serviceClient, user.id);
   if (!withinLimit) {
-    logger.warn("Rate limit exceeded", { userId: user.id });
+    logger.warn("Rate limit exceeded", { userId: user.id, requestId });
     return new Response(JSON.stringify({ error: "Rate limited — please wait a moment and try again." }), {
       status: 429,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -250,6 +259,7 @@ Deno.serve(async (req: Request) => {
     if (inputCheck.suspicious) {
       logger.warn("Suspicious input detected (possible prompt-injection attempt)", {
         userId: user.id,
+        requestId,
         matchedPatterns: inputCheck.matched,
         messagePreview: latest.content.slice(0, 200),
       });
@@ -287,11 +297,11 @@ Deno.serve(async (req: Request) => {
       const openRouterModelId = OPENROUTER_MODEL_ID_FOR[modelPreference];
       const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
       if (!openRouterKey) {
-        logger.warn("modelPreference requested but OPENROUTER_API_KEY not configured — using Groq", { modelPreference });
+        logger.warn("modelPreference requested but OPENROUTER_API_KEY not configured — using Groq", { modelPreference, requestId });
       } else {
         const withinQuota = await checkAndIncrementQuota(serviceClient, openRouterModelId);
         if (!withinQuota) {
-          logger.info("OpenRouter daily quota exhausted — using Groq", { modelId: openRouterModelId });
+          logger.info("OpenRouter daily quota exhausted — using Groq", { modelId: openRouterModelId, requestId });
           attribution = `${attribution} (requested model's daily quota is used up for today)`;
         } else {
           provider = new OpenRouterProvider(openRouterKey);
@@ -304,7 +314,7 @@ Deno.serve(async (req: Request) => {
     provider.loadHistory(history);
     provider.addUserMessage(latest.content);
 
-    logger.info("Chat request started", { model, attribution, modelPreference, historyLength: history.length });
+    logger.info("Chat request started", { model, attribution, modelPreference, historyLength: history.length, requestId });
     const requestStartedAt = Date.now();
 
     const stream = createSseStream(async (send) => {
@@ -361,6 +371,7 @@ Deno.serve(async (req: Request) => {
             openRouterFallback = true;
             logger.warn("OpenRouter call failed, falling back to Groq", {
               model,
+              requestId,
               status: err instanceof HttpCallError ? err.status : undefined,
               // DOMException (e.g. the timeout above) has a real `.name` (e.g.
               // "TimeoutError") but isn't `instanceof Error` in Deno/Node, so
@@ -425,10 +436,10 @@ Deno.serve(async (req: Request) => {
             MAX_CONCURRENT_TOOL_CALLS,
             async (call) => {
               try {
-                const toolResult = await mcpClient.callTool(call.name, call.arguments, user.id);
+                const toolResult = await mcpClient.callTool(call.name, call.arguments, user.id, requestId);
                 return { id: call.id, name: call.name, result: toolResult };
               } catch (err) {
-                logger.error("Tool call failed", { tool: call.name, error: err });
+                logger.error("Tool call failed", { tool: call.name, requestId, error: err });
                 return {
                   id: call.id,
                   name: call.name,
@@ -457,6 +468,7 @@ Deno.serve(async (req: Request) => {
             model,
             attribution,
             userId: user.id,
+            requestId,
             withheldTextPreview: finalText.slice(0, 500),
           });
           finalText = SAFE_FALLBACK_MESSAGE;
@@ -466,6 +478,7 @@ Deno.serve(async (req: Request) => {
           send("delta", { text: chunk });
         }
         send("done", { attribution });
+        const completedDurationMs = Date.now() - requestStartedAt;
         logger.info("Chat request completed", {
           model,
           attribution,
@@ -476,13 +489,47 @@ Deno.serve(async (req: Request) => {
           forcedGroundingRetryUsed,
           suspiciousInput: inputCheck.suspicious,
           outputGuardrailTriggered: outputCheck.flagged,
-          duration_ms: Date.now() - requestStartedAt,
+          duration_ms: completedDurationMs,
+          requestId,
+        });
+        await recordLlmRequest(serviceClient, logger, {
+          requestId,
+          actor: user.id,
+          provider: provider.name,
+          model,
+          modelPreference,
+          status: "success",
+          escalated,
+          openRouterFallback,
+          forcedGroundingRetryUsed,
+          toolCallCount,
+          durationMs: completedDurationMs,
+          suspiciousInput: inputCheck.suspicious,
+          outputGuardrailTriggered: outputCheck.flagged,
         });
       } catch (err) {
+        const failedDurationMs = Date.now() - requestStartedAt;
         logger.error("Chat stream failed", {
           model,
-          duration_ms: Date.now() - requestStartedAt,
+          duration_ms: failedDurationMs,
+          requestId,
           error: err,
+        });
+        await recordLlmRequest(serviceClient, logger, {
+          requestId,
+          actor: user.id,
+          provider: provider.name,
+          model,
+          modelPreference,
+          status: "error",
+          escalated,
+          openRouterFallback,
+          forcedGroundingRetryUsed,
+          toolCallCount,
+          durationMs: failedDurationMs,
+          suspiciousInput: inputCheck.suspicious,
+          outputGuardrailTriggered: false,
+          error: err instanceof Error ? err.message : String(err),
         });
         throw err;
       }
@@ -490,7 +537,7 @@ Deno.serve(async (req: Request) => {
 
     return new Response(stream, { headers: { ...corsHeaders, "Content-Type": "text/event-stream" } });
   } catch (e) {
-    logger.error("portfolio-ai error", { error: e });
+    logger.error("portfolio-ai error", { requestId, error: e });
     // Validation errors are safe (and useful) to show verbatim. Anything
     // else is an internal/provider failure whose real detail (e.g. "No LLM
     // API key configured" or an upstream provider's error body) must never

@@ -58,11 +58,13 @@ export class McpClient {
   }
 
   /** Calls a tool and returns its parsed JSON result (or throws if the tool reported isError).
-   * `actor` (the calling end user's id) is optional and purely for the
-   * server's audit trail — it's a sibling of `arguments`, not part of it, so
-   * it never has to pass the tool's own inputSchema validation. */
-  async callTool(name: string, args: Record<string, unknown>, actor?: string): Promise<unknown> {
-    const result = (await this.rpc("tools/call", { name, arguments: args, actor })) as {
+   * `actor` (the calling end user's id) and `requestId` (the calling chat
+   * request's correlation id — see portfolio-ai/index.ts) are both optional
+   * and purely for the server's audit trail — siblings of `arguments`, not
+   * part of it, so neither has to pass the tool's own inputSchema
+   * validation. */
+  async callTool(name: string, args: Record<string, unknown>, actor?: string, requestId?: string): Promise<unknown> {
+    const result = (await this.rpc("tools/call", { name, arguments: args, actor, requestId })) as {
       content: { type: string; text: string }[];
       isError?: boolean;
     };

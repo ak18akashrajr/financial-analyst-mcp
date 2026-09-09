@@ -15,6 +15,13 @@ export interface ToolCallRecord {
   /** The calling end user's auth.users id, when known — see mcp-client.ts's
    * optional `actor` param. Undefined for a caller that doesn't supply one. */
   actor?: string;
+  /** The calling chat request's correlation id (portfolio-ai/index.ts's
+   * `requestId`, forwarded as a sibling of `arguments` — see mcp-client.ts's
+   * optional `requestId` param). Undefined for a caller that doesn't supply
+   * one, same posture as `actor`. Lets DevZone's Requests tab join this row
+   * back to the llm_requests row (and every other tool call) from the same
+   * chat turn. */
+  requestId?: string;
   args: Record<string, unknown>;
   durationMs: number;
   success: boolean;
@@ -25,6 +32,7 @@ export async function recordToolCall(sb: SupabaseClient, logger: Logger, record:
   try {
     const { error } = await sb.from("audit_logs").insert({
       actor: record.actor ?? null,
+      request_id: record.requestId ?? null,
       tool_name: record.tool,
       arguments: record.args,
       duration_ms: record.durationMs,

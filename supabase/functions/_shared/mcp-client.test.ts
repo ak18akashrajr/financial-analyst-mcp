@@ -47,6 +47,30 @@ describe("McpClient.callTool", () => {
     expect(body.params.name).toBe("list_holdings");
     expect(body.params.actor).toBeUndefined();
   });
+
+  it("sends requestId as a sibling of arguments, alongside actor", async () => {
+    const client = new McpClient("https://example.com/portfolio-mcp-server", "Bearer test-key");
+    await client.callTool("get_portfolio_summary", { topN: 5 }, "user-123", "req-abc");
+
+    const [, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(init.body as string);
+    expect(body.params).toEqual({
+      name: "get_portfolio_summary",
+      arguments: { topN: 5 },
+      actor: "user-123",
+      requestId: "req-abc",
+    });
+  });
+
+  it("omits requestId cleanly when not supplied", async () => {
+    const client = new McpClient("https://example.com/portfolio-mcp-server", "Bearer test-key");
+    await client.callTool("list_holdings", {}, "user-123");
+
+    const [, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const body = JSON.parse(init.body as string);
+    expect(body.params.actor).toBe("user-123");
+    expect(body.params.requestId).toBeUndefined();
+  });
 });
 
 describe("McpClient non-ok HTTP response", () => {

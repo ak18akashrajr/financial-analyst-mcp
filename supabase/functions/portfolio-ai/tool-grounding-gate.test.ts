@@ -100,8 +100,9 @@ describe("portfolio-ai forced-grounding retry", () => {
 
     // The corrective nudge was actually sent to the model.
     expect(addUserMessageMock).toHaveBeenCalledWith(expect.stringMatching(/without calling any tool/i));
-    // The real tool got called.
-    expect(callToolMock).toHaveBeenCalledWith("list_transactions", {}, "user-1");
+    // The real tool got called, forwarding the request's correlation id
+    // (see mcp-client.ts's `requestId` param) as the 4th arg.
+    expect(callToolMock).toHaveBeenCalledWith("list_transactions", {}, "user-1", expect.any(String));
 
     // The user only ever sees the grounded final answer — never the
     // fabricated turn-0 text. chunkText splits the answer across multiple

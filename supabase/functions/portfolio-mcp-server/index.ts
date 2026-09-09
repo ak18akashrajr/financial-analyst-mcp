@@ -110,6 +110,11 @@ async function handleRpc(req: JsonRpcRequest): Promise<Record<string, unknown> |
       // for any access-control decision (this endpoint's admission check is
       // requestHasServiceRole, above).
       const actor = typeof req.params?.actor === "string" ? req.params.actor : undefined;
+      // Same treatment for the calling chat request's correlation id (see
+      // McpClient.callTool's `requestId` param) — carried onto this tool
+      // call's own audit_logs row so DevZone can join every tool call back
+      // to the llm_requests row for the chat turn that triggered it.
+      const requestId = typeof req.params?.requestId === "string" ? req.params.requestId : undefined;
       const tool = findTool(name);
       if (!tool) {
         logger.warn("Unknown tool requested", { name });
@@ -132,8 +137,8 @@ async function handleRpc(req: JsonRpcRequest): Promise<Record<string, unknown> |
       try {
         const result = await tool.handler(args, sb);
         const duration_ms = Date.now() - startedAt;
-        logger.info("Tool call succeeded", { tool: name, duration_ms });
-        await recordToolCall(sb, logger, { tool: name, actor, args, durationMs: duration_ms, success: true });
+        logger.info("Tool call succeeded", { tool: name, duration_ms, requestId });
+        await recordToolCall(sb, logger, { tool: name, actor, requestId, args, durationMs: duration_ms, success: true });
         return rpcResult(req.id, {
           content: [{ type: "text", text: JSON.stringify(result) }],
           isError: false,
@@ -141,10 +146,11 @@ async function handleRpc(req: JsonRpcRequest): Promise<Record<string, unknown> |
       } catch (err) {
         const message = err instanceof Error ? err.message : "Tool execution failed";
         const duration_ms = Date.now() - startedAt;
-        logger.error("Tool call failed", { tool: name, duration_ms, error: err });
+        logger.error("Tool call failed", { tool: name, duration_ms, requestId, error: err });
         await recordToolCall(sb, logger, {
           tool: name,
           actor,
+          requestId,
           args,
           durationMs: duration_ms,
           success: false,
