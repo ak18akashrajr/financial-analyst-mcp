@@ -2,17 +2,24 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Terminal, RefreshCw, AlertTriangle, OctagonAlert, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Search, Loader2, Activity, ShieldAlert, LogOut,
+  CheckCircle2, XCircle, Search, Loader2, Activity, ShieldAlert, LogOut, Receipt, Siren,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { supabase } from '@/integrations/supabase/client';
 import { useSecurityIncidents, type SecurityIncident } from '@/contexts/SecurityIncidentsContext';
 
 // One-stop view over everything this app currently persists as a "log":
-//   - app_logs   — logger.ts warn/error entries from every edge function (via
-//                  _shared/db-log-sink.ts), plus frontend runtime errors (via
-//                  src/lib/clientErrorLogging.ts + ErrorBoundary.tsx).
-//   - audit_logs — the pre-existing MCP tool-call trail (portfolio-mcp-server).
+//   - app_logs     — logger.ts warn/error entries from every edge function
+//                    (via _shared/db-log-sink.ts), plus frontend runtime
+//                    errors (via src/lib/clientErrorLogging.ts + ErrorBoundary.tsx).
+//   - audit_logs   — the MCP tool-call trail (portfolio-mcp-server).
+//   - llm_requests — one row per portfolio-ai chat request (routing decision,
+//                    token usage, estimated cost, escalation/fallback flags).
+// audit_logs and app_logs rows produced by a given chat request carry that
+// request's id in their own request_id column (migration
+// 20260909120000_add_llm_requests_and_request_id.sql) — the Requests tab
+// below is the one place that joins across tables on it.
+//
 // info-level edge-function logs are NOT here by design — see the app_logs
 // migration's header comment; those remain stdout-only via
 // `supabase functions logs <fn>`, same as before this page existed.
@@ -29,6 +36,7 @@ interface AppLogRow {
   fn: string;
   message: string;
   context: unknown;
+  request_id: string | null;
 }
 
 interface AuditLogRow {
@@ -40,9 +48,38 @@ interface AuditLogRow {
   duration_ms: number;
   success: boolean;
   error: string | null;
+  request_id: string | null;
 }
 
-type Tab = 'status' | 'app-logs' | 'audit-trail' | 'security';
+interface LlmRequestRow {
+  id: string;
+  created_at: string;
+  actor: string | null;
+  provider: string;
+  model: string;
+  model_preference: string;
+  status: string;
+  escalated: boolean;
+  open_router_fallback: boolean;
+  forced_grounding_retry_used: boolean;
+  tool_call_count: number;
+  duration_ms: number;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  estimated_cost_usd: number | null;
+  suspicious_input: boolean;
+  output_guardrail_triggered: boolean;
+  error: string | null;
+}
+
+// The two fixed log messages portfolio-ai/index.ts emits for injection
+// detection / output-guardrail events (see _shared/injection-guard.ts's
+// callers) — matched exactly, not by substring, so the AI Safety tab below
+// can query app_logs precisely instead of guessing at a LIKE pattern.
+const SUSPICIOUS_INPUT_MESSAGE = 'Suspicious input detected (possible prompt-injection attempt)';
+const OUTPUT_GUARDRAIL_MESSAGE = 'Output guardrail triggered — response withheld before streaming';
+
+type Tab = 'status' | 'requests' | 'app-logs' | 'audit-trail' | 'safety' | 'security';
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
@@ -723,6 +760,265 @@ function AuditTrailTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Requests tab — one row per portfolio-ai chat request (llm_requests), the
+// request-level counterpart to the tool-call-level Audit Trail tab above.
+// Expanding a row lazily fetches that request's own audit_logs rows (joined
+// on request_id) so the full "routing decision → every tool call it made"
+// story shows in one place instead of matching timestamps across two tabs.
+function fmtTokens(row: LlmRequestRow): string {
+  if (row.prompt_tokens == null && row.completion_tokens == null) return 'tokens unknown';
+  return `${(row.prompt_tokens ?? 0).toLocaleString()}→${(row.completion_tokens ?? 0).toLocaleString()} tok`;
+}
+
+function fmtCostUsd(v: number | null): string {
+  if (v == null) return 'cost unknown';
+  if (v === 0) return 'free';
+  return `$${v < 0.01 ? v.toFixed(6) : v.toFixed(4)}`;
+}
+
+function FlagBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+      {label}
+    </span>
+  );
+}
+
+function RequestSubTrace({ requestId }: { requestId: string }) {
+  const [state, setState] = useState<{ loading: boolean; rows: AuditLogRow[]; error: string | null }>({
+    loading: true, rows: [], error: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .eq('request_id', requestId)
+        .order('called_at', { ascending: true });
+      if (cancelled) return;
+      setState(
+        error
+          ? { loading: false, rows: [], error: error.message }
+          : { loading: false, rows: (data ?? []) as AuditLogRow[], error: null },
+      );
+    })();
+    return () => { cancelled = true; };
+  }, [requestId]);
+
+  if (state.loading) {
+    return <p className="mt-2 text-[11px] text-muted-foreground">Loading tool calls…</p>;
+  }
+  if (state.error) return <ErrorBanner message={state.error} />;
+  if (state.rows.length === 0) {
+    return <p className="mt-2 text-[11px] italic text-muted-foreground/70">No tool calls recorded for this request.</p>;
+  }
+  return (
+    <div className="mt-2 flex flex-col gap-1 border-l-2 border-border/60 pl-3">
+      {state.rows.map((r) => (
+        <div key={r.id} className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          {r.success ? <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-500" /> : <XCircle className="w-3 h-3 shrink-0 text-rose-500" />}
+          <span className="font-mono text-foreground/90">{r.tool_name}</span>
+          <span className="text-muted-foreground">{r.duration_ms}ms</span>
+          {r.error && <span className="text-rose-500">— {r.error}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RequestsTab() {
+  const [rows, setRows] = useState<LlmRequestRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'success' | 'error'>('all');
+  const [search, setSearch] = useState('');
+  const { expanded, toggle } = useExpandable();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const { data, error: err } = await supabase
+      .from('llm_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(ROW_LIMIT);
+    if (err) setError(err.message);
+    else setRows((data ?? []) as LlmRequestRow[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = rows.filter((r) => {
+    if (statusFilter !== 'all' && r.status !== statusFilter) return false;
+    if (search.trim() && !r.model.toLowerCase().includes(search.trim().toLowerCase())) return false;
+    return true;
+  });
+
+  return (
+    <div className="flex flex-col gap-3">
+      <FilterBar onRefresh={load} loading={loading}>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as 'all' | 'success' | 'error')}
+          className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground"
+        >
+          <option value="all">All requests</option>
+          <option value="success">Success only</option>
+          <option value="error">Failed only</option>
+        </select>
+        <SearchBox value={search} onChange={setSearch} placeholder="Search model..." />
+      </FilterBar>
+
+      {error && <ErrorBanner message={error} />}
+      {!error && !loading && filtered.length === 0 && (
+        <EmptyState text={rows.length === 0 ? 'No chat requests recorded yet.' : 'No rows match these filters.'} />
+      )}
+
+      <div className="flex flex-col gap-1.5">
+        {filtered.map((row) => (
+          <div key={row.id} className="rounded-lg border border-border bg-card">
+            <button
+              onClick={() => toggle(row.id)}
+              className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent/40 transition-colors"
+            >
+              {expanded.has(row.id) ? <ChevronDown className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {row.status === 'success' ? (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-500">
+                      <CheckCircle2 className="w-3 h-3" /> success
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-500">
+                      <XCircle className="w-3 h-3" /> failed
+                    </span>
+                  )}
+                  <span className="text-[11px] font-mono text-foreground/90">{row.model}</span>
+                  {row.escalated && <FlagBadge label="escalated" />}
+                  {row.open_router_fallback && <FlagBadge label="OpenRouter fallback" />}
+                  {row.forced_grounding_retry_used && <FlagBadge label="grounding retry" />}
+                  {row.suspicious_input && <FlagBadge label="suspicious input" />}
+                  {row.output_guardrail_triggered && <FlagBadge label="guardrail triggered" />}
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{fmtTime(row.created_at)}</span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-muted-foreground">
+                  <span>{row.duration_ms}ms</span>
+                  <span>{row.tool_call_count} tool call{row.tool_call_count === 1 ? '' : 's'}</span>
+                  <span>{fmtTokens(row)}</span>
+                  <span>{fmtCostUsd(row.estimated_cost_usd)}</span>
+                </div>
+                {row.error && <p className="mt-1 text-xs text-rose-500">{row.error}</p>}
+                {expanded.has(row.id) && <RequestSubTrace requestId={row.id} />}
+              </div>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AI Safety tab — the prompt-injection detection and output-guardrail events
+// portfolio-ai/index.ts already logs (docs/prompt-injection-hardening.md),
+// surfaced on their own instead of mixed into the general App Logs tab.
+// Queries app_logs filtered to the two exact messages those code paths emit
+// (see SUSPICIOUS_INPUT_MESSAGE/OUTPUT_GUARDRAIL_MESSAGE above) rather than
+// a new table — these are still ordinary logger.warn/error calls, just ones
+// worth a dedicated, unfiltered-by-noise view.
+type SafetyEventType = 'injection' | 'guardrail';
+
+function safetyEventType(message: string): SafetyEventType {
+  return message === SUSPICIOUS_INPUT_MESSAGE ? 'injection' : 'guardrail';
+}
+
+function SafetyTypeBadge({ type }: { type: SafetyEventType }) {
+  return type === 'injection' ? (
+    <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-500">
+      <Siren className="w-3 h-3" /> prompt injection
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-500">
+      <ShieldAlert className="w-3 h-3" /> output guardrail
+    </span>
+  );
+}
+
+function AiSafetyTab() {
+  const [rows, setRows] = useState<AppLogRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<'all' | SafetyEventType>('all');
+  const { expanded, toggle } = useExpandable();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const { data, error: err } = await supabase
+      .from('app_logs')
+      .select('*')
+      .in('message', [SUSPICIOUS_INPUT_MESSAGE, OUTPUT_GUARDRAIL_MESSAGE])
+      .order('logged_at', { ascending: false })
+      .limit(ROW_LIMIT);
+    if (err) setError(err.message);
+    else setRows((data ?? []) as AppLogRow[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = rows.filter((r) => {
+    if (typeFilter !== 'all' && safetyEventType(r.message) !== typeFilter) return false;
+    return true;
+  });
+
+  return (
+    <div className="flex flex-col gap-3">
+      <FilterBar onRefresh={load} loading={loading}>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value as 'all' | SafetyEventType)}
+          className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-foreground"
+        >
+          <option value="all">All events</option>
+          <option value="injection">Prompt injection</option>
+          <option value="guardrail">Output guardrail</option>
+        </select>
+      </FilterBar>
+
+      {error && <ErrorBanner message={error} />}
+      {!error && !loading && filtered.length === 0 && (
+        <EmptyState text={rows.length === 0 ? 'No prompt-injection or output-guardrail events logged yet.' : 'No rows match this filter.'} />
+      )}
+
+      <div className="flex flex-col gap-1.5">
+        {filtered.map((row) => (
+          <div key={row.id} className="rounded-lg border border-border bg-card">
+            <button
+              onClick={() => toggle(row.id)}
+              className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent/40 transition-colors"
+            >
+              {expanded.has(row.id) ? <ChevronDown className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <SafetyTypeBadge type={safetyEventType(row.message)} />
+                  <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{fmtTime(row.logged_at)}</span>
+                </div>
+                <p className="mt-1 truncate text-xs text-foreground/90">{row.message}</p>
+                {expanded.has(row.id) && <JsonBlock value={row.context} />}
+              </div>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Security tab — docs/session-hijack-detection-plan.md §1, §3, §5. Global
 // sign-out (§1) revokes every refresh token for the account; it does NOT
 // retroactively invalidate an access token already issued and still inside
@@ -959,7 +1255,7 @@ function EmptyState({ text }: { text: string }) {
   );
 }
 
-const VALID_TABS: Tab[] = ['status', 'app-logs', 'audit-trail', 'security'];
+const VALID_TABS: Tab[] = ['status', 'requests', 'app-logs', 'audit-trail', 'safety', 'security'];
 
 const DevZone = () => {
   const [searchParams] = useSearchParams();
@@ -987,7 +1283,7 @@ const DevZone = () => {
               </div>
               <div>
                 <h1 className="text-sm font-bold text-foreground tracking-tight">Dev Zone</h1>
-                <p className="text-[10px] text-muted-foreground">System status, application logs, MCP audit trail &amp; security</p>
+                <p className="text-[10px] text-muted-foreground">System status, AI requests, application logs, MCP audit trail, AI safety &amp; security</p>
               </div>
             </div>
           </div>
@@ -1007,6 +1303,15 @@ const DevZone = () => {
             System Status
           </button>
           <button
+            onClick={() => setTab('requests')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              tab === 'requests' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Receipt className="w-3.5 h-3.5" />
+            Requests
+          </button>
+          <button
             onClick={() => setTab('app-logs')}
             className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
               tab === 'app-logs' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
@@ -1021,6 +1326,15 @@ const DevZone = () => {
             }`}
           >
             Audit Trail
+          </button>
+          <button
+            onClick={() => setTab('safety')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              tab === 'safety' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Siren className="w-3.5 h-3.5" />
+            AI Safety
           </button>
           <button
             onClick={() => setTab('security')}
@@ -1042,8 +1356,10 @@ const DevZone = () => {
         )}
 
         {tab === 'status' ? <SystemStatusTab />
+          : tab === 'requests' ? <RequestsTab />
           : tab === 'app-logs' ? <AppLogsTab />
           : tab === 'audit-trail' ? <AuditTrailTab />
+          : tab === 'safety' ? <AiSafetyTab />
           : <SecurityTab />}
       </div>
     </div>
