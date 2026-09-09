@@ -21,9 +21,10 @@ beforeAll(async () => {
   ({ default: DevZone } = await import('@/pages/DevZone'));
 });
 
-const { appLogRows, auditLogRows, probeSymbolRows, securityIncidentRows, invokeMock, signOutMock, updateIncidentMock } = vi.hoisted(() => ({
+const { appLogRows, auditLogRows, llmRequestRows, probeSymbolRows, securityIncidentRows, invokeMock, signOutMock, updateIncidentMock } = vi.hoisted(() => ({
   appLogRows: [] as Record<string, unknown>[],
   auditLogRows: [] as Record<string, unknown>[],
+  llmRequestRows: [] as Record<string, unknown>[],
   probeSymbolRows: [{ symbol: 'RELIANCE.NS' }] as Record<string, unknown>[],
   securityIncidentRows: [] as Record<string, unknown>[],
   invokeMock: vi.fn((_fn: string, _opts?: { body?: unknown }) => Promise.resolve({ data: {} as any, error: null as any })),
@@ -35,10 +36,38 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'app_logs') {
-        return { select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: appLogRows, error: null }) }) }) };
+        return {
+          select: () => ({
+            order: () => ({ limit: () => Promise.resolve({ data: appLogRows, error: null }) }),
+            // AI Safety tab's exact-message filter (see SUSPICIOUS_INPUT_MESSAGE/
+            // OUTPUT_GUARDRAIL_MESSAGE in DevZone.tsx).
+            in: (col: string, values: unknown[]) => ({
+              order: () => ({
+                limit: () => Promise.resolve({
+                  data: appLogRows.filter((r) => values.includes(r[col as keyof typeof r])),
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
       }
       if (table === 'audit_logs') {
-        return { select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: auditLogRows, error: null }) }) }) };
+        return {
+          select: () => ({
+            order: () => ({ limit: () => Promise.resolve({ data: auditLogRows, error: null }) }),
+            // Requests tab's per-request sub-trace join (RequestSubTrace).
+            eq: (col: string, value: unknown) => ({
+              order: () => Promise.resolve({
+                data: auditLogRows.filter((r) => r[col as keyof typeof r] === value),
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'llm_requests') {
+        return { select: () => ({ order: () => ({ limit: () => Promise.resolve({ data: llmRequestRows, error: null }) }) }) };
       }
       if (table === 'cash_settings') {
         // System Status tab's DB check — a lightweight head-only query.
@@ -100,6 +129,7 @@ describe('DevZone', () => {
   beforeEach(() => {
     appLogRows.length = 0;
     auditLogRows.length = 0;
+    llmRequestRows.length = 0;
     securityIncidentRows.length = 0;
     invokeMock.mockReset();
     invokeMock.mockImplementation(() => Promise.resolve({ data: {}, error: null }));
@@ -184,6 +214,119 @@ describe('DevZone', () => {
     await waitFor(() => expect(screen.getByText('run_stress_test')).toBeInTheDocument());
     expect(screen.getByText('failed')).toBeInTheDocument();
     expect(screen.getByText('timeout')).toBeInTheDocument();
+  });
+
+  describe('Requests tab', () => {
+    it('shows an empty state when no chat requests have been recorded', async () => {
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'Requests' }));
+      await waitFor(() => expect(screen.getByText(/no chat requests recorded yet/i)).toBeInTheDocument());
+    });
+
+    it('lists a request with its model, status, duration, tokens and estimated cost', async () => {
+      llmRequestRows.push({
+        id: 'req-1', created_at: '2026-09-09T10:00:00Z', actor: 'user-1', provider: 'groq',
+        model: 'openai/gpt-oss-120b', model_preference: 'auto', status: 'success', escalated: true,
+        open_router_fallback: false, forced_grounding_retry_used: false, tool_call_count: 2,
+        duration_ms: 850, prompt_tokens: 1500, completion_tokens: 300, estimated_cost_usd: 0.0004050,
+        suspicious_input: false, output_guardrail_triggered: false, error: null,
+      });
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'Requests' }));
+
+      await waitFor(() => expect(screen.getByText('openai/gpt-oss-120b')).toBeInTheDocument());
+      expect(screen.getByText('success')).toBeInTheDocument();
+      expect(screen.getByText('escalated')).toBeInTheDocument();
+      expect(screen.getByText('850ms')).toBeInTheDocument();
+      expect(screen.getByText('1,500→300 tok')).toBeInTheDocument();
+      expect(screen.getByText('$0.000405')).toBeInTheDocument();
+    });
+
+    it('shows a free-tier OpenRouter request\'s cost as "free", not "unknown"', async () => {
+      llmRequestRows.push({
+        id: 'req-2', created_at: '2026-09-09T10:00:00Z', actor: 'user-1', provider: 'openrouter',
+        model: 'nvidia/nemotron-3-ultra-550b-a55b:free', model_preference: 'nemotron', status: 'success',
+        escalated: false, open_router_fallback: false, forced_grounding_retry_used: false, tool_call_count: 1,
+        duration_ms: 2000, prompt_tokens: 500, completion_tokens: 100, estimated_cost_usd: 0,
+        suspicious_input: false, output_guardrail_triggered: false, error: null,
+      });
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'Requests' }));
+
+      await waitFor(() => expect(screen.getByText('free')).toBeInTheDocument());
+    });
+
+    it('expands a request to show its own tool calls, joined by request_id', async () => {
+      llmRequestRows.push({
+        id: 'req-1', created_at: '2026-09-09T10:00:00Z', actor: 'user-1', provider: 'groq',
+        model: 'openai/gpt-oss-20b', model_preference: 'auto', status: 'success', escalated: false,
+        open_router_fallback: false, forced_grounding_retry_used: false, tool_call_count: 1,
+        duration_ms: 400, prompt_tokens: null, completion_tokens: null, estimated_cost_usd: null,
+        suspicious_input: false, output_guardrail_triggered: false, error: null,
+      });
+      auditLogRows.push(
+        { id: 'a1', called_at: '2026-09-09T10:00:00Z', actor: 'user-1', tool_name: 'list_holdings', arguments: {}, duration_ms: 42, success: true, error: null, request_id: 'req-1' },
+        { id: 'a2', called_at: '2026-09-09T10:00:01Z', actor: 'user-1', tool_name: 'get_risk_metrics', arguments: {}, duration_ms: 99, success: true, error: null, request_id: 'req-other' },
+      );
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'Requests' }));
+
+      await waitFor(() => expect(screen.getByText('openai/gpt-oss-20b')).toBeInTheDocument());
+      fireEvent.click(screen.getByText('openai/gpt-oss-20b'));
+
+      await waitFor(() => expect(screen.getByText('list_holdings')).toBeInTheDocument());
+      expect(screen.queryByText('get_risk_metrics')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('AI Safety tab', () => {
+    it('shows an empty state when no injection/guardrail events have been logged', async () => {
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'AI Safety' }));
+      await waitFor(() => expect(screen.getByText(/no prompt-injection or output-guardrail events logged yet/i)).toBeInTheDocument());
+    });
+
+    it('lists a prompt-injection event, tagged distinctly from an output-guardrail event', async () => {
+      appLogRows.push(
+        {
+          id: '1', logged_at: '2026-09-09T10:00:00Z', source: 'edge', level: 'warn', fn: 'portfolio-ai',
+          message: 'Suspicious input detected (possible prompt-injection attempt)', context: { matchedPatterns: ['ignore previous instructions'] },
+        },
+        {
+          id: '2', logged_at: '2026-09-09T10:01:00Z', source: 'edge', level: 'error', fn: 'portfolio-ai',
+          message: 'Output guardrail triggered — response withheld before streaming', context: { category: 'trade_recommendation' },
+        },
+        // A routine warning that must NOT show up on this tab.
+        { id: '3', logged_at: '2026-09-09T10:02:00Z', source: 'edge', level: 'warn', fn: 'fetch-prices', message: 'Failed to fetch price', context: {} },
+      );
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'AI Safety' }));
+
+      await waitFor(() => expect(screen.getByText('prompt injection')).toBeInTheDocument());
+      expect(screen.getByText('output guardrail')).toBeInTheDocument();
+      expect(screen.queryByText('Failed to fetch price')).not.toBeInTheDocument();
+    });
+
+    it('filters to just output-guardrail events', async () => {
+      appLogRows.push(
+        {
+          id: '1', logged_at: '2026-09-09T10:00:00Z', source: 'edge', level: 'warn', fn: 'portfolio-ai',
+          message: 'Suspicious input detected (possible prompt-injection attempt)', context: {},
+        },
+        {
+          id: '2', logged_at: '2026-09-09T10:01:00Z', source: 'edge', level: 'error', fn: 'portfolio-ai',
+          message: 'Output guardrail triggered — response withheld before streaming', context: {},
+        },
+      );
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'AI Safety' }));
+
+      await waitFor(() => expect(screen.getByText('prompt injection')).toBeInTheDocument());
+      fireEvent.change(screen.getByDisplayValue('All events'), { target: { value: 'guardrail' } });
+
+      expect(screen.getByText('output guardrail')).toBeInTheDocument();
+      expect(screen.queryByText('prompt injection')).not.toBeInTheDocument();
+    });
   });
 
   describe('System Status tab (default view)', () => {

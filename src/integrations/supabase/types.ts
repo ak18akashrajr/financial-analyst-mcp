@@ -14,10 +14,10 @@ export type Database = {
   }
   public: {
     Tables: {
-      // app_logs and audit_logs are hand-added (matching their migrations'
-      // schemas exactly) rather than from `supabase gen types` — this repo
-      // checkout has no linked live project to regenerate against. Re-run
-      // `npx supabase@1.190.0 gen types typescript --project-id <ref> --schema public`
+      // app_logs, audit_logs and llm_requests are hand-added (matching their
+      // migrations' schemas exactly) rather than from `supabase gen types` —
+      // this repo checkout has no linked live project to regenerate against.
+      // Re-run `npx supabase@1.190.0 gen types typescript --project-id <ref> --schema public`
       // next time this file is regenerated and these should come out identical.
       app_logs: {
         Row: {
@@ -27,6 +27,7 @@ export type Database = {
           level: string
           logged_at: string
           message: string
+          request_id: string | null
           source: string
         }
         Insert: {
@@ -36,6 +37,7 @@ export type Database = {
           level: string
           logged_at?: string
           message: string
+          request_id?: string | null
           source: string
         }
         Update: {
@@ -45,6 +47,7 @@ export type Database = {
           level?: string
           logged_at?: string
           message?: string
+          request_id?: string | null
           source?: string
         }
         Relationships: []
@@ -57,6 +60,7 @@ export type Database = {
           duration_ms: number
           error: string | null
           id: string
+          request_id: string | null
           success: boolean
           tool_name: string
         }
@@ -67,6 +71,7 @@ export type Database = {
           duration_ms: number
           error?: string | null
           id?: string
+          request_id?: string | null
           success: boolean
           tool_name: string
         }
@@ -77,6 +82,7 @@ export type Database = {
           duration_ms?: number
           error?: string | null
           id?: string
+          request_id?: string | null
           success?: boolean
           tool_name?: string
         }
@@ -261,6 +267,69 @@ export type Database = {
           date?: string
           id?: string
           symbol?: string
+        }
+        Relationships: []
+      }
+      llm_requests: {
+        Row: {
+          actor: string | null
+          completion_tokens: number | null
+          created_at: string
+          duration_ms: number
+          error: string | null
+          escalated: boolean
+          estimated_cost_usd: number | null
+          forced_grounding_retry_used: boolean
+          id: string
+          model: string
+          model_preference: string
+          open_router_fallback: boolean
+          output_guardrail_triggered: boolean
+          prompt_tokens: number | null
+          provider: string
+          status: string
+          suspicious_input: boolean
+          tool_call_count: number
+        }
+        Insert: {
+          actor?: string | null
+          completion_tokens?: number | null
+          created_at?: string
+          duration_ms: number
+          error?: string | null
+          escalated?: boolean
+          estimated_cost_usd?: number | null
+          forced_grounding_retry_used?: boolean
+          id: string
+          model: string
+          model_preference: string
+          open_router_fallback?: boolean
+          output_guardrail_triggered?: boolean
+          prompt_tokens?: number | null
+          provider: string
+          status: string
+          suspicious_input?: boolean
+          tool_call_count?: number
+        }
+        Update: {
+          actor?: string | null
+          completion_tokens?: number | null
+          created_at?: string
+          duration_ms?: number
+          error?: string | null
+          escalated?: boolean
+          estimated_cost_usd?: number | null
+          forced_grounding_retry_used?: boolean
+          id?: string
+          model?: string
+          model_preference?: string
+          open_router_fallback?: boolean
+          output_guardrail_triggered?: boolean
+          prompt_tokens?: number | null
+          provider?: string
+          status?: string
+          suspicious_input?: boolean
+          tool_call_count?: number
         }
         Relationships: []
       }
