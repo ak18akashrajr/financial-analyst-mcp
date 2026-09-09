@@ -3,6 +3,7 @@
 import type { McpToolDef } from "../mcp-client.ts";
 import { HttpCallError } from "../http-call-error.ts";
 import { withRetry } from "../retry.ts";
+import { extractUsage } from "./extract-usage.ts";
 import type { LlmProvider, ToolCallRequest, ToolChoice, ToolResultForProvider, TurnResult } from "./types.ts";
 
 interface GroqToolCall {
@@ -66,6 +67,7 @@ export class GroqProvider implements LlmProvider {
       return res.json();
     }, { label: "Groq" });
     const message = data.choices[0].message;
+    const usage = extractUsage(data.usage);
 
     if (message.tool_calls && message.tool_calls.length > 0) {
       this.messages.push({ role: "assistant", content: message.content ?? null, tool_calls: message.tool_calls });
@@ -74,11 +76,11 @@ export class GroqProvider implements LlmProvider {
         name: tc.function.name,
         arguments: JSON.parse(tc.function.arguments || "{}"),
       }));
-      return { done: false, calls };
+      return { done: false, calls, usage };
     }
 
     this.messages.push({ role: "assistant", content: message.content ?? "" });
-    return { done: true, text: message.content ?? "" };
+    return { done: true, text: message.content ?? "", usage };
   }
 
   appendToolResults(results: ToolResultForProvider[]): void {
