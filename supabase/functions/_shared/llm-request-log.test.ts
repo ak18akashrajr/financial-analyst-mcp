@@ -49,10 +49,43 @@ describe("recordLlmRequest", () => {
       forced_grounding_retry_used: false,
       tool_call_count: 2,
       duration_ms: 850,
+      prompt_tokens: null,
+      completion_tokens: null,
+      estimated_cost_usd: null,
       suspicious_input: false,
       output_guardrail_triggered: false,
       error: null,
     });
+  });
+
+  it("carries token usage and estimated cost through when supplied", async () => {
+    const sb = fakeSupabase();
+    const logger = fakeLogger();
+    await recordLlmRequest(sb as any, logger, {
+      requestId: "req-abc",
+      actor: "user-1",
+      provider: "groq",
+      model: "openai/gpt-oss-120b",
+      modelPreference: "auto",
+      status: "success",
+      escalated: true,
+      openRouterFallback: false,
+      forcedGroundingRetryUsed: false,
+      toolCallCount: 3,
+      durationMs: 1200,
+      promptTokens: 1500,
+      completionTokens: 300,
+      estimatedCostUsd: 0.0004050,
+      suspiciousInput: false,
+      outputGuardrailTriggered: false,
+    });
+    expect(sb.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt_tokens: 1500,
+        completion_tokens: 300,
+        estimated_cost_usd: 0.0004050,
+      }),
+    );
   });
 
   it("carries the error message through on a failed request", async () => {

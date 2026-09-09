@@ -6,7 +6,19 @@ export interface ToolCallRequest {
   arguments: Record<string, unknown>;
 }
 
-export type TurnResult = { done: true; text: string } | { done: false; calls: ToolCallRequest[] };
+/** Token counts a provider's own response reported for one runTurn() call —
+ * see providers/groq.ts and providers/openrouter.ts. Undefined (not zeroed)
+ * on TurnResult when the provider's response carried no usage field at all,
+ * so callers can distinguish "really used 0 tokens" from "provider didn't
+ * report usage" (observed on some OpenRouter free-tier responses). */
+export interface TurnUsage {
+  promptTokens: number;
+  completionTokens: number;
+}
+
+export type TurnResult =
+  | { done: true; text: string; usage?: TurnUsage }
+  | { done: false; calls: ToolCallRequest[]; usage?: TurnUsage };
 
 // "required" forces the model to invoke at least one tool this turn (it
 // cannot return a plain-text final answer) — used exactly once, as a

@@ -34,6 +34,7 @@ import { classifyChatError, ToolLoopExceededError } from "../_shared/chat-error-
 import { createLogger } from "../_shared/logger.ts";
 import { createDbLogSink } from "../_shared/db-log-sink.ts";
 import { recordLlmRequest } from "../_shared/llm-request-log.ts";
+import { estimateCostUsd, isKnownFreeModel } from "../_shared/pricing.ts";
 import { detectSuspiciousInput, scanOutputForLeakage, SAFE_FALLBACK_MESSAGE } from "../_shared/injection-guard.ts";
 
 const logger = createLogger("portfolio-ai");
@@ -332,6 +333,16 @@ Deno.serve(async (req: Request) => {
       let anyToolCalled = false;
       let forcedGroundingRetryUsed = false;
       let toolChoice: ToolChoice = "auto";
+      // Token usage, summed across every runTurn() call this request makes
+      // (including the forced-grounding retry and any OpenRouter->Groq
+      // fallback call — see providers/extract-usage.ts). `usageReported`
+      // stays false for the whole request if not one of those calls' response
+      // carried a usage field, so the final estimate can be omitted (not
+      // reported as a misleading 0) rather than assuming every provider
+      // always reports it.
+      let totalPromptTokens = 0;
+      let totalCompletionTokens = 0;
+      let usageReported = false;
 
       try {
         for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
@@ -389,6 +400,11 @@ Deno.serve(async (req: Request) => {
           // used for (see the forced-grounding-retry branch below) — reset
           // before the next turn regardless of which path produced `result`.
           toolChoice = "auto";
+          if (result.usage) {
+            totalPromptTokens += result.usage.promptTokens;
+            totalCompletionTokens += result.usage.completionTokens;
+            usageReported = true;
+          }
 
           // Explicit `=== true` (not a bare truthy check) so TS reliably narrows
           // this boolean-discriminated union in the `else` path below.
@@ -479,6 +495,12 @@ Deno.serve(async (req: Request) => {
         }
         send("done", { attribution });
         const completedDurationMs = Date.now() - requestStartedAt;
+        // isKnownFreeModel() is checked before estimateCostUsd() so an
+        // OpenRouter free-tier model reports a real $0, not "unknown" (see
+        // pricing.ts's doc comment on why those are kept distinguishable).
+        const estimatedCostUsd = usageReported
+          ? (isKnownFreeModel(model) ? 0 : estimateCostUsd(model, totalPromptTokens, totalCompletionTokens) ?? undefined)
+          : undefined;
         logger.info("Chat request completed", {
           model,
           attribution,
@@ -490,6 +512,9 @@ Deno.serve(async (req: Request) => {
           suspiciousInput: inputCheck.suspicious,
           outputGuardrailTriggered: outputCheck.flagged,
           duration_ms: completedDurationMs,
+          promptTokens: usageReported ? totalPromptTokens : undefined,
+          completionTokens: usageReported ? totalCompletionTokens : undefined,
+          estimatedCostUsd,
           requestId,
         });
         await recordLlmRequest(serviceClient, logger, {
@@ -504,15 +529,24 @@ Deno.serve(async (req: Request) => {
           forcedGroundingRetryUsed,
           toolCallCount,
           durationMs: completedDurationMs,
+          promptTokens: usageReported ? totalPromptTokens : undefined,
+          completionTokens: usageReported ? totalCompletionTokens : undefined,
+          estimatedCostUsd,
           suspiciousInput: inputCheck.suspicious,
           outputGuardrailTriggered: outputCheck.flagged,
         });
       } catch (err) {
         const failedDurationMs = Date.now() - requestStartedAt;
+        const estimatedCostUsd = usageReported
+          ? (isKnownFreeModel(model) ? 0 : estimateCostUsd(model, totalPromptTokens, totalCompletionTokens) ?? undefined)
+          : undefined;
         logger.error("Chat stream failed", {
           model,
           duration_ms: failedDurationMs,
           requestId,
+          promptTokens: usageReported ? totalPromptTokens : undefined,
+          completionTokens: usageReported ? totalCompletionTokens : undefined,
+          estimatedCostUsd,
           error: err,
         });
         await recordLlmRequest(serviceClient, logger, {
@@ -527,6 +561,9 @@ Deno.serve(async (req: Request) => {
           forcedGroundingRetryUsed,
           toolCallCount,
           durationMs: failedDurationMs,
+          promptTokens: usageReported ? totalPromptTokens : undefined,
+          completionTokens: usageReported ? totalCompletionTokens : undefined,
+          estimatedCostUsd,
           suspiciousInput: inputCheck.suspicious,
           outputGuardrailTriggered: false,
           error: err instanceof Error ? err.message : String(err),

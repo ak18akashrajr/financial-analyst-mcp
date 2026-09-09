@@ -31,11 +31,15 @@ export interface LlmRequestRecord {
   durationMs: number;
   suspiciousInput: boolean;
   outputGuardrailTriggered: boolean;
-  /** Token usage and estimated cost are intentionally absent here — no
-   * provider response `usage` field is read yet (see groq.ts/openrouter.ts).
-   * A follow-up change adds prompt_tokens/completion_tokens/
-   * estimated_cost_usd; the columns already exist (same migration) and stay
-   * null until then. */
+  /** Undefined when no provider response this request reported a usage
+   * field at all (see providers/extract-usage.ts) — stored as null, not 0,
+   * so "unknown" stays distinguishable from "really used zero tokens". */
+  promptTokens?: number;
+  completionTokens?: number;
+  /** Undefined for a model with no entry in _shared/pricing.ts's table
+   * (including one whose real cost is unknown, not necessarily free) — see
+   * that module's isKnownFreeModel()/estimateCostUsd(). Stored as null. */
+  estimatedCostUsd?: number;
   error?: string;
 }
 
@@ -53,6 +57,9 @@ export async function recordLlmRequest(sb: SupabaseClient, logger: Logger, recor
       forced_grounding_retry_used: record.forcedGroundingRetryUsed,
       tool_call_count: record.toolCallCount,
       duration_ms: record.durationMs,
+      prompt_tokens: record.promptTokens ?? null,
+      completion_tokens: record.completionTokens ?? null,
+      estimated_cost_usd: record.estimatedCostUsd ?? null,
       suspicious_input: record.suspiciousInput,
       output_guardrail_triggered: record.outputGuardrailTriggered,
       error: record.error ?? null,
