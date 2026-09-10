@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../_shared/auth.ts", () => ({
-  requireUser: vi.fn().mockResolvedValue({ id: "user-1" }),
+  requireUser: vi.fn().mockResolvedValue({ user: { id: "user-1" }, reason: null }),
   unauthorizedResponse: () => new Response(null, { status: 401 }),
 }));
 

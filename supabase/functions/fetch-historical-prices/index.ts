@@ -14,9 +14,9 @@ Deno.serve(async (req) => {
   // Writes to historical_prices via the service-role key below (bypasses
   // RLS by design) — must independently verify a real logged-in user, same
   // as portfolio-ai (see docs/security-review.md finding #1 and its follow-up).
-  const user = await requireUser(req);
+  const { user, reason } = await requireUser(req);
   if (!user) {
-    logger.warn("Rejected unauthenticated fetch-historical-prices request");
+    logger.warn("Rejected unauthenticated fetch-historical-prices request", { reason });
     return unauthorizedResponse(corsHeaders);
   }
   logger.attachSink(createDbLogSink(createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)));
@@ -33,6 +33,7 @@ Deno.serve(async (req) => {
     );
 
     const result: Record<string, { date: string; close: number }[]> = {};
+    const writeErrors: Record<string, string> = {};
 
     for (const sym of symbols) {
       try {
@@ -53,7 +54,18 @@ Deno.serve(async (req) => {
         if (points.length > 0) {
           const rows = points.map((p) => ({ symbol: sym, date: p.date, close: p.close }));
           for (let i = 0; i < rows.length; i += 500) {
-            await supabase.from("historical_prices").upsert(rows.slice(i, i + 500), { onConflict: "symbol,date" });
+            // Supabase's upsert doesn't throw on a DB error, it resolves with
+            // one — the surrounding try/catch never saw it, so a failed
+            // write here used to look identical to a successful one, both to
+            // the caller (result[sym] still held the fetched points) and to
+            // anyone reading the logs (nothing was ever written about it).
+            const { error: upsertError } = await supabase
+              .from("historical_prices")
+              .upsert(rows.slice(i, i + 500), { onConflict: "symbol,date" });
+            if (upsertError) {
+              logger.error("Failed to upsert historical_prices", { symbol: sym, error: upsertError, rowCount: rows.length });
+              writeErrors[sym] = upsertError.message;
+            }
           }
         }
       } catch (err) {
@@ -67,9 +79,10 @@ Deno.serve(async (req) => {
       requested: symbols.length,
       succeeded: symbols.length - failed.length,
       failed,
+      writeErrors,
     });
 
-    return new Response(JSON.stringify({ prices: result }), {
+    return new Response(JSON.stringify({ prices: result, writeErrors }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

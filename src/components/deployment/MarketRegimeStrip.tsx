@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Pencil, TrendingUp, TrendingDown, Minus, Activity } from 'lucide-react';
 import { InfoHint } from '@/components/InfoHint';
+import { logClientError } from '@/lib/clientErrorLogging';
 
 
 const INDICATOR = 'NIFTY_CAPE';
@@ -27,13 +28,14 @@ export function MarketRegimeStrip({ onCapeChange }: Props) {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('market_indicators')
         .select('value, as_of')
         .eq('indicator', INDICATOR)
         .order('as_of', { ascending: false })
         .limit(1)
         .maybeSingle();
+      if (error) logClientError('MarketRegimeStrip.load', 'Failed to load NIFTY_CAPE indicator', { error });
       if (data) {
         setCape(Number(data.value));
         setAsOf(data.as_of);
@@ -52,7 +54,11 @@ export function MarketRegimeStrip({ onCapeChange }: Props) {
     const { error } = await supabase
       .from('market_indicators')
       .upsert({ indicator: INDICATOR, value: v, as_of: today, source: 'manual' }, { onConflict: 'indicator,as_of' });
-    if (error) { toast.error('Failed to save'); return; }
+    if (error) {
+      toast.error('Failed to save');
+      logClientError('MarketRegimeStrip.save', 'Failed to upsert NIFTY_CAPE indicator', { error, value: v, asOf: today });
+      return;
+    }
     setCape(v);
     setAsOf(today);
     setEditing(false);

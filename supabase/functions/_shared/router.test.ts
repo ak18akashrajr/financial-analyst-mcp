@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isComplexQuery, shouldEscalate } from "./router.ts";
+import { explainComplexity, isComplexQuery, shouldEscalate } from "./router.ts";
 
 describe("isComplexQuery", () => {
   it("routes plain lookups to the simple tier", () => {
@@ -19,6 +19,44 @@ describe("isComplexQuery", () => {
   it("routes multi-part questions to the complex tier", () => {
     expect(isComplexQuery("What's my P&L? And what's my cash balance?")).toBe(true);
     expect(isComplexQuery("What's my exposure and how has it drifted?")).toBe(true);
+  });
+});
+
+describe("explainComplexity", () => {
+  it("reports no reason for a plain lookup", () => {
+    expect(explainComplexity("What's my portfolio value?")).toEqual({ complex: false, reason: null });
+  });
+
+  it("names the matched keyword for a known complex phrase", () => {
+    expect(explainComplexity("Can you run a stress test on my portfolio?")).toEqual({
+      complex: true,
+      reason: 'keyword: "stress test"',
+    });
+  });
+
+  it("names the question-mark-count rule for a multi-part question", () => {
+    expect(explainComplexity("What's my P&L? And what's my cash balance?")).toEqual({
+      complex: true,
+      reason: "multiple_question_marks: 2",
+    });
+  });
+
+  it("names the 'and' + question rule when only one question mark is present and no keyword matches", () => {
+    expect(explainComplexity("What's my P&L and what's my cash balance?")).toEqual({
+      complex: true,
+      reason: "and_with_question",
+    });
+  });
+
+  it("stays consistent with isComplexQuery's boolean verdict", () => {
+    const messages = [
+      "show my holdings",
+      "Can you run a stress test on my portfolio?",
+      "What's my P&L? And what's my cash balance?",
+    ];
+    for (const message of messages) {
+      expect(explainComplexity(message).complex).toBe(isComplexQuery(message));
+    }
   });
 });
 

@@ -15,17 +15,32 @@ export interface AuthenticatedUser {
   id: string;
 }
 
+export interface RequireUserResult {
+  user: AuthenticatedUser | null;
+  /**
+   * Why `user` is null — always null when `user` is set. Distinguishes "no
+   * token at all" from "token present but rejected by Supabase Auth" (and,
+   * for the latter, carries Supabase's own error text — expired vs
+   * malformed vs an anon/service-role key riding as a bearer token all say
+   * something different). Server-side only: every caller logs this in its
+   * own rejection warn line, but `unauthorizedResponse` never includes it in
+   * the response body sent to the client — see that function's fixed
+   * generic message.
+   */
+  reason: string | null;
+}
+
 /**
  * Extracts the bearer token from `req` and validates it against Supabase
- * Auth. Returns the authenticated user, or `null` if the request has no
- * token or the token doesn't belong to a real logged-in session (expired,
- * malformed, or — importantly — the anon/service-role key itself, which is
- * not a user session and `auth.getUser` correctly rejects).
+ * Auth. Returns the authenticated user, or a null user with a `reason` if
+ * the request has no token or the token doesn't belong to a real logged-in
+ * session (expired, malformed, or — importantly — the anon/service-role key
+ * itself, which is not a user session and `auth.getUser` correctly rejects).
  */
-export async function requireUser(req: Request): Promise<AuthenticatedUser | null> {
+export async function requireUser(req: Request): Promise<RequireUserResult> {
   const authHeader = req.headers.get("authorization") ?? "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (!token) return null;
+  if (!token) return { user: null, reason: "no_token" };
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   // SUPABASE_ANON_KEY is one of the secrets Supabase injects into every edge
@@ -37,8 +52,10 @@ export async function requireUser(req: Request): Promise<AuthenticatedUser | nul
   });
 
   const { data, error } = await client.auth.getUser(token);
-  if (error || !data.user) return null;
-  return { id: data.user.id };
+  if (error || !data.user) {
+    return { user: null, reason: error ? `invalid_token: ${error.message}` : "invalid_token: no user for token" };
+  }
+  return { user: { id: data.user.id }, reason: null };
 }
 
 /** Standard 401 body/shape for an unauthenticated request, given a function's own corsHeaders. */

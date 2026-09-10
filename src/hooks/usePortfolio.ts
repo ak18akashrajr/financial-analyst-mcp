@@ -6,6 +6,7 @@ import { calculateXIRR } from '@/lib/xirr';
 import { computeFifoPosition } from '@/lib/costBasis';
 import { isSameIstCalendarDay, shouldSkipNetWorthSnapshot, type NetWorthSnapshotFields } from '@/lib/netWorthSnapshot';
 import { classifyBalanceDelta, getIstYearMonth } from '@/lib/expenseIncomeRatio';
+import { logClientError } from '@/lib/clientErrorLogging';
 
 function formatIstTimestamp(date: Date): string {
   return date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
@@ -39,6 +40,27 @@ export function usePortfolio() {
           supabase.from('symbol_metadata').select('*'),
           supabase.from('monthly_cashflow').select('total_income, total_expense').eq('year_month', getIstYearMonth()).maybeSingle(),
         ]);
+
+        // Each of these previously only ever checked `.data` — a real query
+        // error left `.data` null/undefined the same as a genuinely empty
+        // table, so a failed load of (say) just current_prices silently
+        // rendered as "no prices yet" with nothing anywhere to say the query
+        // itself had failed. One aggregate toast (not five) plus a per-query
+        // trace, so a partial load failure is still visible without being
+        // noisy about which specific piece broke.
+        const loadErrors = [
+          { label: 'transactions', error: txnRes.error },
+          { label: 'cash_settings', error: cashRes.error },
+          { label: 'current_prices', error: priceRes.error },
+          { label: 'symbol_metadata', error: metaRes.error },
+          { label: 'monthly_cashflow', error: cashflowRes.error },
+        ].filter((r) => r.error);
+        if (loadErrors.length > 0) {
+          for (const { label, error } of loadErrors) {
+            logClientError('usePortfolio.loadData', `Failed to load ${label}`, { error });
+          }
+          toast.error('Some portfolio data failed to load — figures below may be incomplete');
+        }
 
         if (txnRes.data) {
           setTransactions(txnRes.data.map(t => ({
@@ -136,12 +158,20 @@ export function usePortfolio() {
     // Skip the insert if it'd be a no-op: same figures already recorded
     // today. A stale snapshot from an earlier day never blocks today's
     // first write — see docs/perf-findings.md#1.
-    const { data: latest } = await supabase
+    const { data: latest, error: latestError } = await supabase
       .from('net_worth_history')
       .select('net_worth, portfolio_value, liquid_cash, vault_cash, pf_balance, credit_card_debt, recorded_at')
       .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (latestError) {
+      // Not fatal to the caller (addTransaction/updateCash/etc. all await
+      // this and would otherwise blow up on every mutation) — but a real DB
+      // error here was previously indistinguishable from "no snapshot
+      // recorded yet", silently defeating the same-day skip-if-no-op check
+      // above with no trace of why.
+      logClientError('usePortfolio.recordNetWorthSnapshot', 'Failed to read latest net worth snapshot', { error: latestError });
+    }
 
     const mostRecentToday: NetWorthSnapshotFields | null =
       latest && isSameIstCalendarDay(new Date((latest as any).recorded_at), new Date())
@@ -157,7 +187,7 @@ export function usePortfolio() {
 
     if (shouldSkipNetWorthSnapshot(candidate, mostRecentToday)) return;
 
-    await supabase.from('net_worth_history').insert({
+    const { error: insertError } = await supabase.from('net_worth_history').insert({
       net_worth: netWorth,
       portfolio_value: portfolioVal,
       liquid_cash: lc,
@@ -165,6 +195,13 @@ export function usePortfolio() {
       pf_balance: pf,
       credit_card_debt: ccd,
     } as any);
+    if (insertError) {
+      // Never surfaced to the user at all before this — every caller
+      // (addTransaction, updateCash, ...) just awaits this and moves on, so
+      // a failed snapshot write left the Net Worth History chart silently
+      // missing a data point for the day with nothing recording why.
+      logClientError('usePortfolio.recordNetWorthSnapshot', 'Failed to insert net worth snapshot', { error: insertError, candidate });
+    }
   }, [cash, computePortfolioValue]);
 
   const addTransaction = useCallback(async (txn: Omit<Transaction, 'id' | 'date'>) => {
@@ -177,6 +214,7 @@ export function usePortfolio() {
     if (error) {
       toast.error('Failed to add transaction');
       console.error(error);
+      logClientError('usePortfolio.addTransaction', 'Failed to add transaction', { error, txn });
       return;
     }
 
@@ -202,6 +240,7 @@ export function usePortfolio() {
     if (error) {
       toast.error('Failed to update transaction');
       console.error(error);
+      logClientError('usePortfolio.updateTransaction', 'Failed to update transaction', { error, id, updates });
       return;
     }
 
@@ -218,6 +257,7 @@ export function usePortfolio() {
     if (error) {
       toast.error('Failed to delete transaction');
       console.error(error);
+      logClientError('usePortfolio.deleteTransaction', 'Failed to delete transaction', { error, id });
       return;
     }
 
@@ -234,11 +274,18 @@ export function usePortfolio() {
     if (deltaIncome === 0 && deltaExpense === 0) return;
 
     const yearMonth = getIstYearMonth();
-    const { data: existing } = await supabase
+    const { data: existing, error: readError } = await supabase
       .from('monthly_cashflow')
       .select('total_income, total_expense')
       .eq('year_month', yearMonth)
       .maybeSingle();
+    if (readError) {
+      // Not returned early on — a failed read here previously just fell
+      // through as if there were no existing row (existing?.total_income
+      // ?? 0), silently understating the new totals below by whatever had
+      // already been recorded this month, with no trace of why.
+      logClientError('usePortfolio.recordCashflowDelta', 'Failed to read existing monthly_cashflow row', { error: readError, yearMonth });
+    }
 
     const newIncome = Number((existing as any)?.total_income ?? 0) + deltaIncome;
     const newExpense = Number((existing as any)?.total_expense ?? 0) + deltaExpense;
@@ -249,6 +296,7 @@ export function usePortfolio() {
 
     if (error) {
       console.error('Failed to record income/expense delta:', error);
+      logClientError('usePortfolio.recordCashflowDelta', 'Failed to upsert monthly_cashflow', { error, yearMonth, newIncome, newExpense });
       return;
     }
     setMonthlyCashflow({ totalIncome: newIncome, totalExpense: newExpense });
@@ -302,6 +350,7 @@ export function usePortfolio() {
     if (error) {
       toast.error('Failed to update cash');
       console.error(error);
+      logClientError('usePortfolio.updateCash', 'Failed to update cash_settings', { error, dbUpdates });
       return;
     }
 
@@ -339,6 +388,7 @@ export function usePortfolio() {
     if (error) {
       toast.error('Failed to update price');
       console.error(error);
+      logClientError('usePortfolio.updatePrice', 'Failed to update current_prices', { error, symbol, price });
       return;
     }
 
@@ -353,6 +403,7 @@ export function usePortfolio() {
     if (error) {
       toast.error('Failed to update metadata');
       console.error(error);
+      logClientError('usePortfolio.updateSymbolMetadata', 'Failed to update symbol_metadata', { error, symbol, geography, sector });
       return;
     }
 
@@ -373,7 +424,16 @@ export function usePortfolio() {
       if (error) {
         toast.error('Failed to fetch live prices');
         console.error(error);
+        logClientError('usePortfolio.fetchLivePrices', 'fetch-prices invocation failed', { error, symbols });
         return;
+      }
+
+      // fetch-prices now reports a failed current_prices write explicitly
+      // (see supabase/functions/fetch-prices/index.ts's writeError) instead
+      // of the caller having no way to tell a persisted write from one that
+      // silently didn't happen.
+      if (data?.writeError) {
+        logClientError('usePortfolio.fetchLivePrices', 'fetch-prices reported a write error', { writeError: data.writeError, symbols });
       }
 
       const prices = data?.prices as Record<string, number | null>;
@@ -390,7 +450,9 @@ export function usePortfolio() {
         // fresh DB row.
         const changed = (data?.changed as string[] | undefined) ?? Object.keys(prices).filter((s) => prices[s] != null);
         const unchanged = (data?.unchanged as string[] | undefined) ?? [];
-        if (changed.length === 0) {
+        if (data?.writeError) {
+          toast.error('Prices fetched but failed to save — try again shortly');
+        } else if (changed.length === 0) {
           toast.success(unchanged.length > 0 ? `Checked ${unchanged.length} price(s) — no change, nothing written` : 'No prices to check');
         } else if (unchanged.length > 0) {
           toast.success(`Updated ${changed.length} price(s), ${unchanged.length} unchanged — no DB write needed for those`);
@@ -405,6 +467,7 @@ export function usePortfolio() {
     } catch (err) {
       console.error('Error fetching live prices:', err);
       toast.error('Failed to fetch live prices');
+      logClientError('usePortfolio.fetchLivePrices', 'Unhandled error fetching live prices', { error: err, symbols });
     } finally {
       setFetchingPrices(false);
     }
@@ -423,6 +486,17 @@ export function usePortfolio() {
     ]);
 
     if (txnRes.error || cashRes.error || priceRes.error || cashflowRes.error) {
+      // resetAll is destructive and irreversible — a partial failure here
+      // (e.g. transactions wiped but cash_settings' update rejected) can
+      // leave the data in a genuinely inconsistent state, previously with
+      // nothing beyond a generic toast recording which table(s) actually
+      // failed.
+      logClientError('usePortfolio.resetAll', 'Failed to reset one or more tables', {
+        transactionsError: txnRes.error,
+        cashSettingsError: cashRes.error,
+        currentPricesError: priceRes.error,
+        monthlyCashflowError: cashflowRes.error,
+      });
       toast.error('Failed to reset data');
       return;
     }

@@ -31,6 +31,11 @@ export interface LlmRequestRecord {
   durationMs: number;
   suspiciousInput: boolean;
   outputGuardrailTriggered: boolean;
+  /** True when this turn ended via ASK_CLARIFYING_QUESTION_TOOL instead of a
+   * real answer — see clarifying-question-tool.ts's doc comment. Mirrors the
+   * same field already in the "Chat request completed" stdout log line, but
+   * persisted here so it survives past stdout's retention window. */
+  clarifyingQuestionAsked: boolean;
   /** Undefined when no provider response this request reported a usage
    * field at all (see providers/extract-usage.ts) — stored as null, not 0,
    * so "unknown" stays distinguishable from "really used zero tokens". */
@@ -62,6 +67,7 @@ export async function recordLlmRequest(sb: SupabaseClient, logger: Logger, recor
       estimated_cost_usd: record.estimatedCostUsd ?? null,
       suspicious_input: record.suspiciousInput,
       output_guardrail_triggered: record.outputGuardrailTriggered,
+      clarifying_question_asked: record.clarifyingQuestionAsked,
       error: record.error ?? null,
     });
     if (error) logger.warn("Failed to write llm_requests row", { requestId: record.requestId, error: error.message });

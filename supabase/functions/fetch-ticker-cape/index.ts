@@ -76,9 +76,9 @@ Deno.serve(async (req) => {
   // the platform's verify_jwt accepts the public anon key as-is, so without
   // this gate anyone holding that key (i.e. anyone) could ride it as a free,
   // unauthenticated scraping proxy. Same requireUser gate as fetch-prices.
-  const user = await requireUser(req);
+  const { user, reason } = await requireUser(req);
   if (!user) {
-    logger.warn("Rejected unauthenticated fetch-ticker-cape request");
+    logger.warn("Rejected unauthenticated fetch-ticker-cape request", { reason });
     return unauthorizedResponse(corsHeaders);
   }
   logger.attachSink(createDbLogSink(createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)));

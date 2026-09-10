@@ -7,6 +7,7 @@ import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Plus, Trash2, Target, Home, GraduationCap, Plane, Car, Heart, Briefcase, PiggyBank, CalendarDays, TrendingUp, Info, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
+import { logClientError } from '@/lib/clientErrorLogging';
 import { parseLocalDate } from '@/lib/dateUtils';
 import type { DerivedHolding, Transaction } from '@/types/portfolio';
 
@@ -255,6 +256,11 @@ function GoalTrackContent() {
       supabase.from('goals').select('*').order('created_at', { ascending: true }),
       supabase.from('goal_allocations').select('*'),
     ]);
+    // Previously only ever checked `.data` — a real query error left it
+    // null/undefined the same as "no goals yet", so a failed load silently
+    // rendered as an empty goals page with nothing recording why.
+    if (g.error) logClientError('GoalTrack.load', 'Failed to load goals', { error: g.error });
+    if (a.error) logClientError('GoalTrack.load', 'Failed to load goal_allocations', { error: a.error });
     if (g.data) setGoals(g.data as Goal[]);
     if (a.data) setAllocations(a.data as Allocation[]);
   }
@@ -274,6 +280,7 @@ function GoalTrackContent() {
     });
     if (error) {
       toast.error('Failed to create goal');
+      logClientError('GoalTrack.createGoal', 'Failed to insert goal', { error, name: name.trim(), category });
       return;
     }
     toast.success('Goal created');
@@ -284,7 +291,11 @@ function GoalTrackContent() {
 
   async function deleteGoal(id: string) {
     if (!confirm('Delete this goal and all its allocations?')) return;
-    await supabase.from('goals').delete().eq('id', id);
+    const { error } = await supabase.from('goals').delete().eq('id', id);
+    if (error) {
+      toast.error('Failed to delete goal');
+      logClientError('GoalTrack.deleteGoal', 'Failed to delete goal', { error, id });
+    }
     await load();
   }
 
@@ -292,6 +303,7 @@ function GoalTrackContent() {
     const { error } = await supabase.from('goals').update(patch).eq('id', id);
     if (error) {
       toast.error('Failed to update goal');
+      logClientError('GoalTrack.updateGoal', 'Failed to update goal', { error, id, patch });
       return;
     }
     toast.success('Goal updated');
@@ -323,12 +335,20 @@ function GoalTrackContent() {
       sourceType === 'symbol'
         ? { goal_id: goalId, source_type: sourceType, symbol, amount: 0, quantity: value, track_max: trackMax }
         : { goal_id: goalId, source_type: sourceType, symbol: null, amount: value, quantity: null, track_max: false };
-    await supabase.from('goal_allocations').insert(payload);
+    const { error } = await supabase.from('goal_allocations').insert(payload);
+    if (error) {
+      toast.error('Failed to add allocation');
+      logClientError('GoalTrack.addAllocation', 'Failed to insert goal_allocations row', { error, payload });
+    }
     await load();
   }
 
   async function removeAllocation(id: string) {
-    await supabase.from('goal_allocations').delete().eq('id', id);
+    const { error } = await supabase.from('goal_allocations').delete().eq('id', id);
+    if (error) {
+      toast.error('Failed to remove allocation');
+      logClientError('GoalTrack.removeAllocation', 'Failed to delete goal_allocations row', { error, id });
+    }
     await load();
   }
 

@@ -31,9 +31,9 @@ Deno.serve(async (req) => {
   // Writes to benchmark_history via the service-role key below (bypasses
   // RLS by design) — must independently verify a real logged-in user, same
   // as portfolio-ai (see docs/security-review.md finding #1 and its follow-up).
-  const user = await requireUser(req);
+  const { user, reason } = await requireUser(req);
   if (!user) {
-    logger.warn("Rejected unauthenticated fetch-benchmark-prices request");
+    logger.warn("Rejected unauthenticated fetch-benchmark-prices request", { reason });
     return unauthorizedResponse(corsHeaders);
   }
   logger.attachSink(createDbLogSink(createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)));
