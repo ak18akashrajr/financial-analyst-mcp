@@ -8,6 +8,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PortfolioAI from '@/pages/PortfolioAI';
+import { PortfolioAIChatProvider } from '@/contexts/PortfolioAIChatContext';
 
 // PortfolioAI now sends the real logged-in session token to portfolio-ai
 // (not the public anon key — see supabase/functions/_shared/auth.ts), so it
@@ -53,9 +54,11 @@ function fakeSseResponse(events: string[]) {
 
 function renderPage() {
   return render(
-    <MemoryRouter>
-      <PortfolioAI />
-    </MemoryRouter>,
+    <PortfolioAIChatProvider>
+      <MemoryRouter>
+        <PortfolioAI />
+      </MemoryRouter>
+    </PortfolioAIChatProvider>,
   );
 }
 
