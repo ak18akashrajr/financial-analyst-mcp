@@ -7,6 +7,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PortfolioAI from '@/pages/PortfolioAI';
+import { PortfolioAIChatProvider } from '@/contexts/PortfolioAIChatContext';
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
@@ -44,9 +45,11 @@ function fakeSseResponse(events: string[]) {
 
 function renderPage() {
   return render(
-    <MemoryRouter>
-      <PortfolioAI />
-    </MemoryRouter>,
+    <PortfolioAIChatProvider>
+      <MemoryRouter>
+        <PortfolioAI />
+      </MemoryRouter>
+    </PortfolioAIChatProvider>,
   );
 }
 

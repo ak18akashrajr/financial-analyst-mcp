@@ -1,22 +1,27 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Send, Bot, User, Zap, MessageSquare, Check, Loader2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Send,
+  Bot,
+  User,
+  Zap,
+  MessageSquare,
+  Check,
+  Loader2,
+  AlertTriangle,
+  Building2,
+  BarChart3,
+  Target,
+  TrendingUp,
+  Activity,
+  Trophy,
+  AlertOctagon,
+} from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { AssistantMarkdown } from '@/components/portfolio-ai/AssistantMarkdown';
-import { supabase } from '@/integrations/supabase/client';
+import { useAIChat, type ModelPreference } from '@/contexts/PortfolioAIChatContext';
 
-// `toolTrace` records every real MCP tool this specific answer was grounded
-// in, in call order — attached once the answer finishes streaming so it's
-// visible after the fact too, not just as a transient "thinking" indicator.
-type Msg = { role: 'user' | 'assistant'; content: string; toolTrace?: string[] };
-
-// Opt-in escalation models via OpenRouter (docs/openrouter-nemotron-plan.md)
-// — 'auto' is today's existing behavior (Groq's two-tier router) and is the
-// default. Both opt-in models are free-tier
-// rate-limited on OpenRouter; the backend falls back to Groq transparently
-// (with an honest attribution note) if the daily quota's used up or the
-// call itself fails, so there's no error state to handle here beyond that.
-type ModelPreference = 'auto' | 'nemotron' | 'minimax';
 const MODEL_PREFERENCE_OPTIONS: { value: ModelPreference; label: string }[] = [
   { value: 'auto', label: 'Auto (default)' },
   { value: 'nemotron', label: 'NVIDIA Nemotron 3 Ultra — free, rate-limited' },
@@ -39,115 +44,29 @@ function humanizeToolName(name: string): string {
 // decline ("Never recommend a trade") — a preset shouldn't set the user up
 // for a guardrail refusal. Replaced with get_risk_metrics and
 // compare_to_benchmark, both real tools that had no preset pointing at them.
+//
+// Icons are plain lucide components (matching SideNav's navGroups shape),
+// not emoji — the app's design language is the black & white professional,
+// minimalistic one documented in Updates.tsx's changelog, and colorful emoji
+// read as decorative/childish against that.
 export const PRESET_QUESTIONS = [
-  { icon: '⚠️', text: 'What is my biggest risk right now?', cat: 'Risk Overview' },
-  { icon: '🏦', text: 'How bad would a 20% market crash hit me?', cat: 'Stress Testing' },
-  { icon: '📊', text: 'Give me a full portfolio summary with exposure breakdown.', cat: 'Portfolio Summary' },
-  { icon: '🎯', text: 'Am I too concentrated in any one stock or sector?', cat: 'Concentration Risk' },
-  { icon: '📈', text: 'Which holdings are contributing the most to my P&L?', cat: 'Performance' },
-  { icon: '📉', text: "How volatile is my portfolio, and what's my beta versus NIFTY 50?", cat: 'Risk Metrics' },
-  { icon: '🏆', text: 'How has my portfolio performed against NIFTY 50 over the last 90 days?', cat: 'Benchmark' },
-  { icon: '🚨', text: 'Have I breached any of my concentration or exposure limits?', cat: 'Limit Breaches' },
+  { icon: AlertTriangle, text: 'What is my biggest risk right now?', cat: 'Risk Overview' },
+  { icon: Building2, text: 'How bad would a 20% market crash hit me?', cat: 'Stress Testing' },
+  { icon: BarChart3, text: 'Give me a full portfolio summary with exposure breakdown.', cat: 'Portfolio Summary' },
+  { icon: Target, text: 'Am I too concentrated in any one stock or sector?', cat: 'Concentration Risk' },
+  { icon: TrendingUp, text: 'Which holdings are contributing the most to my P&L?', cat: 'Performance' },
+  { icon: Activity, text: "How volatile is my portfolio, and what's my beta versus NIFTY 50?", cat: 'Risk Metrics' },
+  { icon: Trophy, text: 'How has my portfolio performed against NIFTY 50 over the last 90 days?', cat: 'Benchmark' },
+  { icon: AlertOctagon, text: 'Have I breached any of my concentration or exposure limits?', cat: 'Limit Breaches' },
 ];
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/portfolio-ai`;
-
-/**
- * Parses portfolio-ai's normalized SSE format — the backend owns the whole
- * generation (real MCP tool-use loop) and emits exactly three event types
- * regardless of which provider/model actually served the request:
- *   event: tool_call   { name, args }   — a real MCP tool is being invoked
- *   event: delta        { text }         — a chunk of the final answer
- *   event: done          { attribution } — stream finished
- *   event: error          { message }    — stream finished with an error
- */
-async function streamChat({
-  messages,
-  modelPreference,
-  onDelta,
-  onToolCall,
-  onDone,
-  onError,
-}: {
-  messages: Msg[];
-  modelPreference: ModelPreference;
-  onDelta: (text: string) => void;
-  onToolCall: (name: string) => void;
-  onDone: (attribution?: string) => void;
-  onError: (msg: string) => void;
-}) {
-  // Send the logged-in user's own session token, not the public anon key —
-  // portfolio-ai verifies this server-side and rejects unauthenticated
-  // callers (see supabase/functions/_shared/auth.ts). The anon key would
-  // "work" (it's a valid signed JWT for the project) but doesn't identify a
-  // real user, which is exactly the gap that let anyone with the key read
-  // the whole portfolio without ever logging in.
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) { onError('Your session has expired — please sign in again.'); return; }
-
-  const resp = await fetch(CHAT_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify({ messages, modelPreference }),
-  });
-
-  if (resp.status === 429) { onError('Rate limited — please wait a moment and try again.'); return; }
-  if (!resp.ok || !resp.body) {
-    const body = await resp.json().catch(() => null);
-    onError(body?.error || 'Failed to connect to AI.');
-    return;
-  }
-
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-
-  const handleEvent = (rawEvent: string) => {
-    let eventType = 'message';
-    let dataLine = '';
-    for (const line of rawEvent.split('\n')) {
-      if (line.startsWith('event:')) eventType = line.slice(6).trim();
-      else if (line.startsWith('data:')) dataLine += line.slice(5).trim();
-    }
-    if (!dataLine) return;
-    let parsed: any;
-    try { parsed = JSON.parse(dataLine); } catch { return; }
-
-    if (eventType === 'delta') onDelta(parsed.text);
-    else if (eventType === 'tool_call') onToolCall(parsed.name);
-    else if (eventType === 'done') onDone(parsed.attribution);
-    else if (eventType === 'error') onError(parsed.message);
-  };
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-
-    let idx: number;
-    while ((idx = buf.indexOf('\n\n')) !== -1) {
-      const rawEvent = buf.slice(0, idx);
-      buf = buf.slice(idx + 2);
-      handleEvent(rawEvent);
-    }
-  }
-
-  if (buf.trim()) handleEvent(buf);
-}
-
 const PortfolioAI = () => {
-  const [messages, setMessages] = useState<Msg[]>([]);
+  // Conversation state lives in PortfolioAIChatContext (mounted once in
+  // AppLayout, which persists across every protected-page navigation) rather
+  // than local useState here — this page itself still unmounts on every route
+  // change like any other route, but the chat history no longer lives on it.
+  const { messages, isLoading, liveToolCalls, modelPreference, setModelPreference, send } = useAIChat();
   const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  // Every real MCP tool call for the in-flight turn, in order — accumulates
-  // rather than overwrites, so the live indicator shows the whole trace
-  // building up (earlier calls checked off, the newest one still spinning)
-  // instead of hiding everything but whatever tool happens to be running now.
-  const [liveToolCalls, setLiveToolCalls] = useState<string[]>([]);
-  const [modelPreference, setModelPreference] = useState<ModelPreference>('auto');
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -168,69 +87,18 @@ const PortfolioAI = () => {
     el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
   }, [input]);
 
-  const send = useCallback(async (text: string) => {
+  // Composer submit just hands the draft off to the context's `send` and
+  // clears the local input — the actual request/streaming/message-list
+  // bookkeeping all lives in PortfolioAIChatContext now.
+  const submit = (text: string) => {
     if (!text.trim() || isLoading) return;
-    const userMsg: Msg = { role: 'user', content: text.trim() };
-    const allMsgs = [...messages, userMsg];
-    setMessages(allMsgs);
+    send(text);
     setInput('');
-    setIsLoading(true);
-    setLiveToolCalls([]);
-
-    // Plain array (not state) as the source of truth for which tools were
-    // called this turn — every tool_call event fires before the answer's
-    // first delta (see index.ts's per-turn loop: tool calls happen inside
-    // the loop, text streaming only starts after it breaks), so by the time
-    // `upsert` creates the assistant message, this is already complete and
-    // stable. Reading it here avoids a stale-closure read of React state.
-    const collectedTools: string[] = [];
-    let assistantSoFar = '';
-    const upsert = (chunk: string) => {
-      assistantSoFar += chunk;
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.role === 'assistant') {
-          return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
-        }
-        return [...prev, { role: 'assistant', content: assistantSoFar, toolTrace: [...collectedTools] }];
-      });
-    };
-
-    const finish = (attribution?: string) => {
-      if (attribution) {
-        assistantSoFar += `\n\n---\n*🤖 Response by **${attribution}***\n`;
-        setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
-      }
-      setIsLoading(false);
-      setLiveToolCalls([]);
-    };
-
-    try {
-      await streamChat({
-        messages: allMsgs,
-        modelPreference,
-        onDelta: upsert,
-        onToolCall: (name) => {
-          collectedTools.push(name);
-          setLiveToolCalls([...collectedTools]);
-        },
-        onDone: finish,
-        onError: (msg) => {
-          setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }]);
-          setIsLoading(false);
-          setLiveToolCalls([]);
-        },
-      });
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error. Please try again.' }]);
-      setIsLoading(false);
-      setLiveToolCalls([]);
-    }
-  }, [messages, isLoading, modelPreference]);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    send(input);
+    submit(input);
   };
 
   // Enter sends; Shift+Enter inserts a newline — the standard chat-composer
@@ -239,7 +107,7 @@ const PortfolioAI = () => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      send(input);
+      submit(input);
     }
   };
 
@@ -274,31 +142,33 @@ const PortfolioAI = () => {
         {/* Sidebar — preset questions */}
         <div className="w-80 border-r border-border/80 flex-shrink-0 flex flex-col bg-card/30 hidden md:flex min-h-0">
           <div className="px-4 py-3.5 border-b border-border/80">
-            <p className="text-[10px] font-bold tracking-[0.25em] uppercase text-primary flex items-center gap-1.5">
+            <p className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground/70 flex items-center gap-1.5">
               <MessageSquare className="w-3 h-3" />
               Try these questions
             </p>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {PRESET_QUESTIONS.map((q, i) => (
-              <button
-                key={i}
-                onClick={() => send(q.text)}
-                disabled={isLoading}
-                className="w-full text-left px-4 py-3.5 border-b border-border/40 hover:bg-primary/5 transition-colors duration-200 disabled:opacity-50 group relative"
-              >
-                <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-primary scale-y-0 group-hover:scale-y-100 transition-transform duration-200 origin-center" />
-                <div className="flex gap-2.5 items-start">
-                  <span className="text-base flex-shrink-0 mt-0.5">{q.icon}</span>
-                  <div>
-                    <p className="text-xs text-foreground/80 italic leading-relaxed group-hover:text-foreground transition-colors">
-                      "{q.text}"
-                    </p>
-                    <p className="text-[9px] font-bold tracking-[0.16em] uppercase text-primary/80 mt-1">{q.cat}</p>
+            {PRESET_QUESTIONS.map((q, i) => {
+              const Icon = q.icon;
+              return (
+                <button
+                  key={i}
+                  onClick={() => send(q.text)}
+                  disabled={isLoading}
+                  className="w-full text-left px-4 py-3.5 border-b border-border/40 hover:bg-accent transition-colors disabled:opacity-50 group"
+                >
+                  <div className="flex gap-2.5 items-start">
+                    <Icon className="w-4 h-4 flex-shrink-0 mt-0.5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                    <div>
+                      <p className="text-xs text-foreground/80 leading-relaxed group-hover:text-foreground transition-colors">
+                        {q.text}
+                      </p>
+                      <p className="text-[9px] font-semibold tracking-wider uppercase text-muted-foreground/70 mt-1">{q.cat}</p>
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -318,16 +188,19 @@ const PortfolioAI = () => {
                 </p>
                 {/* Mobile preset buttons */}
                 <div className="grid grid-cols-2 gap-2 w-full max-w-lg md:hidden">
-                  {PRESET_QUESTIONS.slice(0, 4).map((q, i) => (
-                    <button
-                      key={i}
-                      onClick={() => send(q.text)}
-                      className="text-left px-3 py-2.5 rounded-lg border border-border bg-card hover:bg-primary/5 hover:border-primary/30 transition-colors"
-                    >
-                      <span className="text-sm mr-1">{q.icon}</span>
-                      <span className="text-[11px] text-muted-foreground">{q.cat}</span>
-                    </button>
-                  ))}
+                  {PRESET_QUESTIONS.slice(0, 4).map((q, i) => {
+                    const Icon = q.icon;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => send(q.text)}
+                        className="flex items-center gap-1.5 text-left px-3 py-2.5 rounded-lg border border-border bg-card hover:bg-accent transition-colors"
+                      >
+                        <Icon className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                        <span className="text-[11px] text-muted-foreground">{q.cat}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
