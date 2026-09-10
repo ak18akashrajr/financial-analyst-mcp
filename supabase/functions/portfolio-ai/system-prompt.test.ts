@@ -70,4 +70,16 @@ describe("SYSTEM_PROMPT guardrails", () => {
     expect(SYSTEM_PROMPT).toMatch(/there is no tool that computes tax liability/i);
     expect(SYSTEM_PROMPT).toMatch(/tax computation\s+isn't supported here/i);
   });
+
+  // Companion to clarifying-question-gate.test.ts's code-level coverage of
+  // the ask_clarifying_question short-circuit in index.ts.
+  it("instructs asking a clarifying question only for genuine, numeric-outcome-changing ambiguity — not typos", () => {
+    expect(SYSTEM_PROMPT).toContain("ask_clarifying_question");
+    expect(SYSTEM_PROMPT).toMatch(/genuinely\s+ambiguous/i);
+    expect(SYSTEM_PROMPT).toMatch(/not for typos or informal phrasing|interpret their intent/i);
+  });
+
+  it("requires stating an assumed default out loud instead of silently picking one", () => {
+    expect(SYSTEM_PROMPT).toMatch(/say so explicitly in your answer/i);
+  });
 });

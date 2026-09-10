@@ -18,6 +18,7 @@ import { mapWithConcurrency } from "../_shared/concurrency.ts";
 import { McpClient } from "../_shared/mcp-client.ts";
 import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, isComplexQuery, shouldEscalate } from "../_shared/router.ts";
 import { findTool } from "../_shared/mcp-tools.ts";
+import { ASK_CLARIFYING_QUESTION_TOOL } from "../_shared/clarifying-question-tool.ts";
 import { GroqProvider } from "../_shared/providers/groq.ts";
 import { OpenRouterProvider } from "../_shared/providers/openrouter.ts";
 import type { LlmProvider, ToolChoice, ToolResultForProvider, TurnResult } from "../_shared/providers/types.ts";
@@ -138,6 +139,28 @@ You do not have any portfolio data memorized — call the provided tools to get 
   questions. Never decline a transaction-history question by claiming you don't have access to
   transaction-level data; that data is real and queryable.
 
+## Ambiguous requests — ask, don't guess
+- Most requests already have enough context, or a sensible tool default, to answer directly — use
+  that. You do not need to ask about every vague phrasing; see the note on typos/informal phrasing
+  below for the common case where you should just interpret intent and proceed.
+- Call the ask_clarifying_question tool — alone, with nothing else in that turn — only when BOTH:
+  (a) the request is genuinely ambiguous between two or more materially different interpretations,
+  and (b) guessing wrong would change the actual numbers you report, not just the wording of your
+  answer. Ask exactly one short, specific question — never a list of questions. Concrete cases
+  where this applies here:
+    - get_exposure_drift and get_portfolio_value_at_date require a specific asOfDate with no
+      built-in default at all. If the user hasn't named or implied any date, month, or period
+      ("how has my allocation changed" with nothing to anchor a date to), ask which date rather
+      than inventing one.
+    - "last quarter" / "this quarter" is ambiguous between the calendar quarter and the FY quarter
+      (FY runs Apr-Mar here) when nothing in the user's phrasing makes the FY convention the
+      obvious reading — ask which they mean if it's genuinely unclear from context.
+- When you proceed on a tool's own built-in default instead of asking (e.g. get_period_performance
+  defaulting to the quarter containing today, compare_to_benchmark defaulting to NIFTY50 over 90
+  days), say so explicitly in your answer (e.g. "using the default 90-day window against NIFTY50")
+  rather than presenting that default silently, as if it were the only possible reading of the
+  question.
+
 ## Tax questions
 - There is no tool that computes tax liability, capital gains tax, or any other tax figure —
   never calculate, estimate, or guess one yourself. If asked about tax (e.g. "do I owe any tax",
@@ -156,7 +179,8 @@ You do not have any portfolio data memorized — call the provided tools to get 
   separator row, then one data row per line (never collapse rows into a single line).
 - Be conversational but data-driven.
 - The user's message may contain typos or informal phrasing — interpret their intent rather than
-  asking for clarification on minor spelling issues.`;
+  asking for clarification on minor spelling issues. See "Ambiguous requests" above for when
+  asking is actually warranted.`;
 
 // Sent as a one-off corrective user turn when a model answers on turn 0
 // without having called any tool at all — see the forced-grounding-retry
@@ -270,7 +294,10 @@ Deno.serve(async (req: Request) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const mcpClient = new McpClient(`${supabaseUrl}/functions/v1/portfolio-mcp-server`, `Bearer ${serviceRoleKey}`);
     await mcpClient.initialize();
-    const tools = await mcpClient.listTools();
+    // ASK_CLARIFYING_QUESTION_TOOL is appended client-side, not registered
+    // on the real MCP server — see its own doc comment for why (it's a
+    // synthetic loop-control signal, not a SQL-backed portfolio tool).
+    const tools = [...(await mcpClient.listTools()), ASK_CLARIFYING_QUESTION_TOOL];
 
     const { provider: baseProvider, model: fixedModel, attribution: fixedAttribution } = buildProvider();
 
@@ -332,6 +359,10 @@ Deno.serve(async (req: Request) => {
       // returns done:true under tool_choice:"required" can't loop forever.
       let anyToolCalled = false;
       let forcedGroundingRetryUsed = false;
+      // True once the model has called ASK_CLARIFYING_QUESTION_TOOL — logged
+      // alongside the other turn-loop flags below purely for observability
+      // (how often the model asks vs. guesses), not read anywhere else.
+      let clarifyingQuestionAsked = false;
       let toolChoice: ToolChoice = "auto";
       // Token usage, summed across every runTurn() call this request makes
       // (including the forced-grounding retry and any OpenRouter->Groq
@@ -429,6 +460,25 @@ Deno.serve(async (req: Request) => {
           }
           anyToolCalled = true;
 
+          // The model asked a clarifying question instead of guessing (see
+          // ASK_CLARIFYING_QUESTION_TOOL's doc comment for why this has to be
+          // a real tool call rather than a plain-text answer). Take the
+          // question as the final answer immediately — never forward this
+          // synthetic call to mcpClient.callTool like a real MCP tool, never
+          // emit a tool_call SSE event for it (the client's "Used N MCP
+          // tools" trace would be misleading for a call that touched no
+          // portfolio data), and ignore any other calls the model bundled
+          // into the same turn — a clarifying question is meant to stand
+          // alone, per its own description.
+          const clarifyCall = result.calls.find((c) => c.name === ASK_CLARIFYING_QUESTION_TOOL.name);
+          if (clarifyCall) {
+            clarifyingQuestionAsked = true;
+            finalText = typeof clarifyCall.arguments.question === "string" && clarifyCall.arguments.question.trim()
+              ? clarifyCall.arguments.question as string
+              : "Could you clarify what you'd like to know?";
+            break;
+          }
+
           // Escalation safety net: if the cheap Groq tier needs too many tool
           // calls or touches a "complex" tool, restart this turn on the bigger model.
           if (model === GROQ_SIMPLE_MODEL) {
@@ -509,6 +559,7 @@ Deno.serve(async (req: Request) => {
           openRouterFallback,
           toolCallCount,
           forcedGroundingRetryUsed,
+          clarifyingQuestionAsked,
           suspiciousInput: inputCheck.suspicious,
           outputGuardrailTriggered: outputCheck.flagged,
           duration_ms: completedDurationMs,
