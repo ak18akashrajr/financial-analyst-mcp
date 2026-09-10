@@ -40,7 +40,7 @@ function chatRequest(): Request {
 
 describe("portfolio-ai auth gate", () => {
   it("returns 401 without calling the LLM/MCP path when requireUser finds no real session", async () => {
-    requireUserMock.mockResolvedValueOnce(null);
+    requireUserMock.mockResolvedValueOnce({ user: null, reason: "no_token" });
     const res = await handler(chatRequest());
     expect(res.status).toBe(401);
     expect(requireUserMock).toHaveBeenCalledOnce();

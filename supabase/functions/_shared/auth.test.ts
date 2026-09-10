@@ -37,20 +37,32 @@ function reqWithAuth(header?: string): Request {
 }
 
 describe("requireUser", () => {
-  it("returns null when the request has no Authorization header", async () => {
-    expect(await requireUser(reqWithAuth())).toBeNull();
+  it("returns a null user with reason 'no_token' when the request has no Authorization header", async () => {
+    const result = await requireUser(reqWithAuth());
+    expect(result.user).toBeNull();
+    expect(result.reason).toBe("no_token");
     expect(getUserMock).not.toHaveBeenCalled();
   });
 
-  it("returns null when the bearer token doesn't belong to a real session (e.g. the anon key)", async () => {
+  it("returns a null user with the real Supabase error in reason when the bearer token doesn't belong to a real session (e.g. the anon key)", async () => {
     getUserMock.mockResolvedValue({ data: { user: null }, error: { message: "invalid JWT" } });
-    expect(await requireUser(reqWithAuth("Bearer some-anon-key"))).toBeNull();
+    const result = await requireUser(reqWithAuth("Bearer some-anon-key"));
+    expect(result.user).toBeNull();
+    expect(result.reason).toBe("invalid_token: invalid JWT");
   });
 
-  it("returns the user id for a valid session token", async () => {
+  it("returns reason 'invalid_token' with no message when Supabase reports no error but also no user", async () => {
+    getUserMock.mockResolvedValue({ data: { user: null }, error: null });
+    const result = await requireUser(reqWithAuth("Bearer some-token"));
+    expect(result.user).toBeNull();
+    expect(result.reason).toBe("invalid_token: no user for token");
+  });
+
+  it("returns the user id and a null reason for a valid session token", async () => {
     getUserMock.mockResolvedValue({ data: { user: { id: "user-123" } }, error: null });
-    const user = await requireUser(reqWithAuth("Bearer real-session-token"));
-    expect(user).toEqual({ id: "user-123" });
+    const result = await requireUser(reqWithAuth("Bearer real-session-token"));
+    expect(result.user).toEqual({ id: "user-123" });
+    expect(result.reason).toBeNull();
     expect(getUserMock).toHaveBeenCalledWith("real-session-token");
   });
 });

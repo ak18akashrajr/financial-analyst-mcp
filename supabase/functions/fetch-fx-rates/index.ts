@@ -83,9 +83,9 @@ Deno.serve(async (req) => {
   // Writes to fx_rates via the service-role key below (bypasses RLS by
   // design) — must independently verify a real logged-in user, same as
   // portfolio-ai (see docs/security-review.md finding #1 and its follow-up).
-  const user = await requireUser(req);
+  const { user, reason } = await requireUser(req);
   if (!user) {
-    logger.warn("Rejected unauthenticated fetch-fx-rates request");
+    logger.warn("Rejected unauthenticated fetch-fx-rates request", { reason });
     return unauthorizedResponse(corsHeaders);
   }
   logger.attachSink(createDbLogSink(createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)));
@@ -139,18 +139,23 @@ Deno.serve(async (req) => {
 
     if (points.length === 0) {
       // Final fallback: last stored rate, explicitly flagged as cached
-      const { data: cached } = await supabase
+      const { data: cached, error: cacheError } = await supabase
         .from("fx_rates")
         .select("date, rate, source")
         .eq("pair", PAIR)
         .order("date", { ascending: false })
         .limit(1)
         .maybeSingle();
+      // Distinguish a real DB error from the "table's genuinely empty"
+      // case below — both left `cached` falsy before this, so a Postgres
+      // outage on this read looked identical to "no rate has ever been
+      // stored", with nothing logged to tell them apart.
+      if (cacheError) logger.error("Failed to read cached FX rate", { error: cacheError });
 
       attempts.push({
         source: "Database cache",
         ok: !!cached,
-        note: cached ? `last stored ${cached.date}` : "no cached rate",
+        note: cached ? `last stored ${cached.date}` : (cacheError ? `cache read failed: ${cacheError.message}` : "no cached rate"),
       });
 
       logger.warn("All live FX sources failed, serving cached rate", { attempts, cached: !!cached });

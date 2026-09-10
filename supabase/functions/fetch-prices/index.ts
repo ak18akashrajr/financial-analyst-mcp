@@ -17,9 +17,9 @@ Deno.serve(async (req) => {
   // Writes to current_prices via the service-role key below (bypasses RLS
   // by design) — must independently verify a real logged-in user, same as
   // portfolio-ai (see docs/security-review.md finding #1 and its follow-up).
-  const user = await requireUser(req);
+  const { user, reason } = await requireUser(req);
   if (!user) {
-    logger.warn("Rejected unauthenticated fetch-prices request");
+    logger.warn("Rejected unauthenticated fetch-prices request", { reason });
     return unauthorizedResponse(corsHeaders);
   }
   logger.attachSink(createDbLogSink(createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)));
@@ -86,11 +86,17 @@ Deno.serve(async (req) => {
     const symbolsToCheck = Object.keys(fetchedNonNull);
     let changed: string[] = [];
     let unchanged: string[] = [];
+    let writeError: string | null = null;
     if (symbolsToCheck.length > 0) {
-      const { data: existingRows } = await supabase
+      const { data: existingRows, error: selectError } = await supabase
         .from("current_prices")
         .select("symbol, price")
         .in("symbol", symbolsToCheck);
+      // A real DB error here (not just "no matching rows") silently made
+      // every fetched symbol look brand-new (previous === undefined), so it
+      // still got written — just without the log line to say the diff check
+      // itself couldn't run as intended.
+      if (selectError) logger.error("Failed to read existing prices for diffing", { error: selectError });
       const existing: Record<string, number> = {};
       for (const row of existingRows || []) existing[row.symbol] = Number(row.price);
 
@@ -100,7 +106,15 @@ Deno.serve(async (req) => {
 
       const rows = Object.entries(diff.toWrite).map(([symbol, price]) => ({ symbol, price }));
       if (rows.length > 0) {
-        await supabase.from("current_prices").upsert(rows, { onConflict: "symbol" });
+        const { error: upsertError } = await supabase.from("current_prices").upsert(rows, { onConflict: "symbol" });
+        // Without this, a failed write here was reported to the caller as a
+        // success (the response always claimed `changed`/`unchanged` from the
+        // in-memory diff, regardless of whether the upsert actually landed)
+        // with no trace anywhere that current_prices didn't get updated.
+        if (upsertError) {
+          logger.error("Failed to upsert current_prices", { error: upsertError, symbolCount: rows.length });
+          writeError = upsertError.message;
+        }
       }
     }
 
@@ -110,9 +124,14 @@ Deno.serve(async (req) => {
       failed,
       changed: changed.length,
       unchanged: unchanged.length,
+      writeError,
     });
 
-    return new Response(JSON.stringify({ prices, changed, unchanged }), {
+    // writeError surfaces a failed upsert to the caller too, not just the
+    // server-side log line above — otherwise a failed write was previously
+    // indistinguishable from a real success on the response the frontend
+    // actually sees.
+    return new Response(JSON.stringify({ prices, changed, unchanged, writeError }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

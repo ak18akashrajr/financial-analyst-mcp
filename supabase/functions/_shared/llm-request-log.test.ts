@@ -35,6 +35,7 @@ describe("recordLlmRequest", () => {
       durationMs: 850,
       suspiciousInput: false,
       outputGuardrailTriggered: false,
+      clarifyingQuestionAsked: false,
     });
     expect(sb.from).toHaveBeenCalledWith("llm_requests");
     expect(sb.insert).toHaveBeenCalledWith({
@@ -54,8 +55,33 @@ describe("recordLlmRequest", () => {
       estimated_cost_usd: null,
       suspicious_input: false,
       output_guardrail_triggered: false,
+      clarifying_question_asked: false,
       error: null,
     });
+  });
+
+  it("carries clarifyingQuestionAsked through when the turn ended by asking instead of answering", async () => {
+    const sb = fakeSupabase();
+    const logger = fakeLogger();
+    await recordLlmRequest(sb as any, logger, {
+      requestId: "req-clarify",
+      actor: "user-1",
+      provider: "groq",
+      model: "openai/gpt-oss-20b",
+      modelPreference: "auto",
+      status: "success",
+      escalated: false,
+      openRouterFallback: false,
+      forcedGroundingRetryUsed: false,
+      toolCallCount: 0,
+      durationMs: 300,
+      suspiciousInput: false,
+      outputGuardrailTriggered: false,
+      clarifyingQuestionAsked: true,
+    });
+    expect(sb.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ clarifying_question_asked: true }),
+    );
   });
 
   it("carries token usage and estimated cost through when supplied", async () => {
@@ -78,6 +104,7 @@ describe("recordLlmRequest", () => {
       estimatedCostUsd: 0.0004050,
       suspiciousInput: false,
       outputGuardrailTriggered: false,
+      clarifyingQuestionAsked: false,
     });
     expect(sb.insert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -105,6 +132,7 @@ describe("recordLlmRequest", () => {
       durationMs: 25_000,
       suspiciousInput: false,
       outputGuardrailTriggered: false,
+      clarifyingQuestionAsked: false,
       error: "Request timed out",
     });
     expect(sb.insert).toHaveBeenCalledWith(
@@ -130,6 +158,7 @@ describe("recordLlmRequest", () => {
         durationMs: 10,
         suspiciousInput: false,
         outputGuardrailTriggered: false,
+        clarifyingQuestionAsked: false,
       }),
     ).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith(
@@ -156,6 +185,7 @@ describe("recordLlmRequest", () => {
         durationMs: 10,
         suspiciousInput: false,
         outputGuardrailTriggered: false,
+        clarifyingQuestionAsked: false,
       }),
     ).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalled();

@@ -1,11 +1,18 @@
 // Frontend half of the app_logs table (see supabase/migrations/20260827130000_add_app_logs.sql
-// and supabase/functions/_shared/db-log-sink.ts for the edge-function half). Nothing existed here
-// before — no error boundary, no window.onerror capture — so this file covers exactly the two
-// failure modes global handlers can catch: a React render-phase crash (via ErrorBoundary.tsx) and
-// an uncaught JS error / unhandled promise rejection anywhere else (via installGlobalErrorLogging,
-// called once from main.tsx). Deliberately NOT a general-purpose logger callable from arbitrary
-// components — see the "Wire up a Dev Zone logs page" scoping conversation for why that was
-// explicitly out of scope for this pass.
+// and supabase/functions/_shared/db-log-sink.ts for the edge-function half). Originally covered
+// only the two failure modes global handlers can catch on their own — a React render-phase crash
+// (via ErrorBoundary.tsx) and an uncaught JS error / unhandled promise rejection anywhere else (via
+// installGlobalErrorLogging, called once from main.tsx) — and was deliberately NOT a
+// general-purpose logger callable from arbitrary components (see the "Wire up a Dev Zone logs
+// page" scoping conversation).
+//
+// That scoping was revisited (2026-09-10): this app has no server-side API layer for portfolio
+// mutations (see CLAUDE.md) — every add/edit/delete goes straight from a component to Supabase —
+// so a failed mutation used to leave nothing queryable behind it, just a toast the user had
+// already dismissed by the time anyone went looking. `logClientError` is now also called directly
+// from every mutation's own error branch (usePortfolio.ts, GoalTrack.tsx, Reports.tsx,
+// MarketRegimeStrip.tsx) alongside its existing toast — same function, just no longer restricted
+// to the two global-handler call sites.
 import { supabase } from '@/integrations/supabase/client';
 
 /** Best-effort persist of a frontend crash into public.app_logs. Never throws — a logging

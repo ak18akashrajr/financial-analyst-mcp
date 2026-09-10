@@ -16,7 +16,7 @@ import { buildCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit } from "../_shared/rate-limit.ts";
 import { mapWithConcurrency } from "../_shared/concurrency.ts";
 import { McpClient } from "../_shared/mcp-client.ts";
-import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, isComplexQuery, shouldEscalate } from "../_shared/router.ts";
+import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, explainComplexity, shouldEscalate } from "../_shared/router.ts";
 import { findTool } from "../_shared/mcp-tools.ts";
 import { ASK_CLARIFYING_QUESTION_TOOL } from "../_shared/clarifying-question-tool.ts";
 import { GroqProvider } from "../_shared/providers/groq.ts";
@@ -35,6 +35,7 @@ import { classifyChatError, ToolLoopExceededError } from "../_shared/chat-error-
 import { createLogger } from "../_shared/logger.ts";
 import { createDbLogSink } from "../_shared/db-log-sink.ts";
 import { recordLlmRequest } from "../_shared/llm-request-log.ts";
+import { recordToolCall } from "../_shared/audit-log.ts";
 import { estimateCostUsd, isKnownFreeModel } from "../_shared/pricing.ts";
 import { detectSuspiciousInput, scanOutputForLeakage, SAFE_FALLBACK_MESSAGE } from "../_shared/injection-guard.ts";
 
@@ -231,9 +232,9 @@ Deno.serve(async (req: Request) => {
   // verify a real logged-in user made this call. The platform's own
   // `verify_jwt` isn't enough here: it accepts the public anon key too,
   // which isn't a user session.
-  const user = await requireUser(req);
+  const { user, reason } = await requireUser(req);
   if (!user) {
-    logger.warn("Rejected unauthenticated portfolio-ai request", { requestId });
+    logger.warn("Rejected unauthenticated portfolio-ai request", { requestId, reason });
     return unauthorizedResponse(corsHeaders);
   }
 
@@ -311,10 +312,18 @@ Deno.serve(async (req: Request) => {
     // point for "simple"-looking queries — so a message that *looks*
     // simple by isComplexQuery's keyword heuristic but also matched an
     // injection-style pattern above still gets routed to the bigger tier.
-    model = (isComplexQuery(latest.content) || inputCheck.suspicious) ? GROQ_COMPLEX_MODEL : GROQ_SIMPLE_MODEL;
+    const complexityVerdict = explainComplexity(latest.content);
+    model = (complexityVerdict.complex || inputCheck.suspicious) ? GROQ_COMPLEX_MODEL : GROQ_SIMPLE_MODEL;
     attribution = model === GROQ_COMPLEX_MODEL
       ? (inputCheck.suspicious ? "GPT-OSS 120B via Groq (escalated — suspicious input)" : "GPT-OSS 120B via Groq")
       : "GPT-OSS 20B via Groq";
+    // Why the heuristic landed here — the resulting model name alone doesn't
+    // say whether a keyword matched, a multi-question message tripped the
+    // count check, or suspicious input forced the bigger tier regardless of
+    // isComplexQuery's own verdict.
+    const routingReason = inputCheck.suspicious && !complexityVerdict.complex
+      ? "suspicious_input"
+      : complexityVerdict.reason;
 
     // Opt-in OpenRouter path — overrides the Groq tiering just computed above
     // whenever the user explicitly requested it on this turn (modelPreference).
@@ -342,7 +351,7 @@ Deno.serve(async (req: Request) => {
     provider.loadHistory(history);
     provider.addUserMessage(latest.content);
 
-    logger.info("Chat request started", { model, attribution, modelPreference, historyLength: history.length, requestId });
+    logger.info("Chat request started", { model, attribution, modelPreference, routingReason, historyLength: history.length, requestId });
     const requestStartedAt = Date.now();
 
     const stream = createSseStream(async (send) => {
@@ -476,6 +485,20 @@ Deno.serve(async (req: Request) => {
             finalText = typeof clarifyCall.arguments.question === "string" && clarifyCall.arguments.question.trim()
               ? clarifyCall.arguments.question as string
               : "Could you clarify what you'd like to know?";
+            // Never forwarded to mcpClient.callTool (see the comment above),
+            // so unlike a real MCP tool call this never gets an audit_logs
+            // row from portfolio-mcp-server's own dispatcher — write one
+            // here instead, so "what did the AI do on this turn" has no
+            // blind spot for turns that asked instead of acting. Best-effort,
+            // same posture as every other recordToolCall call site.
+            await recordToolCall(serviceClient, logger, {
+              tool: ASK_CLARIFYING_QUESTION_TOOL.name,
+              actor: user.id,
+              requestId,
+              args: clarifyCall.arguments,
+              durationMs: Date.now() - requestStartedAt,
+              success: true,
+            });
             break;
           }
 
@@ -585,6 +608,7 @@ Deno.serve(async (req: Request) => {
           estimatedCostUsd,
           suspiciousInput: inputCheck.suspicious,
           outputGuardrailTriggered: outputCheck.flagged,
+          clarifyingQuestionAsked,
         });
       } catch (err) {
         const failedDurationMs = Date.now() - requestStartedAt;
@@ -617,6 +641,7 @@ Deno.serve(async (req: Request) => {
           estimatedCostUsd,
           suspiciousInput: inputCheck.suspicious,
           outputGuardrailTriggered: false,
+          clarifyingQuestionAsked,
           error: err instanceof Error ? err.message : String(err),
         });
         throw err;

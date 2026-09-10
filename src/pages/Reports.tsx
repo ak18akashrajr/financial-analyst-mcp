@@ -6,6 +6,7 @@ import { usePortfolio } from '@/hooks/usePortfolio';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
+import { logClientError } from '@/lib/clientErrorLogging';
 import {
   buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor,
   type PeriodDef, type PeriodType, type NetWorthHistoryRow, type HistoricalPriceMap,
@@ -86,6 +87,7 @@ const ReportsContent = () => {
       setHistoricalPrices(map);
     } catch (e: any) {
       toast.error(`Failed to load historical prices: ${e?.message ?? e}`);
+      logClientError('Reports.reloadHistoricalPrices', 'Failed to load historical prices', { error: e?.message ?? String(e) });
     }
   };
 
@@ -105,6 +107,7 @@ const ReportsContent = () => {
       toast.success(`Backfilled ${symbols.length} symbols`, { id: t });
     } catch (e: any) {
       toast.error(`Backfill failed: ${e?.message ?? e}`, { id: t });
+      logClientError('Reports.backfillFY', 'Historical price backfill failed', { error: e?.message ?? String(e), symbols, fy: active?.fy });
     } finally {
       setBackfilling(false);
     }
@@ -125,6 +128,7 @@ const ReportsContent = () => {
       toast.success('Backfilled benchmark data', { id: t });
     } catch (e: any) {
       toast.error(`Backfill failed: ${e?.message ?? e}`, { id: t });
+      logClientError('Reports.backfillBenchmark', 'Benchmark backfill failed', { error: e?.message ?? String(e) });
     } finally {
       setBackfillingBenchmark(false);
     }
@@ -143,6 +147,8 @@ const ReportsContent = () => {
         supabase.from('net_worth_history').select('*').order('recorded_at', { ascending: true }),
         supabase.from('period_reports' as any).select('*'),
       ]);
+      if (hRes.error) logClientError('Reports.load', 'Failed to load net_worth_history', { error: hRes.error });
+      if (rRes.error) logClientError('Reports.load', 'Failed to load period_reports', { error: rRes.error });
       if (hRes.data) setHistory(hRes.data as any);
       if (rRes.data) {
         const map: Record<string, PeriodReportRow> = {};
@@ -300,7 +306,11 @@ const ReportsContent = () => {
     };
     const { error } = await supabase.from('period_reports' as any).upsert(payload, { onConflict: 'period_key' });
     setSaving(false);
-    if (error) { toast.error('Failed to save'); return; }
+    if (error) {
+      toast.error('Failed to save');
+      logClientError('Reports.saveNarrative', 'Failed to upsert period_reports', { error, periodKey: active.key });
+      return;
+    }
     setReports(r => ({ ...r, [active.key]: payload as any }));
     setEdits(e => { const c = { ...e }; delete c[active.key]; return c; });
     toast.success('Report narrative saved');
@@ -398,6 +408,7 @@ One concise paragraph (3-4 sentences) summarising the period.
       toast.success('AI narrative drafted — review & save', { id: t });
     } catch (e: any) {
       toast.error(e?.message ?? 'Failed to draft narrative', { id: t });
+      logClientError('Reports.generateAINarrative', 'AI narrative draft failed', { error: e?.message ?? String(e), periodKey: active.key });
     } finally {
       setGeneratingAI(false);
     }

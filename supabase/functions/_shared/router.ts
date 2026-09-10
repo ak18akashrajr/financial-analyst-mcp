@@ -23,17 +23,40 @@ const COMPLEXITY_KEYWORDS = [
   "correlat",
 ];
 
-/** True if the message looks complex enough to warrant the bigger model up front. */
-export function isComplexQuery(message: string): boolean {
+export interface ComplexityVerdict {
+  complex: boolean;
+  /**
+   * Which rule fired, so a routing decision is explainable after the fact
+   * instead of only showing which model got picked — see portfolio-ai/
+   * index.ts's "Chat request started" log line. Null when `complex` is
+   * false (nothing fired) or "not complex" isn't a decision that needs
+   * explaining.
+   */
+  reason: string | null;
+}
+
+/**
+ * Same heuristic as isComplexQuery, but reports which rule matched instead
+ * of collapsing straight to a boolean — isComplexQuery is kept as a thin
+ * wrapper around this so its existing boolean-returning callers/tests are
+ * unaffected.
+ */
+export function explainComplexity(message: string): ComplexityVerdict {
   const lower = message.toLowerCase();
-  if (COMPLEXITY_KEYWORDS.some((k) => lower.includes(k))) return true;
+  const matchedKeyword = COMPLEXITY_KEYWORDS.find((k) => lower.includes(k));
+  if (matchedKeyword) return { complex: true, reason: `keyword: "${matchedKeyword}"` };
 
   // Multi-part questions (contains " and " combined with a question, or multiple "?")
   const questionMarks = (lower.match(/\?/g) || []).length;
-  if (questionMarks > 1) return true;
-  if (lower.includes(" and ") && lower.includes("?")) return true;
+  if (questionMarks > 1) return { complex: true, reason: `multiple_question_marks: ${questionMarks}` };
+  if (lower.includes(" and ") && lower.includes("?")) return { complex: true, reason: "and_with_question" };
 
-  return false;
+  return { complex: false, reason: null };
+}
+
+/** True if the message looks complex enough to warrant the bigger model up front. */
+export function isComplexQuery(message: string): boolean {
+  return explainComplexity(message).complex;
 }
 
 export const GROQ_SIMPLE_MODEL = "openai/gpt-oss-20b";
