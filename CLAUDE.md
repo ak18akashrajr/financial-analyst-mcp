@@ -70,10 +70,20 @@ those assume Node's http objects, which don't map onto a stateless Deno edge fun
 are registered in
 [supabase/functions/_shared/mcp-tools.ts](supabase/functions/_shared/mcp-tools.ts)
 (`get_portfolio_summary`, `list_holdings`, `get_exposure_by_*`, `get_risk_metrics`,
-`run_stress_test`, `compare_to_benchmark`, etc.), each backed by a real SQL query.
+`run_stress_test`, `compare_to_benchmark`, etc.), each backed by a real SQL query. One exception:
+`ask_clarifying_question` in
+[_shared/clarifying-question-tool.ts](supabase/functions/_shared/clarifying-question-tool.ts) is a
+synthetic, non-SQL tool appended client-side in `portfolio-ai/index.ts` (never registered on the
+real MCP server) purely so the model has a `tool_choice`-compatible way to ask the user a question
+instead of guessing — see that file's doc comment for why a plain-text answer can't do this (the
+forced-grounding-retry guard below would intercept it).
 
 [supabase/functions/portfolio-ai/](supabase/functions/portfolio-ai/index.ts) is the agent loop that
-calls those tools through [_shared/mcp-client.ts](supabase/functions/_shared/mcp-client.ts).
+calls those tools through [_shared/mcp-client.ts](supabase/functions/_shared/mcp-client.ts). A
+turn that ends with zero tool calls at all is never trusted as final on the first attempt — it gets
+one corrective nudge plus a retry under API-enforced `tool_choice: "required"` first (the
+forced-grounding-retry guard, added after a 2026-09-08 hallucination bug — see
+`tool-grounding-gate.test.ts`).
 Groq (`_shared/providers/groq.ts`) is the only always-on provider, implementing the `LlmProvider`
 interface in `_shared/providers/types.ts`. On the Groq path,
 [_shared/router.ts](supabase/functions/_shared/router.ts) does zero-cost keyword-based routing
