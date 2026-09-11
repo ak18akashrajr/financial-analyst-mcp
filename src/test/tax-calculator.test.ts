@@ -2,7 +2,7 @@
 // src/lib/taxCalculator.ts. Dates are expressed relative to `Date.now()` rather than fixed
 // calendar dates, since the module reads `new Date()` internally for "today" — a fixed date
 // would eventually drift into the wrong long-term/short-term bucket.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateTaxReport, getHarvestableLots, hasSameDayReentry } from '@/lib/taxCalculator';
 import type { Transaction, Category } from '@/types/portfolio';
 
@@ -99,6 +99,38 @@ describe('generateTaxReport', () => {
     expect(h.category).toBe('Equity');
     expect(h.totalCurrentValue).toBe(0); // missing price defaults to 0
     expect(h.totalGain).toBe(-1000);     // a full loss since current value is 0
+  });
+});
+
+describe('generateTaxReport — DATE-boundary handling (see TODO.md High Priority Action Items)', () => {
+  // lot.date comes straight from transactions.date, a bare Postgres DATE string ('YYYY-MM-DD', no
+  // time/offset). Before the fix, computeLotsForSymbol parsed it with bare `new Date(lot.date)`,
+  // which JS reads as UTC midnight — later than local midnight in a timezone ahead of UTC (this
+  // suite runs under Asia/Calcutta, UTC+5:30). That undercounts holdingDays by the local/UTC
+  // offset, which can flip isLongTerm for a lot sitting within that margin of the 365-day
+  // threshold. Guard so the assertion doesn't misfire if CI ever runs in UTC — same convention as
+  // dateUtils.test.ts.
+  afterEach(() => vi.useRealTimers());
+
+  it('classifies a lot exactly 366 calendar days old as long-term, not short-term', () => {
+    const offsetMinutes = -new Date().getTimezoneOffset(); // e.g. +330 for IST
+    if (offsetMinutes <= 0) return;
+
+    // "Now" is 1 minute after local midnight, and the buy lot is exactly 366 local calendar days
+    // before that midnight — so the correct (local-midnight) holdingDays floors to 366 (> 365,
+    // long-term) regardless of the 1-minute margin. The buggy UTC-midnight parse of '2026-01-01'
+    // lands `offsetMinutes` later than local midnight, which (for any zone at least 2 minutes
+    // ahead of UTC — every real one) pulls holdingDays back down to 365 (not > 365, short-term).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2027, 0, 2, 0, 1, 0));
+
+    const transactions: Transaction[] = [txn({ type: 'BUY', quantity: 10, price: 100, date: '2026-01-01' })];
+    const report = generateTaxReport(transactions, { TCS: 150 }, { TCS: { category: 'Equity' } });
+    const [h] = report.holdings;
+
+    expect(h.lots[0].holdingDays).toBe(366);
+    expect(h.lots[0].isLongTerm).toBe(true);
+    expect(h.lots[0].taxRate).toBe(0.125); // LTCG, not the 20% STCG rate a misclassification would apply
   });
 });
 

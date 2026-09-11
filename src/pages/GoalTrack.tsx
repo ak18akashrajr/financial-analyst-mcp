@@ -69,7 +69,12 @@ function GoalIcon({ id, className }: { id: string; className?: string }) {
 function getOpenLots(transactions: Transaction[]) {
   const buys = transactions
     .filter((t) => t.type === 'BUY')
-    .map((t) => ({ qty: t.quantity, price: t.price, date: new Date(t.date) }))
+    // t.date is a bare Postgres DATE string ('YYYY-MM-DD', no time/offset) — parse it as LOCAL
+    // midnight via parseLocalDate, not the bare UTC-midnight `new Date(...)` parse, so it lines up
+    // with `now = Date.now()` in getHoldingLotSplit below. See TODO.md's High Priority Action Items
+    // and dateUtils.ts's parseLocalDate doc comment for the LT/ST-threshold misclassification bug
+    // this avoids.
+    .map((t) => ({ qty: t.quantity, price: t.price, date: parseLocalDate(t.date) }))
     .sort((a, b) => a.date.getTime() - b.date.getTime());
   let sellQty = transactions
     .filter((t) => t.type === 'SELL')
