@@ -17,6 +17,7 @@ import {
   DollarSign,
   TrendingUp,
   Terminal,
+  Gauge,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
@@ -34,6 +35,7 @@ const navGroups = [
       { to: '/benchmark', label: 'Benchmark', icon: TrendingUp },
       { to: '/dollar-adjusted-returns', label: 'USD View', icon: DollarSign },
       { to: '/rolling-returns', label: 'Rolling', icon: Activity },
+      { to: '/risk-metrics', label: 'Risk Metrics', icon: Gauge },
     ],
   },
   {

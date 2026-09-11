@@ -14,6 +14,7 @@ import {
   DollarSign,
   TrendingUp,
   Terminal,
+  Gauge,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
@@ -29,6 +30,7 @@ const tabs = [
   { to: '/deployment-plan', label: 'Deploy', icon: Target },
   { to: '/goal-track', label: 'Goals', icon: Flag },
   { to: '/rolling-returns', label: 'Rolling', icon: Activity },
+  { to: '/risk-metrics', label: 'Risk Metrics', icon: Gauge },
   { to: '/ai', label: 'AI', icon: Bot },
   { to: '/dev-zone', label: 'Dev Zone', icon: Terminal },
 ];

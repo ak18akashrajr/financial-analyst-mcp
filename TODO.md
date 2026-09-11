@@ -14,7 +14,30 @@ check items off (`- [x]`) when merged, and note the PR number.
 
 ## Portfolio AI / MCP tools
 
-- [ ] All risk ratios to be added(Alpha, Beta, Volatility, Sharpe Ratio)
+- [x] **All risk ratios added (Alpha, Beta, Volatility, Sharpe Ratio).** Volatility and Beta already
+      existed in [`getRiskMetrics`](supabase/functions/_shared/portfolio-data.ts); added Jensen's
+      Alpha (CAPM) and Sharpe Ratio alongside them, both per-holding and portfolio-level, in the
+      same function and its `get_risk_metrics` MCP tool
+      ([mcp-tools.ts](supabase/functions/_shared/mcp-tools.ts)) — so the portfolio AI can report all
+      four for the same question. Risk-free rate: the 10Y India G-Sec yield (6.95%), matching
+      `INDIA_10Y_GSEC_YIELD` already used for the Deploy page's equity-risk-premium calc (duplicated
+      as its own constant since this Deno edge function can't import from `src/`); surfaced back as
+      `riskFreeRatePercent` so the assumption is never left implicit. Sharpe is `null` (not an
+      infinite/0 value) for a zero-volatility holding; Alpha/Beta stay `null` until NIFTY 50
+      benchmark data exists, the same gating the existing volatility/beta fields already used.
+      **Note:** this Alpha is the statistical CAPM "risk ratio" sense of the word — a different
+      metric from the "Realized & Unrealized Alpha" (SummaryBar) / "Alpha (USD)"
+      (DollarAdjustedReturns) already shown elsewhere in the app, both of which are just raw P&L
+      under the same name; every place the new Alpha is surfaced calls this out explicitly.
+      Also added a new frontend page, [`/risk-metrics`](src/pages/RiskMetrics.tsx) (sidebar:
+      Analytics → Risk Metrics), showing all four metrics with tooltips, fixed to the same 90-day
+      lookback `get_risk_metrics` defaults to so the page and the AI always agree. Calculation logic
+      is duplicated as a pure, unit-tested module ([`src/lib/riskMetrics.ts`](src/lib/riskMetrics.ts))
+      rather than imported from the edge function — same pattern already used for
+      `compareToBenchmark` vs. `Benchmark.tsx`. Tests:
+      [`portfolio-data.test.ts`](supabase/functions/_shared/portfolio-data.test.ts) (new Alpha/Sharpe
+      cases) and [`risk-metrics.test.ts`](src/test/risk-metrics.test.ts). Branch:
+      `feat/risk-metrics-alpha-sharpe` (PR not yet opened).
 - [ ] Time series forecasting
 - [ ] **Set up OpenRouter Guardrails** for the opt-in Nemotron/MiniMax path —
       [openrouter.ai/activity/guardrails](https://openrouter.ai/activity/guardrails) offers content
