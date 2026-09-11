@@ -160,10 +160,11 @@ const RiskMetricsContent = () => {
                   side="right"
                   caveat="The Alpha shown here is Jensen's Alpha (CAPM) — a different metric from the 'Realized & Unrealized Alpha' or 'Alpha (USD)' shown on the dashboard/USD View, both of which are just plain P&L under the same name. Don't compare the two directly."
                 >
-                  Volatility, Beta, Alpha and Sharpe Ratio — the standard "risk ratios" for judging how much risk your
-                  portfolio is taking and whether it's being paid for that risk, estimated from the last {LOOKBACK_DAYS}{' '}
-                  trading days of historical prices. Matches what the portfolio AI's get_risk_metrics tool reports for
-                  the same question.
+                  Return, Volatility, Beta, Alpha and Sharpe Ratio — the standard "risk ratios" for judging how much
+                  risk your portfolio is taking and whether it's being paid for that risk, estimated from the last
+                  {' '}{LOOKBACK_DAYS} trading days of historical prices, plus a plain-language "Risk per ₹1 Return"
+                  read on the same numbers. Matches what the portfolio AI's get_risk_metrics tool reports for the same
+                  question (except Risk per ₹1 Return, which is shown here only).
                 </InfoHint>
               </div>
               <div className="text-xs text-muted-foreground flex items-center gap-1">
@@ -207,7 +208,18 @@ const RiskMetricsContent = () => {
             )}
 
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              <Stat
+                label={
+                  <LabelWithHint label="Ann. Return" title="Annualized Return" side="top" formula="mean(daily returns) × 252 × 100">
+                    Your portfolio's trailing return, annualized — the same trailing {LOOKBACK_DAYS}-day window used
+                    for every other figure on this page, not the all-time gain shown on the dashboard. This is what
+                    "profit" means in the Alpha, Sharpe and Risk per ₹1 Return figures here.
+                  </LabelWithHint>
+                }
+                value={mask(fmtPct(metrics.portfolioAnnualizedReturnPercent))}
+                positive={metrics.portfolioAnnualizedReturnPercent >= 0}
+              />
               <Stat
                 label={
                   <LabelWithHint label="Volatility" title="Annualized Volatility" side="top" formula="stdev(daily returns) × √252 × 100">
@@ -267,6 +279,11 @@ const RiskMetricsContent = () => {
                   </LabelWithHint>
                 }
                 value={mask(fmtRupeeRatio(metrics.portfolioRiskPerRupeeOfReturn))}
+                note={
+                  metrics.portfolioRiskPerRupeeOfReturn === null
+                    ? mask(`n/a — trailing return is ${fmtPct(metrics.portfolioAnnualizedReturnPercent)}, not positive`)
+                    : undefined
+                }
               />
             </div>
 
@@ -303,7 +320,16 @@ const RiskMetricsContent = () => {
                         <td className="px-4 py-2 font-mono">{fmtRatio(h.beta)}</td>
                         <td className="px-4 py-2 font-mono">{mask(fmtPct(h.alpha))}</td>
                         <td className="px-4 py-2 font-mono">{fmtRatio(h.sharpeRatio)}</td>
-                        <td className="px-4 py-2 font-mono">{mask(fmtRupeeRatio(h.riskPerRupeeOfReturn))}</td>
+                        <td
+                          className="px-4 py-2 font-mono"
+                          title={
+                            h.riskPerRupeeOfReturn === null
+                              ? `n/a — ${h.symbol}'s trailing return is ${fmtPct(h.annualizedReturnPercent)}, not positive`
+                              : undefined
+                          }
+                        >
+                          {mask(fmtRupeeRatio(h.riskPerRupeeOfReturn))}
+                        </td>
                       </tr>
                     );
                   })}
@@ -326,10 +352,13 @@ const RiskMetricsContent = () => {
   );
 };
 
-const Stat = ({ label, value, positive }: { label: ReactNode; value: string; positive?: boolean }) => (
+const Stat = ({ label, value, positive, note }: { label: ReactNode; value: string; positive?: boolean; note?: string }) => (
   <div className="rounded-xl border border-border bg-card p-4">
     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
     <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-green-600' : positive === false ? 'text-red-600' : 'text-foreground'}`}>{value}</p>
+    {/* Explains a null/"—" value in place (e.g. "return isn't positive this window") instead of
+        leaving a bare dash with no clue why — a lone "—" otherwise reads as a broken/blank tile. */}
+    {note && <p className="text-[10px] text-muted-foreground mt-1 leading-snug">{note}</p>}
   </div>
 );
 
