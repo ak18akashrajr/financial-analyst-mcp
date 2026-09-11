@@ -1,4 +1,5 @@
 import type { Transaction, Category } from '@/types/portfolio';
+import { parseLocalDate } from './dateUtils';
 
 export interface TaxLot {
   buyDate: string;
@@ -138,7 +139,12 @@ function computeLotsForSymbol(
   const ltcgRate = getLTCGRate(category);
 
   return buyLots.map(lot => {
-    const buyDate = new Date(lot.date);
+    // lot.date is a bare Postgres DATE string ('YYYY-MM-DD', no time/offset) — parse it as LOCAL
+    // midnight (matching `today`, a real local Date instant), not UTC midnight. Otherwise, in a
+    // timezone ahead of UTC, holdingDays is undercounted by the local/UTC offset, which can flip
+    // isLongTerm for a lot sitting within that margin of the LTCG/STCG threshold. See TODO.md's
+    // High Priority Action Items and dateUtils.ts's parseLocalDate doc comment.
+    const buyDate = parseLocalDate(lot.date);
     const holdingDays = Math.floor((today.getTime() - buyDate.getTime()) / (1000 * 60 * 60 * 24));
     const isLongTerm = holdingDays > thresholdDays;
     const gain = (currentPrice - lot.price) * lot.quantity;

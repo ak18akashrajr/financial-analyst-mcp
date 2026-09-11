@@ -17,20 +17,16 @@ other point-in-time `Date` in this app is built with (`new Date(y, m, d)`, `new 
 timezone ahead of UTC (verified under Asia/Calcutta, UTC+5:30) that skew silently drops or
 misclassifies a row whose date exactly matches the comparison boundary.
 
-**Still open** — verified real, held back deliberately (see decision below):
-
-| File | What's wrong | Stakes |
-|---|---|---|
-| [`src/lib/taxCalculator.ts:141-143`](src/lib/taxCalculator.ts) | `holdingDays = today.getTime() − new Date(lot.date).getTime()`, then `isLongTerm = holdingDays > thresholdDays` (365/1095-day LTCG threshold). The UTC-vs-local skew can flip STCG↔LTCG classification for a lot sitting exactly at the threshold. | **Highest** — changes reported tax liability. |
-| [`src/pages/GoalTrack.tsx:92`](src/pages/GoalTrack.tsx) (`getHoldingLotSplit`) | Newly found 2026-09-04 while fixing the days-left bug in this same file (not in the original audit's table). `ageDays = (Date.now() - lot.date.getTime()) / ...` where `lot.date` is `new Date(t.date)` from `getOpenLots` — identical pattern to `taxCalculator.ts`, used to split a goal's `gainLT`/`gainST`/`taxLT`/`taxST` for its post-tax progress figure. | Same stakes as `taxCalculator.ts` — changes a goal's reported post-tax value. |
-
 **Decision (2026-09-04):** fix `RollingReturns.tsx` and `GoalTrack.tsx`'s days-left bug now (each on
 its own branch off `main`, per repo convention); hold `taxCalculator.ts` back — and, since it was
 found to be the same class of tax-number-affecting bug, `GoalTrack.tsx`'s `getHoldingLotSplit`
 too — for a separate, more careful review pass.
 
-- [ ] Fix the `taxCalculator.ts` LTCG/STCG threshold day-count bug (see table above)
-- [ ] Fix the `GoalTrack.tsx` `getHoldingLotSplit` LT/ST threshold day-count bug (see table above)
+**Resolved 2026-09-11** — both held-back items fixed together (same bug class, same review pass);
+see Archive below.
+
+- [x] Fix the `taxCalculator.ts` LTCG/STCG threshold day-count bug — see Archive below.
+- [x] Fix the `GoalTrack.tsx` `getHoldingLotSplit` LT/ST threshold day-count bug — see Archive below.
 
 ## Backlog
 
@@ -57,6 +53,22 @@ too — for a separate, more careful review pass.
 
 <details>
 <summary>Archive (completed)</summary>
+
+- [x] **Fix the `taxCalculator.ts` LTCG/STCG and `GoalTrack.tsx` `getHoldingLotSplit` threshold
+      day-count bugs** — the two items held back by the High Priority Action Items' "Decision
+      (2026-09-04)" above, fixed together since they're the same bug class flagged in the same
+      review pass. `computeLotsForSymbol` ([`src/lib/taxCalculator.ts`](src/lib/taxCalculator.ts))
+      and `getOpenLots` ([`src/pages/GoalTrack.tsx`](src/pages/GoalTrack.tsx)) each parsed a bare
+      Postgres DATE string (`transactions.date`) with `new Date(dateString)` — UTC midnight, a
+      different instant from the local-midnight `today`/`Date.now()` each holding period is
+      compared against — undercounting elapsed days by the local/UTC offset and able to flip a lot
+      sitting within that margin of the 365/730-day LT/ST threshold. Both now parse with the
+      existing [`parseLocalDate`](src/lib/dateUtils.ts) helper, the same fix already used for
+      `periodReports.ts`/`PortfolioCharts.tsx` below. Branch:
+      `fix/tax-lot-date-boundary-misclassification` (PR not yet opened). Tests: new boundary case
+      in [tax-calculator.test.ts](src/test/tax-calculator.test.ts) and new
+      [goal-track-holding-lot-split-date-boundary.test.ts](src/test/goal-track-holding-lot-split-date-boundary.test.ts)
+      — each confirmed to fail against the pre-fix parse and pass against the fix.
 
 - [x] Fix the `RollingReturns.tsx` window-boundary bug — `fix/date-boundary-rolling-returns`, commit
       `8505752`. Fixed in both `computeWindowXIRR` *and* the previously-inline `portfolioWindowXIRR`
