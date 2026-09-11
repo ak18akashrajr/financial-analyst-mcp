@@ -349,6 +349,20 @@ function stdDev(values: number[]): number {
   return Math.sqrt(variance);
 }
 
+// 10Y India G-Sec yield, used as the risk-free rate for Alpha/Sharpe below. Mirrors
+// INDIA_10Y_GSEC_YIELD in src/lib/sectorBenchmarks.ts (the frontend's own CAPM-style
+// equity-risk-premium calc) — kept as a separate constant here rather than a shared
+// import because this Deno edge function can't import from the Vite/Node `src/` tree.
+// Keep the two values in sync by hand if either changes.
+const RISK_FREE_RATE = 0.0695;
+
+/** Mean daily return annualized by trading days (√252 for volatility, ×252 for return) —
+ *  the same simple annualization convention `getRiskMetrics` already uses for volatility. */
+function annualizedReturn(returns: number[]): number {
+  if (returns.length === 0) return 0;
+  return (returns.reduce((s, v) => s + v, 0) / returns.length) * 252;
+}
+
 /** Beta of `returns` against `benchmarkReturns`, aligned by trimming to the shorter series' length. */
 function beta(returns: number[], benchmarkReturns: number[]): number {
   const n = Math.min(returns.length, benchmarkReturns.length);
@@ -396,29 +410,57 @@ export async function getRiskMetrics(
     if (benchCloses[i - 1] > 0) benchReturns.push((benchCloses[i] - benchCloses[i - 1]) / benchCloses[i - 1]);
   }
   const benchmarkDataAvailable = benchReturns.length >= 2;
+  // Benchmark's own annualized return (decimal) — the "market return" term in Jensen's alpha
+  // below. Only meaningful once there's enough benchmark_history to compute a beta against too.
+  const benchAnnualizedReturn = benchmarkDataAvailable ? annualizedReturn(benchReturns) : null;
 
   const returnsBySymbol = await fetchDailyReturnsBySymbol(sb, holdings.map((h) => h.symbol), lookbackDays);
 
   const perHolding = [];
   let weightedVol = 0;
   let weightedBeta = 0;
+  let weightedReturn = 0;
   for (const h of holdings) {
     const returns = returnsBySymbol[h.symbol] || [];
+    const hasData = returns.length >= 2;
     const dailyVol = stdDev(returns);
     const annualizedVol = dailyVol * Math.sqrt(252) * 100; // %
+    const symbolAnnualizedReturn = hasData ? annualizedReturn(returns) : null; // decimal
     const symbolBeta = benchmarkDataAvailable ? beta(returns, benchReturns) : null;
     const weight = totalValue > 0 ? h.currentValue / totalValue : 0;
-    if (returns.length >= 2) {
+    if (hasData) {
       weightedVol += annualizedVol * weight;
+      weightedReturn += symbolAnnualizedReturn! * weight;
       if (symbolBeta !== null) weightedBeta += symbolBeta * weight;
     }
+    // Jensen's Alpha vs NIFTY50, annualized: actual return minus what CAPM says it should have
+    // been given this beta — needs both this holding's own return and a benchmark return to
+    // compare against, so it inherits both gates (hasData and benchmarkDataAvailable).
+    const symbolAlpha = hasData && symbolBeta !== null && benchAnnualizedReturn !== null
+      ? (symbolAnnualizedReturn! - (RISK_FREE_RATE + symbolBeta * (benchAnnualizedReturn - RISK_FREE_RATE))) * 100
+      : null;
+    // Sharpe ratio: excess return per unit of volatility. Undefined (not 0 or Infinity) for a
+    // flat/zero-volatility holding — dividing by zero vol would misleadingly imply infinite
+    // risk-adjusted return rather than "not computable".
+    const symbolSharpe = hasData && annualizedVol > 0
+      ? (symbolAnnualizedReturn! - RISK_FREE_RATE) / (annualizedVol / 100)
+      : null;
     perHolding.push({
       symbol: h.symbol,
-      annualizedVolatilityPercent: returns.length >= 2 ? Number(annualizedVol.toFixed(1)) : null,
+      annualizedVolatilityPercent: hasData ? Number(annualizedVol.toFixed(1)) : null,
       beta: symbolBeta !== null ? Number(symbolBeta.toFixed(2)) : null,
+      annualizedReturnPercent: symbolAnnualizedReturn !== null ? Number((symbolAnnualizedReturn * 100).toFixed(1)) : null,
+      alpha: symbolAlpha !== null ? Number(symbolAlpha.toFixed(2)) : null,
+      sharpeRatio: symbolSharpe !== null ? Number(symbolSharpe.toFixed(2)) : null,
       dataPoints: returns.length,
     });
   }
+
+  const portfolioVolDecimal = weightedVol / 100;
+  const portfolioAlpha = benchmarkDataAvailable && benchAnnualizedReturn !== null
+    ? (weightedReturn - (RISK_FREE_RATE + weightedBeta * (benchAnnualizedReturn - RISK_FREE_RATE))) * 100
+    : null;
+  const portfolioSharpe = portfolioVolDecimal > 0 ? (weightedReturn - RISK_FREE_RATE) / portfolioVolDecimal : null;
 
   return {
     portfolioAnnualizedVolatilityPercent: Number(weightedVol.toFixed(1)),
@@ -426,12 +468,24 @@ export async function getRiskMetrics(
     // against yet — a real zero-beta result would be misleading here. Run
     // the fetch-benchmark-prices edge function to populate benchmark_history.
     portfolioBetaVsNifty50: benchmarkDataAvailable ? Number(weightedBeta.toFixed(2)) : null,
+    portfolioAnnualizedReturnPercent: Number((weightedReturn * 100).toFixed(1)),
+    // Jensen's Alpha (CAPM), annualized % — the statistical "risk ratio" sense of Alpha. Distinct
+    // from the "Realized & Unrealized Alpha" shown on the dashboard/USD-view pages, which is just
+    // raw P&L under the same name; do not conflate the two if surfacing both to a user.
+    portfolioAlphaPercent: portfolioAlpha !== null ? Number(portfolioAlpha.toFixed(2)) : null,
+    portfolioSharpeRatio: portfolioSharpe !== null ? Number(portfolioSharpe.toFixed(2)) : null,
+    // The assumption Alpha/Sharpe are computed against — surfaced so a caller (or the LLM) never
+    // has to guess what risk-free rate produced these numbers.
+    riskFreeRatePercent: Number((RISK_FREE_RATE * 100).toFixed(2)),
     perHolding,
     note: benchmarkDataAvailable
-      ? "Volatility/beta estimated from available historical_prices/benchmark_history rows; " +
-        "symbols with fewer than 2 data points are excluded from the weighted average."
-      : "Volatility estimated from historical_prices; beta vs NIFTY50 is not available because " +
-        "benchmark_history has no NIFTY50 data yet — run the fetch-benchmark-prices edge function to backfill it.",
+      ? "Volatility/return/beta estimated from available historical_prices/benchmark_history rows " +
+        `(risk-free rate assumed ${(RISK_FREE_RATE * 100).toFixed(2)}%, the 10Y India G-Sec yield); ` +
+        "symbols with fewer than 2 data points are excluded from the weighted averages, and a " +
+        "holding with zero volatility has a null (not infinite) Sharpe ratio."
+      : "Volatility/return estimated from historical_prices; beta, Alpha and Sharpe ratio vs NIFTY50 " +
+        "are not available because benchmark_history has no NIFTY50 data yet — run the " +
+        "fetch-benchmark-prices edge function to backfill it.",
   };
 }
 

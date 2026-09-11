@@ -581,7 +581,7 @@ describe("getRiskMetrics", () => {
     close: 100 + i,
   }));
 
-  it("reports null beta (not a misleading 0.00) when benchmark_history has no NIFTY50 data", async () => {
+  it("reports null beta/alpha (not a misleading 0.00) when benchmark_history has no NIFTY50 data", async () => {
     const sb = makeFakeSb({
       historical_prices: { rows: historicalRows },
       benchmark_history: { rows: [] },
@@ -592,9 +592,15 @@ describe("getRiskMetrics", () => {
     expect(result.note).toContain("fetch-benchmark-prices");
     // Volatility is still computed from historical_prices alone.
     expect(result.portfolioAnnualizedVolatilityPercent).toBeGreaterThan(0);
+    // Alpha needs a benchmark return to compare against — null, same gate as beta.
+    expect(result.portfolioAlphaPercent).toBeNull();
+    expect(result.perHolding[0].alpha).toBeNull();
+    // Sharpe ratio only needs volatility + the (always-available) risk-free rate — it does not
+    // depend on benchmark_history at all, unlike beta/alpha.
+    expect(typeof result.portfolioSharpeRatio).toBe("number");
   });
 
-  it("computes a real beta once benchmark_history has matching data", async () => {
+  it("computes a real beta, Alpha and Sharpe ratio once benchmark_history has matching data", async () => {
     const benchRows = Array.from({ length: 30 }, (_, i) => ({
       symbol: "NIFTY50",
       date: `2026-01-${String(i + 1).padStart(2, "0")}`,
@@ -608,6 +614,40 @@ describe("getRiskMetrics", () => {
     expect(result.portfolioBetaVsNifty50).not.toBeNull();
     expect(typeof result.portfolioBetaVsNifty50).toBe("number");
     expect(result.note).not.toContain("not available");
+    expect(typeof result.portfolioAlphaPercent).toBe("number");
+    expect(typeof result.portfolioSharpeRatio).toBe("number");
+    expect(typeof result.perHolding[0].alpha).toBe("number");
+    expect(typeof result.perHolding[0].sharpeRatio).toBe("number");
+    // The risk-free rate the above are computed against is always surfaced, never left implicit.
+    expect(result.riskFreeRatePercent).toBe(6.95);
+  });
+
+  it("gives a flat (zero-volatility) holding a null Sharpe ratio but a real (negative) Alpha", async () => {
+    // Zero daily returns -> zero volatility -> Sharpe would be a division by zero (misleadingly
+    // "infinite risk-adjusted return") if not explicitly guarded. Alpha has no such division, so
+    // it's still computable: a zero-beta, zero-return holding underperforms the risk-free rate by
+    // exactly the risk-free rate itself (CAPM's predicted return for beta=0 is just the risk-free
+    // rate, and actual return here is 0), i.e. alpha == -riskFreeRatePercent.
+    const benchRows = Array.from({ length: 30 }, (_, i) => ({
+      symbol: "NIFTY50",
+      date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+      close: 20000 + i * 10,
+    }));
+    const flatRows = Array.from({ length: 30 }, (_, i) => ({
+      symbol: "AAPL",
+      date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+      close: 100,
+    }));
+    const sb = makeFakeSb({
+      historical_prices: { rows: flatRows },
+      benchmark_history: { rows: benchRows },
+    });
+    const result = await getRiskMetrics(sb, holdings, 30);
+    const aapl = result.perHolding[0];
+    expect(aapl.annualizedVolatilityPercent).toBe(0);
+    expect(aapl.beta).toBe(0);
+    expect(aapl.sharpeRatio).toBeNull();
+    expect(aapl.alpha).toBe(-result.riskFreeRatePercent);
   });
 
   it("fetches historical_prices for every holding in a single batched query, not one per holding", async () => {
