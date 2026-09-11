@@ -69,6 +69,9 @@ describe('computeRiskMetrics', () => {
     // Sharpe needs only volatility + the risk-free rate, not benchmark data.
     expect(typeof result.portfolioSharpeRatio).toBe('number');
     expect(typeof result.perHolding[0].sharpeRatio).toBe('number');
+    // Equal +1%/-1% swings average to a 0% return -> not > 0 -> riskPerRupeeOfReturn undefined.
+    expect(result.portfolioRiskPerRupeeOfReturn).toBeNull();
+    expect(result.perHolding[0].riskPerRupeeOfReturn).toBeNull();
   });
 
   it('computes a real beta, Alpha and Sharpe ratio once benchmark returns are available', () => {
@@ -109,7 +112,49 @@ describe('computeRiskMetrics', () => {
     expect(tcs.annualizedVolatilityPercent).toBeNull();
     expect(tcs.alpha).toBeNull();
     expect(tcs.sharpeRatio).toBeNull();
+    expect(tcs.riskPerRupeeOfReturn).toBeNull();
     // AAPL alone (the only symbol with enough data) should still drive the portfolio-level figure.
     expect(result.portfolioAnnualizedVolatilityPercent).toBe(0);
+  });
+});
+
+describe('computeRiskMetrics — riskPerRupeeOfReturn ("unit economics" statement)', () => {
+  const holdings = [{ symbol: 'AAPL', currentValue: 1000 }];
+
+  it('is null whenever return is zero or negative — the ratio is not meaningful without real profit', () => {
+    // A steady decline: every daily return is -0.5%, so the annualized return is negative.
+    const decliningReturns = Array.from({ length: 20 }, () => -0.005);
+    const result = computeRiskMetrics(holdings, { AAPL: decliningReturns }, []);
+    expect(result.perHolding[0].annualizedReturnPercent).toBeLessThan(0);
+    expect(result.perHolding[0].riskPerRupeeOfReturn).toBeNull();
+    expect(result.portfolioRiskPerRupeeOfReturn).toBeNull();
+  });
+
+  it('equals annualizedVolatilityPercent ÷ annualizedReturnPercent whenever return is positive', () => {
+    const returns = [
+      0.02, -0.01, 0.015, -0.005, 0.03, 0.01, -0.02, 0.025, 0.005, -0.01,
+      0.02, 0.01, -0.015, 0.03, 0.005, -0.01, 0.02, 0.015, -0.005, 0.01,
+    ];
+    const result = computeRiskMetrics(holdings, { AAPL: returns }, []);
+    const h = result.perHolding[0];
+    expect(h.annualizedReturnPercent).toBeGreaterThan(0);
+    expect(h.riskPerRupeeOfReturn).not.toBeNull();
+    expect(h.riskPerRupeeOfReturn).toBeCloseTo(h.annualizedVolatilityPercent! / h.annualizedReturnPercent!, 1);
+    expect(result.portfolioRiskPerRupeeOfReturn).toBeCloseTo(
+      result.portfolioAnnualizedVolatilityPercent / result.portfolioAnnualizedReturnPercent,
+      1,
+    );
+  });
+
+  it('is 0 (not null) for a holding with zero volatility but a genuinely positive return', () => {
+    // Every daily return is identically +0.1% -> stdDev is 0 (no variance) even though the mean,
+    // and therefore the annualized return, is positive — a real edge case (a "smooth trend"), not
+    // a bug: zero measured volatility genuinely means zero risk per rupee of that profit.
+    const smoothPositiveReturns = Array.from({ length: 20 }, () => 0.001);
+    const result = computeRiskMetrics(holdings, { AAPL: smoothPositiveReturns }, []);
+    const h = result.perHolding[0];
+    expect(h.annualizedVolatilityPercent).toBe(0);
+    expect(h.annualizedReturnPercent).toBeGreaterThan(0);
+    expect(h.riskPerRupeeOfReturn).toBe(0);
   });
 });

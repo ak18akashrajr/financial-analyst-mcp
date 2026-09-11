@@ -33,6 +33,13 @@ export interface HoldingRiskMetrics {
   /** Jensen's Alpha (CAPM), annualized %. See module doc comment re: the "Alpha" naming clash. */
   alpha: number | null;
   sharpeRatio: number | null;
+  /**
+   * "Risk taken per ₹1 of return" — annualizedVolatilityPercent ÷ annualizedReturnPercent, a plain
+   * unit-economics restatement of the same two figures (not a new data source). Null whenever
+   * annualizedReturnPercent is null, zero, or negative: the ratio isn't meaningful when there's no
+   * profit to divide risk by (would be undefined, zero, or a sign-flipped nonsense value).
+   */
+  riskPerRupeeOfReturn: number | null;
   dataPoints: number;
 }
 
@@ -42,6 +49,8 @@ export interface PortfolioRiskMetrics {
   portfolioAnnualizedReturnPercent: number;
   portfolioAlphaPercent: number | null;
   portfolioSharpeRatio: number | null;
+  /** See `HoldingRiskMetrics.riskPerRupeeOfReturn` — same formula, at the portfolio level. */
+  portfolioRiskPerRupeeOfReturn: number | null;
   riskFreeRatePercent: number;
   benchmarkDataAvailable: boolean;
   perHolding: HoldingRiskMetrics[];
@@ -130,6 +139,11 @@ export function computeRiskMetrics(
     const symbolSharpe = hasData && annualizedVol > 0
       ? (symbolAnnualizedReturn! - RISK_FREE_RATE) / (annualizedVol / 100)
       : null;
+    // "Risk per ₹1 of return" — only meaningful with a genuine (positive) profit to divide by;
+    // a zero or negative return would make "risk per rupee of profit" nonsensical or sign-flipped.
+    const symbolRiskPerReturn = hasData && symbolAnnualizedReturn! > 0
+      ? annualizedVol / (symbolAnnualizedReturn! * 100)
+      : null;
 
     perHolding.push({
       symbol: h.symbol,
@@ -138,6 +152,7 @@ export function computeRiskMetrics(
       annualizedReturnPercent: symbolAnnualizedReturn !== null ? Number((symbolAnnualizedReturn * 100).toFixed(1)) : null,
       alpha: symbolAlpha !== null ? Number(symbolAlpha.toFixed(2)) : null,
       sharpeRatio: symbolSharpe !== null ? Number(symbolSharpe.toFixed(2)) : null,
+      riskPerRupeeOfReturn: symbolRiskPerReturn !== null ? Number(symbolRiskPerReturn.toFixed(2)) : null,
       dataPoints: returns.length,
     });
   }
@@ -147,6 +162,7 @@ export function computeRiskMetrics(
     ? (weightedReturn - (RISK_FREE_RATE + weightedBeta * (benchAnnualizedReturn - RISK_FREE_RATE))) * 100
     : null;
   const portfolioSharpe = portfolioVolDecimal > 0 ? (weightedReturn - RISK_FREE_RATE) / portfolioVolDecimal : null;
+  const portfolioRiskPerReturn = weightedReturn > 0 ? weightedVol / (weightedReturn * 100) : null;
 
   return {
     portfolioAnnualizedVolatilityPercent: Number(weightedVol.toFixed(1)),
@@ -154,6 +170,7 @@ export function computeRiskMetrics(
     portfolioAnnualizedReturnPercent: Number((weightedReturn * 100).toFixed(1)),
     portfolioAlphaPercent: portfolioAlpha !== null ? Number(portfolioAlpha.toFixed(2)) : null,
     portfolioSharpeRatio: portfolioSharpe !== null ? Number(portfolioSharpe.toFixed(2)) : null,
+    portfolioRiskPerRupeeOfReturn: portfolioRiskPerReturn !== null ? Number(portfolioRiskPerReturn.toFixed(2)) : null,
     riskFreeRatePercent: Number((RISK_FREE_RATE * 100).toFixed(2)),
     benchmarkDataAvailable,
     perHolding,
