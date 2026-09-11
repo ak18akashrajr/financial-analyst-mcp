@@ -3,29 +3,6 @@
 Running list of action items for this repo. Add new items to the bottom of the relevant section;
 check items off (`- [x]`) when merged, and note the PR number.
 
-## High Priority Action Items
-
-Flagged 2026-08-28 during a Reports-page (`/reports`) calculation audit requested by the user,
-after confirming and fixing one instance of this bug class in
-[fix/timezone-date-boundary-bug](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/new/fix/timezone-date-boundary-bug)
-(`src/lib/periodReports.ts` + `src/pages/Reports.tsx`, using the new
-[`parseLocalDate`](src/lib/dateUtils.ts) helper). Root cause: Postgres `DATE` columns
-(`transactions.date`, `historical_prices.date`, `benchmark_history.date`, goal `target_date`) come
-back as bare `'YYYY-MM-DD'` strings with no time/offset. `new Date(dateString)` parses those per the
-ISO-8601 spec as **UTC midnight**, which is a different instant from the **local midnight** every
-other point-in-time `Date` in this app is built with (`new Date(y, m, d)`, `new Date()`). In a
-timezone ahead of UTC (verified under Asia/Calcutta, UTC+5:30) that skew silently drops or
-misclassifies a row whose date exactly matches the comparison boundary.
-
-**Decision (2026-09-04):** fix `RollingReturns.tsx` and `GoalTrack.tsx`'s days-left bug now (each on
-its own branch off `main`, per repo convention); hold `taxCalculator.ts` back — and, since it was
-found to be the same class of tax-number-affecting bug, `GoalTrack.tsx`'s `getHoldingLotSplit`
-too — for a separate, more careful review pass.
-
-**Resolved 2026-09-11** — both held-back items (`taxCalculator.ts`'s LTCG/STCG threshold day-count
-bug and `GoalTrack.tsx`'s `getHoldingLotSplit` LT/ST threshold day-count bug) fixed together, same
-bug class, same review pass. No items open under this section — see Archive below.
-
 ## Backlog
 
 - [ ] **Scaling & archival plan.** Implement the plan in
@@ -52,10 +29,28 @@ bug class, same review pass. No items open under this section — see Archive be
 <details>
 <summary>Archive (completed)</summary>
 
+**High Priority Action Items (all resolved 2026-09-11)** — flagged 2026-08-28 during a
+Reports-page (`/reports`) calculation audit requested by the user, after confirming and fixing one
+instance of this bug class in
+[fix/timezone-date-boundary-bug](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/new/fix/timezone-date-boundary-bug)
+(`src/lib/periodReports.ts` + `src/pages/Reports.tsx`, using the new
+[`parseLocalDate`](src/lib/dateUtils.ts) helper). Root cause: Postgres `DATE` columns
+(`transactions.date`, `historical_prices.date`, `benchmark_history.date`, goal `target_date`) come
+back as bare `'YYYY-MM-DD'` strings with no time/offset. `new Date(dateString)` parses those per the
+ISO-8601 spec as **UTC midnight**, which is a different instant from the **local midnight** every
+other point-in-time `Date` in this app is built with (`new Date(y, m, d)`, `new Date()`). In a
+timezone ahead of UTC (verified under Asia/Calcutta, UTC+5:30) that skew silently drops or
+misclassifies a row whose date exactly matches the comparison boundary.
+**Decision (2026-09-04):** fixed `RollingReturns.tsx` and `GoalTrack.tsx`'s days-left bug first
+(each on its own branch off `main`, per repo convention); held `taxCalculator.ts` back — and,
+since it was found to be the same class of tax-number-affecting bug, `GoalTrack.tsx`'s
+`getHoldingLotSplit` too — for a separate, more careful review pass. All items below trace back to
+this audit.
+
 - [x] **Fix the `taxCalculator.ts` LTCG/STCG and `GoalTrack.tsx` `getHoldingLotSplit` threshold
-      day-count bugs** — the two items held back by the High Priority Action Items' "Decision
-      (2026-09-04)" above, fixed together since they're the same bug class flagged in the same
-      review pass. `computeLotsForSymbol` ([`src/lib/taxCalculator.ts`](src/lib/taxCalculator.ts))
+      day-count bugs** — the two items held back by the "Decision (2026-09-04)" above, fixed
+      together since they're the same bug class flagged in the same review pass.
+      `computeLotsForSymbol` ([`src/lib/taxCalculator.ts`](src/lib/taxCalculator.ts))
       and `getOpenLots` ([`src/pages/GoalTrack.tsx`](src/pages/GoalTrack.tsx)) each parsed a bare
       Postgres DATE string (`transactions.date`) with `new Date(dateString)` — UTC midnight, a
       different instant from the local-midnight `today`/`Date.now()` each holding period is
@@ -63,8 +58,11 @@ bug class, same review pass. No items open under this section — see Archive be
       sitting within that margin of the 365/730-day LT/ST threshold. Both now parse with the
       existing [`parseLocalDate`](src/lib/dateUtils.ts) helper, the same fix already used for
       `periodReports.ts`/`PortfolioCharts.tsx` below. Branch:
-      `fix/tax-lot-date-boundary-misclassification` (PR not yet opened). Tests: new boundary case
-      in [tax-calculator.test.ts](src/test/tax-calculator.test.ts) and new
+      `fix/tax-lot-date-boundary-misclassification`, merged via
+      [PR #140](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/140) (the fix) and
+      [PR #141](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/141) (this TODO
+      cleanup). Tests: new boundary case in
+      [tax-calculator.test.ts](src/test/tax-calculator.test.ts) and new
       [goal-track-holding-lot-split-date-boundary.test.ts](src/test/goal-track-holding-lot-split-date-boundary.test.ts)
       — each confirmed to fail against the pre-fix parse and pass against the fix.
 
