@@ -12,40 +12,35 @@ check items off (`- [x]`) when merged, and note the PR number.
       Supabase Storage export), whether `pg_cron` is available/acceptable vs. a scheduled edge
       function, and `ai_rate_limits`' cleanup cadence.
 
+## Performance
+
+Priority recommendations from a performance review of the repo (2026-09-11).
+
+- [ ] **High: Memoize XIRR calculations or pre-compute in Postgres.**
+      [`calculateXIRR`](src/lib/xirr.ts) runs Newton-Raphson (up to 100 iterations) twice per
+      portfolio load in [usePortfolio.ts](src/hooks/usePortfolio.ts) — once for `xirr`, once for
+      `xirrExPf`. Memoize by transaction-set hash, or cache as a pre-computed column updated only on
+      transaction mutations.
+- [ ] **High: Paginate transaction fetches on frontend.** `loadData` in
+      [usePortfolio.ts](src/hooks/usePortfolio.ts) fetches `transactions`, `current_prices`, and
+      `symbol_metadata` with no `.limit()`, so the whole table transfers and parses on every page
+      load. Paginate `transactions` (initial page + load-more) and cache the price/metadata tables
+      with an expiry check instead of re-fetching in full.
+- [ ] **Medium: Break apart `usePortfolio`'s memoized derivations to avoid cascading
+      recalculations.** `summary`, `topMovers`, and `exposure` all depend on the derived `holdings`
+      array, so a single price change re-runs every one of them in separate full passes over all
+      holdings. Memoize the intermediate breakdowns (e.g. `buildBreakdown`) separately.
+- [ ] **Low: Add query timeouts to MCP tool calls.**
+      [`mapWithConcurrency`](supabase/functions/_shared/concurrency.ts) bounds parallelism at 3 but
+      enforces no per-call timeout, so one hung tool call blocks the whole turn. Add an optional
+      `timeoutMs` and wrap `fn()` in `Promise.race`.
+- [ ] **Low: Use `Promise.allSettled()` instead of `Promise.all()` for dev/monitoring operations.**
+      [DevZone.tsx](src/pages/DevZone.tsx) and [Reports.tsx](src/pages/Reports.tsx) fan out
+      non-critical jobs with `Promise.all`, which silently discards the rest if one rejects — switch
+      to `allSettled` so per-job success/failure is tracked.
+
 ## Portfolio AI / MCP tools
 
-- [x] **All risk ratios added (Alpha, Beta, Volatility, Sharpe Ratio).** Volatility and Beta already
-      existed in [`getRiskMetrics`](supabase/functions/_shared/portfolio-data.ts); added Jensen's
-      Alpha (CAPM) and Sharpe Ratio alongside them, both per-holding and portfolio-level, in the
-      same function and its `get_risk_metrics` MCP tool
-      ([mcp-tools.ts](supabase/functions/_shared/mcp-tools.ts)) — so the portfolio AI can report all
-      four for the same question. Risk-free rate: the 10Y India G-Sec yield (6.95%), matching
-      `INDIA_10Y_GSEC_YIELD` already used for the Deploy page's equity-risk-premium calc (duplicated
-      as its own constant since this Deno edge function can't import from `src/`); surfaced back as
-      `riskFreeRatePercent` so the assumption is never left implicit. Sharpe is `null` (not an
-      infinite/0 value) for a zero-volatility holding; Alpha/Beta stay `null` until NIFTY 50
-      benchmark data exists, the same gating the existing volatility/beta fields already used.
-      **Note:** this Alpha is the statistical CAPM "risk ratio" sense of the word — a different
-      metric from the "Realized & Unrealized Alpha" (SummaryBar) / "Alpha (USD)"
-      (DollarAdjustedReturns) already shown elsewhere in the app, both of which are just raw P&L
-      under the same name; every place the new Alpha is surfaced calls this out explicitly.
-      Also added a new frontend page, [`/risk-metrics`](src/pages/RiskMetrics.tsx) (sidebar:
-      Analytics → Risk Metrics), showing all four metrics with tooltips, fixed to the same 90-day
-      lookback `get_risk_metrics` defaults to so the page and the AI always agree. Calculation logic
-      is duplicated as a pure, unit-tested module ([`src/lib/riskMetrics.ts`](src/lib/riskMetrics.ts))
-      rather than imported from the edge function — same pattern already used for
-      `compareToBenchmark` vs. `Benchmark.tsx`. Tests:
-      [`portfolio-data.test.ts`](supabase/functions/_shared/portfolio-data.test.ts) (new Alpha/Sharpe
-      cases) and [`risk-metrics.test.ts`](src/test/risk-metrics.test.ts).
-      **Follow-up (same branch):** added a fifth, frontend-only figure per the user's request for a
-      "unit economics" reading — **Risk per ₹1 of Return** (`riskPerRupeeOfReturn` in
-      `src/lib/riskMetrics.ts`) = annualized Volatility ÷ annualized Return, shown on `/risk-metrics`
-      only (not added to the `get_risk_metrics` MCP tool, by the user's choice). Null whenever the
-      return is zero or negative — the ratio isn't meaningful without real profit to divide the risk
-      by. Uses the same trailing-90-day return already computed for Alpha/Sharpe (not the app's
-      separate all-time cost-basis P&L figure), so it stays on the same apples-to-apples basis as the
-      other four ratios. Tests: new cases in `risk-metrics.test.ts`. Branch:
-      `feat/risk-metrics-alpha-sharpe` (PR not yet opened).
 - [ ] Time series forecasting
 - [ ] **Set up OpenRouter Guardrails** for the opt-in Nemotron/MiniMax path —
       [openrouter.ai/activity/guardrails](https://openrouter.ai/activity/guardrails) offers content
@@ -301,5 +296,39 @@ this audit.
       [`request-size-cap.test.ts`](supabase/functions/portfolio-ai/request-size-cap.test.ts) — new
       file covering the over-limit array, the over-limit message, and a boundary case exactly at
       both limits.
+
+- [x] **All risk ratios added (Alpha, Beta, Volatility, Sharpe Ratio).** Volatility and Beta already
+      existed in [`getRiskMetrics`](supabase/functions/_shared/portfolio-data.ts); added Jensen's
+      Alpha (CAPM) and Sharpe Ratio alongside them, both per-holding and portfolio-level, in the
+      same function and its `get_risk_metrics` MCP tool
+      ([mcp-tools.ts](supabase/functions/_shared/mcp-tools.ts)) — so the portfolio AI can report all
+      four for the same question. Risk-free rate: the 10Y India G-Sec yield (6.95%), matching
+      `INDIA_10Y_GSEC_YIELD` already used for the Deploy page's equity-risk-premium calc (duplicated
+      as its own constant since this Deno edge function can't import from `src/`); surfaced back as
+      `riskFreeRatePercent` so the assumption is never left implicit. Sharpe is `null` (not an
+      infinite/0 value) for a zero-volatility holding; Alpha/Beta stay `null` until NIFTY 50
+      benchmark data exists, the same gating the existing volatility/beta fields already used.
+      **Note:** this Alpha is the statistical CAPM "risk ratio" sense of the word — a different
+      metric from the "Realized & Unrealized Alpha" (SummaryBar) / "Alpha (USD)"
+      (DollarAdjustedReturns) already shown elsewhere in the app, both of which are just raw P&L
+      under the same name; every place the new Alpha is surfaced calls this out explicitly.
+      Also added a new frontend page, [`/risk-metrics`](src/pages/RiskMetrics.tsx) (sidebar:
+      Analytics → Risk Metrics), showing all four metrics with tooltips, fixed to the same 90-day
+      lookback `get_risk_metrics` defaults to so the page and the AI always agree. Calculation logic
+      is duplicated as a pure, unit-tested module ([`src/lib/riskMetrics.ts`](src/lib/riskMetrics.ts))
+      rather than imported from the edge function — same pattern already used for
+      `compareToBenchmark` vs. `Benchmark.tsx`. Tests:
+      [`portfolio-data.test.ts`](supabase/functions/_shared/portfolio-data.test.ts) (new Alpha/Sharpe
+      cases) and [`risk-metrics.test.ts`](src/test/risk-metrics.test.ts).
+      **Follow-up (same branch):** added a fifth, frontend-only figure per the user's request for a
+      "unit economics" reading — **Risk per ₹1 of Return** (`riskPerRupeeOfReturn` in
+      `src/lib/riskMetrics.ts`) = annualized Volatility ÷ annualized Return, shown on `/risk-metrics`
+      only (not added to the `get_risk_metrics` MCP tool, by the user's choice). Null whenever the
+      return is zero or negative — the ratio isn't meaningful without real profit to divide the risk
+      by. Uses the same trailing-90-day return already computed for Alpha/Sharpe (not the app's
+      separate all-time cost-basis P&L figure), so it stays on the same apples-to-apples basis as the
+      other four ratios. Tests: new cases in `risk-metrics.test.ts`. Branch:
+      `feat/risk-metrics-alpha-sharpe`, merged via
+      [PR #144](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/144).
 
 </details>
