@@ -22,11 +22,9 @@ its own branch off `main`, per repo convention); hold `taxCalculator.ts` back �
 found to be the same class of tax-number-affecting bug, `GoalTrack.tsx`'s `getHoldingLotSplit`
 too — for a separate, more careful review pass.
 
-**Resolved 2026-09-11** — both held-back items fixed together (same bug class, same review pass);
-see Archive below.
-
-- [x] Fix the `taxCalculator.ts` LTCG/STCG threshold day-count bug — see Archive below.
-- [x] Fix the `GoalTrack.tsx` `getHoldingLotSplit` LT/ST threshold day-count bug — see Archive below.
+**Resolved 2026-09-11** — both held-back items (`taxCalculator.ts`'s LTCG/STCG threshold day-count
+bug and `GoalTrack.tsx`'s `getHoldingLotSplit` LT/ST threshold day-count bug) fixed together, same
+bug class, same review pass. No items open under this section — see Archive below.
 
 ## Backlog
 
