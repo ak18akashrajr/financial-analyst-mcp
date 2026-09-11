@@ -36,7 +36,15 @@ check items off (`- [x]`) when merged, and note the PR number.
       rather than imported from the edge function — same pattern already used for
       `compareToBenchmark` vs. `Benchmark.tsx`. Tests:
       [`portfolio-data.test.ts`](supabase/functions/_shared/portfolio-data.test.ts) (new Alpha/Sharpe
-      cases) and [`risk-metrics.test.ts`](src/test/risk-metrics.test.ts). Branch:
+      cases) and [`risk-metrics.test.ts`](src/test/risk-metrics.test.ts).
+      **Follow-up (same branch):** added a fifth, frontend-only figure per the user's request for a
+      "unit economics" reading — **Risk per ₹1 of Return** (`riskPerRupeeOfReturn` in
+      `src/lib/riskMetrics.ts`) = annualized Volatility ÷ annualized Return, shown on `/risk-metrics`
+      only (not added to the `get_risk_metrics` MCP tool, by the user's choice). Null whenever the
+      return is zero or negative — the ratio isn't meaningful without real profit to divide the risk
+      by. Uses the same trailing-90-day return already computed for Alpha/Sharpe (not the app's
+      separate all-time cost-basis P&L figure), so it stays on the same apples-to-apples basis as the
+      other four ratios. Tests: new cases in `risk-metrics.test.ts`. Branch:
       `feat/risk-metrics-alpha-sharpe` (PR not yet opened).
 - [ ] Time series forecasting
 - [ ] **Set up OpenRouter Guardrails** for the opt-in Nemotron/MiniMax path —

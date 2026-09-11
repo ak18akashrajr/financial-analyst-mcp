@@ -36,6 +36,11 @@ function fmtRatio(n: number | null): string {
   return `${n >= 0 ? '+' : ''}${n.toFixed(2)}`;
 }
 
+function fmtRupeeRatio(n: number | null): string {
+  if (n === null || !Number.isFinite(n)) return '—';
+  return `₹${n.toFixed(2)}`;
+}
+
 const RiskMetricsContent = () => {
   const { hidden, toggle, mask } = usePrivacy();
   const { holdings, loading: portfolioLoading } = usePortfolio();
@@ -202,7 +207,7 @@ const RiskMetricsContent = () => {
             )}
 
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               <Stat
                 label={
                   <LabelWithHint label="Volatility" title="Annualized Volatility" side="top" formula="stdev(daily returns) × √252 × 100">
@@ -247,6 +252,22 @@ const RiskMetricsContent = () => {
                 value={mask(fmtRatio(metrics.portfolioSharpeRatio))}
                 positive={metrics.portfolioSharpeRatio === null ? undefined : metrics.portfolioSharpeRatio >= 0}
               />
+              <Stat
+                label={
+                  <LabelWithHint
+                    label="Risk per ₹1 Return"
+                    title="Risk per ₹1 of Return"
+                    side="top"
+                    formula="Volatility ÷ Annualized Return"
+                    caveat="Shown as — when the annualized return is zero or negative — the ratio isn't meaningful without real profit to divide the risk by."
+                  >
+                    A plain "unit economics" read on the same two numbers above: for every ₹1 of annualized return
+                    you're earning, how many ₹ of volatility (risk) you're carrying to get it. Lower is better — it's
+                    cheaper risk per rupee of profit.
+                  </LabelWithHint>
+                }
+                value={mask(fmtRupeeRatio(metrics.portfolioRiskPerRupeeOfReturn))}
+              />
             </div>
 
             {/* Per-holding table */}
@@ -261,6 +282,11 @@ const RiskMetricsContent = () => {
                     <th className="font-medium px-4 py-2">Beta</th>
                     <th className="font-medium px-4 py-2">Alpha</th>
                     <th className="font-medium px-4 py-2">Sharpe</th>
+                    <th className="font-medium px-4 py-2">
+                      <LabelWithHint label="Risk/₹1 Return" title="Risk per ₹1 of Return" side="top" formula="Volatility ÷ Ann. Return" caveat="— when return is zero or negative.">
+                        ₹ of volatility carried per ₹1 of this holding's own annualized return.
+                      </LabelWithHint>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -277,6 +303,7 @@ const RiskMetricsContent = () => {
                         <td className="px-4 py-2 font-mono">{fmtRatio(h.beta)}</td>
                         <td className="px-4 py-2 font-mono">{mask(fmtPct(h.alpha))}</td>
                         <td className="px-4 py-2 font-mono">{fmtRatio(h.sharpeRatio)}</td>
+                        <td className="px-4 py-2 font-mono">{mask(fmtRupeeRatio(h.riskPerRupeeOfReturn))}</td>
                       </tr>
                     );
                   })}
