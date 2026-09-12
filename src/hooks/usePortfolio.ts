@@ -543,15 +543,34 @@ export function usePortfolio() {
     }).filter(h => h.totalQuantity > 0);
   }, [transactions, currentPrices, symbolMetadata]);
 
-  const summary: PortfolioSummary = useMemo(() => {
-    const investedValue = holdings.reduce((s, h) => s + h.totalInvested, 0);
-    const currentValue = holdings.reduce((s, h) => s + h.currentValue, 0);
-    const totalPnl = currentValue - investedValue;
-    const totalPnlPercent = investedValue !== 0 ? (totalPnl / investedValue) * 100 : 0;
-    const totalPortfolioValue = currentValue + cash.liquidCash + cash.vaultCash + cash.pfBalance - cash.creditCardDebt;
-    
+  // Invested/current totals in a single pass, memoized on `holdings` alone.
+  // Split out of `summary` so the two figures every other derivation needs
+  // aren't recomputed by a `cash` edit that can't possibly change them.
+  const holdingsTotals = useMemo(() => {
+    let investedValue = 0;
+    let currentValue = 0;
+    for (const h of holdings) {
+      investedValue += h.totalInvested;
+      currentValue += h.currentValue;
+    }
+    return { investedValue, currentValue };
+  }, [holdings]);
 
-    // XIRR: build cash flows from all transactions + current portfolio value as terminal flow.
+  // XIRR lives in its own memo, deliberately NOT depending on `cash`.
+  //
+  // This used to be computed inline in `summary`, whose dependency array
+  // includes `cash` — so editing a bank balance, settling a credit-card bill,
+  // or updating the PF figure re-ran Newton-Raphson over the entire
+  // transaction history even though none of those values appear anywhere in
+  // the cash flows below. `holdings` (and so `holdingsTotals`) depends only on
+  // transactions/prices/metadata, so this now recomputes exactly when the
+  // inputs it actually reads change.
+  //
+  // A side effect worth naming: the terminal flow's `new Date()` is now
+  // sampled less often. That's the more honest behavior, not a regression —
+  // an XIRR shouldn't shift just because the user corrected a cash balance.
+  const xirrFigures = useMemo<Pick<PortfolioSummary, 'xirr' | 'xirrExPf'>>(() => {
+    // Cash flows from all transactions + current portfolio value as terminal flow.
     // Note: this never includes the manual PF (PPF/EPF) balance in cash_settings — it has no
     // dated contribution history, so there are no cash flows to build for it. See the note on
     // PortfolioSummary.xirrExPf in src/types/portfolio.ts.
@@ -559,8 +578,8 @@ export function usePortfolio() {
       amount: t.type === 'BUY' ? -(t.quantity * t.price) : (t.quantity * t.price),
       date: new Date(t.date),
     }));
-    if (currentValue > 0) {
-      cashFlows.push({ amount: currentValue, date: new Date() });
+    if (holdingsTotals.currentValue > 0) {
+      cashFlows.push({ amount: holdingsTotals.currentValue, date: new Date() });
     }
     const xirr = calculateXIRR(cashFlows);
 
@@ -584,6 +603,17 @@ export function usePortfolio() {
       xirrExPf = calculateXIRR(exPfCashFlows);
     }
 
+    return { xirr, xirrExPf };
+  }, [transactions, symbolMetadata, holdings, holdingsTotals]);
+
+  // What's left here is arithmetic on already-derived values — cheap enough to
+  // re-run on any `cash` change, which it genuinely has to.
+  const summary: PortfolioSummary = useMemo(() => {
+    const { investedValue, currentValue } = holdingsTotals;
+    const totalPnl = currentValue - investedValue;
+    const totalPnlPercent = investedValue !== 0 ? (totalPnl / investedValue) * 100 : 0;
+    const totalPortfolioValue = currentValue + cash.liquidCash + cash.vaultCash + cash.pfBalance - cash.creditCardDebt;
+
     return {
       investedValue,
       currentValue,
@@ -594,10 +624,10 @@ export function usePortfolio() {
       pfBalance: cash.pfBalance,
       creditCardDebt: cash.creditCardDebt,
       totalPortfolioValue,
-      xirr,
-      xirrExPf,
+      xirr: xirrFigures.xirr,
+      xirrExPf: xirrFigures.xirrExPf,
     };
-  }, [holdings, cash, transactions, symbolMetadata]);
+  }, [holdingsTotals, cash, xirrFigures]);
 
   const topMovers = useMemo(() => {
     const valid = holdings.filter(h => h.totalQuantity > 0 && h.avgPrice > 0 && h.currentPrice > 0);
@@ -608,16 +638,33 @@ export function usePortfolio() {
     };
   }, [holdings]);
 
+  // The holdings half of the exposure breakdown, memoized on `holdings` alone.
+  // Previously `buildBreakdown` was called twice inside the `exposure` memo —
+  // two full passes over every holding — and that memo depends on `cash`, so
+  // both passes re-ran on every cash edit even though cash only ever
+  // contributes its own aggregate to the groups afterwards. One pass now,
+  // reused until holdings themselves change.
+  const exposureGroups = useMemo(() => {
+    const geography: Record<string, number> = {};
+    const category: Record<string, number> = {};
+    for (const h of holdings) {
+      const g = h.geography || 'Untagged';
+      const c = h.category || 'Untagged';
+      geography[g] = (geography[g] || 0) + h.currentValue;
+      category[c] = (category[c] || 0) + h.currentValue;
+    }
+    return { geography, category };
+  }, [holdings]);
+
   const exposure = useMemo(() => {
     const cashTotal = (cash.liquidCash || 0) + (cash.vaultCash || 0);
     const pfTotal = cash.pfBalance || 0;
 
     const buildBreakdown = (key: 'geography' | 'category'): ExposureBreakdown[] => {
-      const groups: Record<string, number> = {};
-      for (const h of holdings) {
-        const label = h[key] || 'Untagged';
-        groups[label] = (groups[label] || 0) + h.currentValue;
-      }
+      // Copied, never mutated in place: `exposureGroups` is a memoized value
+      // reused across renders, so folding cash into it directly would
+      // double-count on the next cash-only recompute.
+      const groups: Record<string, number> = { ...exposureGroups[key] };
       if (key === 'category') {
         if (cashTotal > 0) groups['Cash'] = (groups['Cash'] || 0) + cashTotal;
         if (pfTotal > 0) groups['PPF / EPF'] = (groups['PPF / EPF'] || 0) + pfTotal;
@@ -632,7 +679,7 @@ export function usePortfolio() {
         .sort((a, b) => b.value - a.value);
     };
     return { geography: buildBreakdown('geography'), category: buildBreakdown('category') };
-  }, [holdings, cash]);
+  }, [exposureGroups, cash]);
 
   return {
     transactions,

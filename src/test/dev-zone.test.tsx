@@ -3,7 +3,7 @@
 // (see src/test/benchmark-page.test.tsx for the pattern this extends).
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentType } from 'react';
 
 // DevZone.tsx reads import.meta.env.VITE_SUPABASE_URL at module scope (for the
@@ -330,6 +330,15 @@ describe('DevZone', () => {
   });
 
   describe('System Status tab (default view)', () => {
+    // Several tests here reach past the module mock with vi.spyOn to make a
+    // specific query reject. Those spies are persistent (not
+    // mockImplementationOnce), so without this the next test in the file
+    // inherits the broken query. Only affects vi.spyOn spies — the vi.fn()
+    // mocks in the module factory above are untouched.
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('reports all systems operational when DB, Auth and every edge function respond OK', async () => {
       renderPage();
       await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
@@ -421,6 +430,68 @@ describe('DevZone', () => {
       fireEvent.click(screen.getByRole('button', { name: /run deep checks/i }));
 
       await waitFor(() => expect(screen.getByText(/Deep: Yahoo Finance unreachable/)).toBeInTheDocument());
+    });
+
+    // The three below cover the stuck-spinner failure mode: a *rejection*
+    // (as opposed to a check returning { status: 'error' }, covered above)
+    // used to skip setRunning(false)/setDeepRunning(false) entirely, leaving
+    // the button disabled for the rest of the page's life with its rows
+    // frozen on 'checking' and no way back short of a reload.
+    it('releases the deep-check button and marks its rows when the probe-symbol lookup rejects', async () => {
+      const { supabase } = await import('@/integrations/supabase/client');
+      const realFrom = supabase.from;
+      vi.spyOn(supabase, 'from').mockImplementation(((table: string) => {
+        // getProbeSymbol's own query — rejecting at the network level, which
+        // it has no { error } result to fold into null.
+        if (table === 'transactions') {
+          return { select: () => ({ limit: () => Promise.reject(new Error('Failed to fetch')) }) } as never;
+        }
+        return (realFrom as (t: string) => unknown)(table);
+      }) as never);
+
+      renderPage();
+      await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: /run deep checks/i }));
+
+      // Back to a clickable button, not stranded on "Running deep checks…".
+      await waitFor(() => expect(screen.getByRole('button', { name: /run deep checks/i })).toBeEnabled());
+      // And the rows say so, rather than implying work is still in flight.
+      expect(screen.getAllByText(/Deep check did not run/).length).toBeGreaterThan(0);
+      // No edge function was called: the failure happened before any job existed.
+      expect(invokeMock).not.toHaveBeenCalled();
+    });
+
+    it('marks a deep check that throws outright, without losing its siblings results', async () => {
+      invokeMock.mockImplementation((fn: string) => {
+        if (fn === 'fetch-fx-rates') return Promise.reject(new Error('invoke blew up'));
+        if (fn === 'fetch-prices') return Promise.resolve({ data: { prices: { 'RELIANCE.NS': 2456.7 } }, error: null });
+        return Promise.resolve({ data: {}, error: null });
+      });
+
+      renderPage();
+      await waitFor(() => expect(screen.getByText('All systems operational')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByRole('button', { name: /run deep checks/i }));
+
+      // The thrower reports its own message on its own row...
+      await waitFor(() => expect(screen.getByText(/Deep: invoke blew up/)).toBeInTheDocument());
+      // ...and a sibling's real result still landed.
+      expect(screen.getByText(/Deep: Live price for RELIANCE\.NS: 2456\.7/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /run deep checks/i })).toBeEnabled();
+    });
+
+    it('releases the Recheck button and flags the row when a core check rejects', async () => {
+      const { supabase } = await import('@/integrations/supabase/client');
+      // supabase-js rethrows anything that isn't an AuthError, so a raw
+      // network failure genuinely escapes this check rather than coming back
+      // as an { error } result.
+      vi.spyOn(supabase.auth, 'getUser').mockRejectedValue(new Error('Failed to fetch'));
+
+      renderPage();
+
+      await waitFor(() => expect(screen.getByRole('button', { name: /recheck/i })).toBeEnabled());
+      expect(screen.getByText('Failed to fetch')).toBeInTheDocument();
     });
   });
 

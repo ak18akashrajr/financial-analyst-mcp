@@ -26,6 +26,10 @@ let maxActive = 0;
 const callToolMock = vi.fn(async (name: string) => {
   active++;
   maxActive = Math.max(maxActive, active);
+  // Stands in for an MCP call that connects and then never answers — the
+  // case MCP_TOOL_CALL_TIMEOUT_MS exists for. Never decrements `active`,
+  // which is fine: only the timeout test below requests it.
+  if (name === "hang_tool") await new Promise(() => {});
   await new Promise((resolve) => setTimeout(resolve, 10));
   active--;
   if (name === "boom_tool") throw new Error("upstream failure");
@@ -44,12 +48,15 @@ vi.mock("../_shared/mcp-client.ts", () => ({
 // the concurrency cap (MAX_CONCURRENT_TOOL_CALLS = 3 in index.ts) with more
 // calls than the cap allows.
 const runTurnMock = vi.fn();
+// Captured (rather than an inline vi.fn()) so the timeout test can assert on
+// what the loop actually handed back to the model for a timed-out call.
+const appendToolResultsMock = vi.fn();
 vi.mock("../_shared/providers/groq.ts", () => ({
   GroqProvider: vi.fn().mockImplementation(() => ({
     name: "groq",
     loadHistory: vi.fn(),
     addUserMessage: vi.fn(),
-    appendToolResults: vi.fn(),
+    appendToolResults: appendToolResultsMock,
     runTurn: runTurnMock,
   })),
 }));
@@ -62,6 +69,7 @@ beforeEach(async () => {
   maxActive = 0;
   callToolMock.mockClear();
   runTurnMock.mockReset();
+  appendToolResultsMock.mockClear();
   vi.stubGlobal("Deno", {
     env: { get: (key: string) => (key === "GROQ_API_KEY" ? "test-key" : undefined) },
     serve: (h: (req: Request) => Promise<Response> | Response) => {
@@ -134,5 +142,48 @@ describe("portfolio-ai tool-call loop concurrency", () => {
 
     expect(text).toContain("event: done");
     expect(text).not.toContain("upstream failure");
+  });
+
+  it("times out a hung tool call so its siblings' results still reach the model", async () => {
+    // Only setTimeout/clearTimeout are faked: Date and the microtask queue
+    // stay real, so the promise plumbing this loop is built on behaves
+    // normally while the 15s deadline is fast-forwarded.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      runTurnMock
+        .mockResolvedValueOnce({
+          done: false,
+          calls: [
+            { id: "call-1", name: "hang_tool", arguments: {} },
+            { id: "call-2", name: "tool_b", arguments: {} },
+          ],
+        })
+        .mockResolvedValueOnce({ done: true, text: "answered anyway" });
+
+      const res = await handler(chatRequest());
+      const readPromise = readAllEvents(res.body as ReadableStream<Uint8Array>);
+      // Past MCP_TOOL_CALL_TIMEOUT_MS (15_000 in index.ts). Without the
+      // timeout this read never resolves at all — the hung call parks a
+      // worker and the turn never completes.
+      await vi.advanceTimersByTimeAsync(20_000);
+      const text = await readPromise;
+
+      expect(text).toContain("event: done");
+      expect(text).not.toContain("event: error");
+
+      const results = appendToolResultsMock.mock.calls.at(-1)?.[0] as
+        | { id: string; name: string; result: unknown }[]
+        | undefined;
+      expect(results).toHaveLength(2);
+      // The hung call degraded to one error-shaped result...
+      expect(results?.find((r) => r.id === "call-1")?.result).toEqual({
+        error: expect.stringContaining("timed out after 15000ms"),
+      });
+      // ...while its sibling's real result survived rather than being
+      // discarded with it.
+      expect(results?.find((r) => r.id === "call-2")?.result).toEqual({ ok: true, name: "tool_b" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
