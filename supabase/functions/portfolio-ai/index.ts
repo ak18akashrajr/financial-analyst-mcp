@@ -16,6 +16,7 @@ import { buildCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit } from "../_shared/rate-limit.ts";
 import { mapWithConcurrency } from "../_shared/concurrency.ts";
 import { McpClient } from "../_shared/mcp-client.ts";
+import { withTimeout } from "../_shared/timeout.ts";
 import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, explainComplexity, shouldEscalate } from "../_shared/router.ts";
 import { findTool } from "../_shared/mcp-tools.ts";
 import { ASK_CLARIFYING_QUESTION_TOOL } from "../_shared/clarifying-question-tool.ts";
@@ -53,6 +54,19 @@ const MAX_TOOL_TURNS = 5;
 // number of them at once would burst against that server's own Postgres
 // connections. This caps how many run concurrently per turn.
 const MAX_CONCURRENT_TOOL_CALLS = 3;
+// Wall-clock ceiling on a single MCP tool call. Without one, a call that
+// connects and then never answers parks one of the MAX_CONCURRENT_TOOL_CALLS
+// workers forever — which also stops that worker from picking up any of the
+// turn's remaining calls (see _shared/timeout.ts's header).
+//
+// Sized to comfortably clear a legitimate slow call, not to be tight: each
+// `callTool` already contains its own `withRetry` (up to 3 attempts with
+// jittered backoff — see _shared/retry.ts), and the first attempt may pay a
+// cold start on portfolio-mcp-server. A turn's calls run at most
+// MAX_CONCURRENT_TOOL_CALLS at a time, so the worst case per turn is
+// ceil(calls / 3) * this, which stays well inside the edge function's own
+// request wall clock across all MAX_TOOL_TURNS turns.
+const MCP_TOOL_CALL_TIMEOUT_MS = 15_000;
 // Bounds the billed LLM input tokens a single request can carry. The
 // per-minute rate limiter above caps request *count*, not payload *size*
 // per request — without this, a single authenticated user, still within
@@ -525,7 +539,19 @@ Deno.serve(async (req: Request) => {
             MAX_CONCURRENT_TOOL_CALLS,
             async (call) => {
               try {
-                const toolResult = await mcpClient.callTool(call.name, call.arguments, user.id, requestId);
+                // Timed out *inside* this try, not via mapWithConcurrency, so
+                // the deadline lands in the same catch every other tool
+                // failure already does: one slow call degrades to a single
+                // error-shaped result the model can reason about, and the
+                // turn's other calls still reach it. A timeout raised by the
+                // worker pool itself would instead reject the whole batch
+                // (mapWithConcurrency keeps Promise.all semantics), throwing
+                // away the sibling results we do have.
+                const toolResult = await withTimeout(
+                  () => mcpClient.callTool(call.name, call.arguments, user.id, requestId),
+                  MCP_TOOL_CALL_TIMEOUT_MS,
+                  `MCP tool ${call.name}`,
+                );
                 return { id: call.id, name: call.name, result: toolResult };
               } catch (err) {
                 logger.error("Tool call failed", { tool: call.name, requestId, error: err });
