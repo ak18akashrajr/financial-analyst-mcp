@@ -9,11 +9,32 @@ interface Props {
   onDelete: (id: string) => void;
 }
 
+// How many rows render before the "Show more" control appears. This is the
+// only place in the app that renders an unbounded transaction list — every
+// other consumer either aggregates (holdings, exposure, XIRR) or is already
+// bounded by construction (RecentActivity filters to the current month) — so
+// it's the one list where a long SIP history actually costs DOM nodes.
+//
+// Display-only, deliberately: usePortfolio still fetches and derives the
+// complete transaction set, because FIFO cost basis, XIRR and tax lots are all
+// wrong without it. See TODO.md's paginate-transactions item.
+export const TRANSACTION_PAGE_SIZE = 20;
+
 export function TransactionHistory({ transactions, onUpdate, onDelete }: Props) {
   const { mask } = usePrivacy();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState('');
   const [editPrice, setEditPrice] = useState('');
+  // No reset effect needed: HoldingsTable keys this component per symbol
+  // (`${h.symbol}-history`) and only mounts it for the expanded row, so
+  // switching symbols remounts with a fresh count rather than inheriting the
+  // previous holding's.
+  const [visibleCount, setVisibleCount] = useState(TRANSACTION_PAGE_SIZE);
+
+  // Already sorted newest-first by usePortfolio, so the first page is the
+  // recent activity someone opening a holding is looking for.
+  const visible = transactions.slice(0, visibleCount);
+  const remaining = transactions.length - visible.length;
 
   const startEdit = (t: Transaction) => {
     setEditingId(t.id);
@@ -32,9 +53,16 @@ export function TransactionHistory({ transactions, onUpdate, onDelete }: Props) 
 
   return (
     <div className="p-3">
-      <p className="text-xs font-medium text-muted-foreground mb-2">Transaction History</p>
+      <p className="text-xs font-medium text-muted-foreground mb-2">
+        Transaction History
+        {transactions.length > TRANSACTION_PAGE_SIZE && (
+          <span className="ml-1.5 font-normal">
+            — showing {visible.length} of {transactions.length}
+          </span>
+        )}
+      </p>
       <div className="space-y-1">
-        {transactions.map((t) => (
+        {visible.map((t) => (
           <div key={t.id} className="flex items-center gap-3 text-xs py-1.5 px-2 rounded hover:bg-muted/50">
             <span className="text-muted-foreground w-20">
               {new Date(t.date).toLocaleDateString('en-IN')}
@@ -82,6 +110,26 @@ export function TransactionHistory({ transactions, onUpdate, onDelete }: Props) 
           </div>
         ))}
       </div>
+      {(remaining > 0 || visibleCount > TRANSACTION_PAGE_SIZE) && (
+        <div className="mt-2 flex items-center gap-3">
+          {remaining > 0 && (
+            <button
+              onClick={() => setVisibleCount((c) => c + TRANSACTION_PAGE_SIZE)}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Show {Math.min(remaining, TRANSACTION_PAGE_SIZE)} more
+            </button>
+          )}
+          {visibleCount > TRANSACTION_PAGE_SIZE && (
+            <button
+              onClick={() => setVisibleCount(TRANSACTION_PAGE_SIZE)}
+              className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Collapse
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
