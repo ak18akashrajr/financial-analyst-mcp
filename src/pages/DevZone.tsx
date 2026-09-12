@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { supabase } from '@/integrations/supabase/client';
+import { logClientError } from '@/lib/clientErrorLogging';
 import { useSecurityIncidents, type SecurityIncident } from '@/contexts/SecurityIncidentsContext';
 
 // One-stop view over everything this app currently persists as a "log":
@@ -494,30 +495,59 @@ function OverallBanner({ rows, lastRun }: { rows: CheckRow[]; lastRun: Date | nu
   );
 }
 
+/** A check is supposed to report failure by *returning* `{ status: 'error' }`,
+ * not by throwing — every one below does. This is for the case where one
+ * throws anyway (`supabase.auth.getUser()` rethrows anything that isn't an
+ * AuthError, so a raw network failure can escape a Core check), so the row
+ * shows what happened instead of being stranded on 'checking'. */
+function describeThrown(err: unknown): string {
+  return err instanceof Error ? err.message : 'Check threw an unexpected error';
+}
+
 function SystemStatusTab() {
   const [rows, setRows] = useState<CheckRow[]>(buildInitialRows);
   const [running, setRunning] = useState(true);
   const [lastRun, setLastRun] = useState<Date | null>(null);
   const [deepRunning, setDeepRunning] = useState(false);
 
+  // Both runners below are structured so no rejection anywhere can strand the
+  // UI in its running state. That was the actual failure mode here, not the
+  // "silently discards the rest" one a `Promise.all` normally invites: a
+  // throw skipped setRunning(false)/setDeepRunning(false), disabling the
+  // Recheck / Run Deep Checks button for the rest of the page's life with
+  // every row still reading 'checking' and no way back short of a reload.
+  // Two halves to the fix: each job absorbs its own rejection into its own
+  // row, and each runner releases its spinner from a finally/terminal .then.
   const runAll = useCallback(() => {
     setRunning(true);
     setLastRun(null);
     setRows(buildInitialRows());
 
     const jobs = [
-      ...CORE_CHECKS.map((c) => c.run().then((result) => {
-        setRows((prev) => prev.map((r) => (r.id === c.id ? { ...r, ...result } : r)));
-      })),
+      ...CORE_CHECKS.map((c) => c.run()
+        .catch((err): CheckResult => ({ status: 'error', detail: describeThrown(err) }))
+        .then((result) => {
+          setRows((prev) => prev.map((r) => (r.id === c.id ? { ...r, ...result } : r)));
+        })),
+      // pingEdgeFunction deliberately has no .catch: it is already
+      // try/catch/finally'd end to end (see its body) and cannot reject, so
+      // one here would be unreachable.
       ...EDGE_FUNCTIONS.map((f) => pingEdgeFunction(f.id).then((result) => {
         setRows((prev) => prev.map((r) => (r.id === f.id ? { ...r, ...result } : r)));
       })),
     ];
 
-    Promise.all(jobs).then(() => {
-      setRunning(false);
-      setLastRun(new Date());
-    });
+    Promise.all(jobs)
+      .catch((err) => {
+        // Unreachable while every job above resolves — kept so that a future
+        // check which does reject can neither strand the spinner nor fail
+        // silently.
+        logClientError('DevZone.runAll', 'A status check rejected unexpectedly', { error: err });
+      })
+      .then(() => {
+        setRunning(false);
+        setLastRun(new Date());
+      });
   }, []);
 
   const runDeepChecks = useCallback(async () => {
@@ -525,14 +555,30 @@ function SystemStatusTab() {
     const deepIds = Object.keys(DEEP_CHECKS);
     setRows((prev) => prev.map((r) => (deepIds.includes(r.id) ? { ...r, deepStatus: 'checking', deepDetail: undefined } : r)));
 
-    const symbol = await getProbeSymbol();
-    const jobs = deepIds.map((id) =>
-      DEEP_CHECKS[id](symbol).then((result) => {
-        setRows((prev) => prev.map((r) => (r.id === id ? { ...r, deepStatus: result.status, deepDetail: result.detail } : r)));
-      }),
-    );
-    await Promise.all(jobs);
-    setDeepRunning(false);
+    try {
+      // getProbeSymbol() is a real Supabase round trip and was previously
+      // awaited outside any error handling. It already folds a PostgREST
+      // `{ error }` result into `null`, but a network-level throw escaped —
+      // taking the whole callback down before a single job was even created.
+      const symbol = await getProbeSymbol();
+      await Promise.all(deepIds.map((id) =>
+        DEEP_CHECKS[id](symbol)
+          .catch((err): DeepResult => ({ status: 'error', detail: describeThrown(err) }))
+          .then((result) => {
+            setRows((prev) => prev.map((r) => (r.id === id ? { ...r, deepStatus: result.status, deepDetail: result.detail } : r)));
+          }),
+      ));
+    } catch (err) {
+      logClientError('DevZone.runDeepChecks', 'Deep checks aborted before completing', { error: err });
+      // Releasing the spinner isn't enough on its own: if getProbeSymbol()
+      // threw, no job ran, so every deep row would sit on 'checking'
+      // indefinitely looking like work still in flight.
+      setRows((prev) => prev.map((r) => (deepIds.includes(r.id) && r.deepStatus === 'checking'
+        ? { ...r, deepStatus: 'error', deepDetail: 'Deep check did not run' }
+        : r)));
+    } finally {
+      setDeepRunning(false);
+    }
   }, []);
 
   useEffect(() => { runAll(); }, [runAll]);
