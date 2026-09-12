@@ -16,28 +16,152 @@ check items off (`- [x]`) when merged, and note the PR number.
 
 Priority recommendations from a performance review of the repo (2026-09-11).
 
-- [ ] **High: Memoize XIRR calculations or pre-compute in Postgres.**
-      [`calculateXIRR`](src/lib/xirr.ts) runs Newton-Raphson (up to 100 iterations) twice per
-      portfolio load in [usePortfolio.ts](src/hooks/usePortfolio.ts) — once for `xirr`, once for
-      `xirrExPf`. Memoize by transaction-set hash, or cache as a pre-computed column updated only on
-      transaction mutations.
-- [ ] **High: Paginate transaction fetches on frontend.** `loadData` in
-      [usePortfolio.ts](src/hooks/usePortfolio.ts) fetches `transactions`, `current_prices`, and
-      `symbol_metadata` with no `.limit()`, so the whole table transfers and parses on every page
-      load. Paginate `transactions` (initial page + load-more) and cache the price/metadata tables
-      with an expiry check instead of re-fetching in full.
-- [ ] **Medium: Break apart `usePortfolio`'s memoized derivations to avoid cascading
-      recalculations.** `summary`, `topMovers`, and `exposure` all depend on the derived `holdings`
-      array, so a single price change re-runs every one of them in separate full passes over all
-      holdings. Memoize the intermediate breakdowns (e.g. `buildBreakdown`) separately.
-- [ ] **Low: Add query timeouts to MCP tool calls.**
-      [`mapWithConcurrency`](supabase/functions/_shared/concurrency.ts) bounds parallelism at 3 but
-      enforces no per-call timeout, so one hung tool call blocks the whole turn. Add an optional
-      `timeoutMs` and wrap `fn()` in `Promise.race`.
-- [ ] **Low: Use `Promise.allSettled()` instead of `Promise.all()` for dev/monitoring operations.**
-      [DevZone.tsx](src/pages/DevZone.tsx) and [Reports.tsx](src/pages/Reports.tsx) fan out
-      non-critical jobs with `Promise.all`, which silently discards the rest if one rejects — switch
-      to `allSettled` so per-job success/failure is tracked.
+- [x] **High: Memoize XIRR calculations or pre-compute in Postgres.** Done on branch `perf/split-xirr-memo`,
+      merged via [PR #150](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/150), together with the Medium item below (they turned out to be the same
+      change). **Two corrections to this item's diagnosis, both checked against the code:**
+      1. It ran **once** per recompute, not twice. `xirrExPf` is assigned `= xirr` and only
+         recomputed inside `if (hasPfHoldings)` — true only when a transaction's symbol is tagged
+         `PPF / EPF` in `symbol_metadata`, which nothing is today (the code comment there already
+         said so).
+      2. **"Cache as a pre-computed column updated only on transaction mutations" would have been
+         wrong.** The terminal cash flow is the current portfolio value at `new Date()`, which moves
+         with `current_prices` — a column refreshed only on transaction writes goes stale on the
+         next price fetch. Not implemented, deliberately.
+      The real waste was the dependency array, not the call count: the XIRR was computed inline in
+      `summary`, whose deps include `cash`, so every balance edit / bill settlement / PF update
+      re-ran Newton-Raphson over the whole transaction history even though no cash figure appears
+      anywhere in its cash flows. Now three memos instead of one — `holdingsTotals` (one pass for
+      invested/current, was two `.reduce()`s), `xirrFigures` (deps: transactions, symbolMetadata,
+      holdings — **no** `cash`), and `summary` (arithmetic on the above, still re-runs on `cash`).
+      Side effect worth naming: the terminal flow's `new Date()` is sampled less often, which is the
+      more honest behavior — an XIRR shouldn't shift because someone corrected a bank balance.
+      Not done: a transaction-set-hash memo cache across mounts. A hash of the transactions alone is
+      an unsound key for the reason in correction 2 above, and `useMemo` already covers the
+      within-mount case.
+      Tests: [use-portfolio-xirr-memoization.test.tsx](src/test/use-portfolio-xirr-memoization.test.tsx)
+      — spies on the real `calculateXIRR` and asserts a cash edit doesn't re-enter it while a price
+      change does. Confirmed to fail against the pre-split code (3 calls where 2 are expected).
+
+- [x] **High: Paginate transaction fetches on frontend** — **resolved as display-only paging; the
+      *fetch* is deliberately still unpaginated.** Branch `perf/transaction-history-paging`,
+      merged via [PR #152](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/152). The
+      "no `.limit()`" observation is accurate, but the proposed fix would have traded a load-time
+      cost for wrong numbers, so it was scoped down on purpose (user's call, 2026-09-12).
+      Why the fetch can't be paginated as written: `transactions` is the sole input to FIFO cost
+      basis ([costBasis.ts](src/lib/costBasis.ts)), XIRR, `holdings`, and tax lots
+      ([taxCalculator.ts](src/lib/taxCalculator.ts)). An "initial page + load-more" doesn't render a
+      shorter list — it renders a **wrong portfolio**, because a partial history mis-computes every
+      derived figure. Doing this properly means moving those aggregations into Postgres, which is a
+      separate, much larger piece of work, not a `.limit()` call. Not attempted here.
+      Second finding, which changes what "paginate the table" can even mean: **there is no
+      all-transactions table in the UI.** Checked every consumer — `holdings`/`exposure`/`summary`
+      aggregate rather than list; [RecentActivity.tsx](src/components/RecentActivity.tsx) filters to
+      the current calendar month, so it's bounded by construction; `SIPSummary`, `SummaryBar`,
+      `PortfolioCharts`, `CorrelationHeatmap` all aggregate. The only unbounded rendered transaction
+      list is [TransactionHistory.tsx](src/components/TransactionHistory.tsx) — one symbol's full
+      history inside an expanded `HoldingsTable` row — so that's where the paging went: first 20
+      rows (`TRANSACTION_PAGE_SIZE`), a "Show N more" that appends a page, a "Collapse" back to the
+      first, and a "showing X of Y" count so nothing looks silently truncated.
+      Also checked: [Taxes.tsx](src/pages/Taxes.tsx) runs its *own* `transactions`/`current_prices`/
+      `symbol_metadata` fetch, but it doesn't call `usePortfolio`, so this is a standalone page load
+      rather than the double-fetch-on-one-mount shape of
+      [perf-findings.md](docs/perf-findings.md)'s finding #2. It needs the whole set for FIFO tax
+      lots. No change.
+      **Not done — price/metadata caching with an expiry check.** `current_prices` and
+      `symbol_metadata` are one row per tracked symbol (tens of rows), so an expiry-checked cache
+      buys very little, and serving a stale *price* from cache on a money dashboard is a worse
+      failure than re-reading a small table. Sessions also live in `sessionStorage` by design (see
+      the single-user note in [CLAUDE.md](CLAUDE.md)), so a cache would either not survive a tab
+      close or would outlive the session it belongs to.
+      **Honest caveat:** the per-page-load transfer/parse cost this item opens with is therefore
+      *unchanged*. Nobody measured the real row count before the item was written, and nothing here
+      measures it either — if that cost is ever actually felt, the next step is a row count first,
+      then server-side aggregation, not client pagination.
+      Tests: [transaction-history-paging.test.tsx](src/test/transaction-history-paging.test.tsx) —
+      7 cases (single-page list gets no controls at all, cap + withheld count, newest-first
+      ordering preserved, per-click append, partial last page, collapse, row actions intact,
+      empty list). 6 of the 7 confirmed to fail against the pre-paging component.
+
+- [x] **Medium: Break apart `usePortfolio`'s memoized derivations to avoid cascading
+      recalculations.** Done on the same branch/PR as the High item above
+      ([PR #150](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/150)) — these were the same change,
+      approached from two directions. **One correction:** a *price* change genuinely invalidates
+      `summary`, `topMovers` and `exposure`, so no amount of splitting avoids recomputing them then;
+      that cascade is correct behavior, not waste. What was avoidable was the *`cash`* cascade, since
+      `holdings` doesn't depend on `cash` at all. Both `summary` and `exposure` listed `cash` in
+      their deps and did full holdings passes inside.
+      Implemented exactly the intermediate-memo shape this item suggested: `exposureGroups` groups
+      holdings by geography *and* category in one pass (was two `buildBreakdown` passes), memoized
+      on `holdings` alone, and the remaining `exposure` memo just folds in cash/PF and computes
+      percentages. `buildBreakdown` now copies (`{ ...exposureGroups[key] }`) rather than mutating —
+      folding cash into a memo that survives across renders would double-count on the next
+      cash-only recompute, which is what the third test below guards.
+      `topMovers` left alone: already `[holdings]`-only, and it's one sort.
+      Tests: same file as above. Note the exposure half is a correctness guard, not a
+      before/after discriminator — `buildBreakdown` is an inner closure with nothing importable to
+      spy on, so the "one pass instead of two, skipped on cash-only changes" win is structural
+      rather than directly asserted.
+
+- [x] **Low: Add query timeouts to MCP tool calls.** Done on branch `perf/mcp-tool-call-timeout`,
+      merged via [PR #149](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/149).
+      New [`withTimeout`](supabase/functions/_shared/timeout.ts) helper (+ a `CallTimeoutError`)
+      races an outbound call against a deadline; `portfolio-ai`'s tool-call loop wraps every
+      `mcpClient.callTool` in it under a new `MCP_TOOL_CALL_TIMEOUT_MS` (15s).
+      **Placed differently than this item proposed, on purpose.** The item suggested a `timeoutMs`
+      option on `mapWithConcurrency` itself — but that helper keeps `Promise.all` rejection
+      semantics, so a deadline raised *by the pool* would reject the whole batch and discard the
+      sibling tool results that did succeed. Wrapping inside the loop's existing `fn` instead means
+      a timeout lands in the same `catch` every other tool failure already does: the hung call
+      degrades to one error-shaped result the model can reason about, and the turn continues.
+      `mapWithConcurrency` is unchanged.
+      Also note the diagnosis was slightly understated — a hung call doesn't merely fail to return,
+      it parks one of the three workers, so the pool stops picking up the turn's *remaining* calls
+      too. Verified: with the wrap removed, the new gate test doesn't just assert a wrong value, the
+      turn never completes at all.
+      Deliberately does **not** abort the underlying fetch: an `AbortError` is what
+      [`retry.ts`](supabase/functions/_shared/retry.ts)'s `isRetryableError` treats as transient, so
+      an abort fired inside `McpClient.rpc`'s `withRetry` would be retried with backoff — extending
+      the very latency the timeout bounds. Real cancellation needs `withRetry` to tell a deliberate
+      abort from a network timeout, which also affects the LLM provider paths; left out of scope and
+      documented in `timeout.ts`'s header.
+      Tests: [timeout.test.ts](supabase/functions/_shared/timeout.test.ts) (race mechanics, error
+      naming vs. the retry classifier, timer cleanup) and a third case in
+      [tool-call-concurrency-gate.test.ts](supabase/functions/portfolio-ai/tool-call-concurrency-gate.test.ts)
+      proving index.ts actually wires it in.
+
+- [x] ~~**Low: Use `Promise.allSettled()` instead of `Promise.all()` for dev/monitoring
+      operations.**~~ — **traced 2026-09-12, the stated problem is a false positive; a different,
+      real bug was found in the same code and fixed instead.** Branch
+      `fix/dev-zone-deep-check-stuck-spinner`, merged via [PR #151](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/151). `Promise.all` was left exactly as it was in both
+      files.
+      Why the premise doesn't hold:
+      - [Reports.tsx](src/pages/Reports.tsx)'s `Promise.all` wraps two Supabase query builders,
+        which resolve `{ data, error }` rather than rejecting — and both `hRes.error` and
+        `rRes.error` are *already* checked and logged individually on the next two lines. There is
+        nothing for `allSettled` to recover. No change made.
+      - [DevZone.tsx](src/pages/DevZone.tsx)'s two fan-outs can't short-circuit either: every job
+        already resolves to a status object. `pingEdgeFunction` is try/catch/finally'd end to end,
+        each `DEEP_CHECKS` entry converts an `{ error }` invoke result into `{ status: 'error' }`,
+        and `deepCheckPortfolioAi` has its own try/catch.
+      What *is* real, and was fixed: a rejection didn't discard results, it **stranded the UI in its
+      running state**. `runDeepChecks` awaited `getProbeSymbol()` outside any error handling and set
+      `setDeepRunning(false)` outside a `finally`, so a network-level throw there (as opposed to the
+      PostgREST `{ error }` result it already folds into `null`) left the button frozen on "Running
+      deep checks…" with every row reading 'checking' — unrecoverable short of a page reload.
+      `runAll` had the identical shape with `setRunning(false)`, which this item didn't mention:
+      `supabase.auth.getUser()` rethrows anything that isn't an AuthError, so a raw network failure
+      really can escape the Auth core check and disable Recheck permanently.
+      Fixed in two halves, because releasing the spinner alone still leaves a dead row: each job now
+      absorbs its own rejection into its own row (via `.catch` on the job, not by changing the
+      combinator), and each runner releases its spinner from a `finally`/terminal `.then`. If
+      `getProbeSymbol` throws, nothing ran at all, so the deep rows are explicitly marked
+      "Deep check did not run" rather than left implying work is still in flight. `pingEdgeFunction`
+      deliberately gets no `.catch` — it cannot reject, so one would be unreachable.
+      Tests: three new cases in [dev-zone.test.tsx](src/test/dev-zone.test.tsx), each confirmed to
+      fail against the pre-fix code for the right reason (the deep button's accessible name is
+      literally unfindable while stuck, the thrown check's row never updates, Recheck never
+      re-enables). Also added an `afterEach(vi.restoreAllMocks)` to that describe block — the new
+      tests use persistent `vi.spyOn` mocks that otherwise leak into the following test.
 
 ## Portfolio AI / MCP tools
 
