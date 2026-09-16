@@ -25,6 +25,15 @@ import {
   type Holding,
   type PeriodType,
 } from "./portfolio-data.ts";
+import {
+  buildValueSeries,
+  fitCaveats,
+  fitParameters,
+  flowAdjustedReturns,
+  forecastParametricTerminal,
+  weightedAssumptions,
+  type SeriesTransaction,
+} from "./forecast.ts";
 
 /** Rounds a holding's monetary fields to whole rupees and rates/percentages to
  * 2 decimals — the single rounding convention every tool in this registry
@@ -447,6 +456,124 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       // it reaches here — see validateArgs in mcp-schema-validate.ts.
       const asOfDate = args.asOfDate as string;
       return getExposureDrift(sb, asOfDate);
+    },
+  },
+  {
+    name: "forecast_portfolio_value",
+    description:
+      "Projects total portfolio value (holdings + cash/PF/vault, minus credit-card debt) forward as a " +
+      "p10/p25/p50/p75/p90 percentile band at a given horizon, using drift and volatility FITTED from " +
+      "this portfolio's own historical daily (or monthly) mark-to-market returns — not a fixed assumed " +
+      "rate the way run_stress_test's shock percentages are. Falls back to blended asset-class " +
+      "assumptions (flagged via usedFallbackAssumptions=true, with dataPointsUsed showing how few " +
+      "observations were available) when there is too little price history to fit from — fewer than " +
+      "60 return observations. This is a statistical projection of what the portfolio's own price " +
+      "history implies, not a prediction, guarantee, or recommendation: present the whole band, never " +
+      "the p50 figure alone as if it were the expected or most likely outcome, and always surface the " +
+      "'note' field's caveats (thin sample, clamped drift, coarse granularity, unpriced holdings) " +
+      "rather than silently dropping them. Portfolio-level only — it forecasts the aggregate value, " +
+      "not any individual security's price, and cannot answer 'will <symbol> go up'.",
+    complexity: "complex",
+    inputSchema: {
+      type: "object",
+      properties: {
+        horizonMonths: {
+          type: "number",
+          minimum: 1,
+          description: "How many months ahead to project (default: 24)",
+        },
+      },
+      additionalProperties: false,
+    },
+    annotations: READ_ONLY_ANNOTATIONS,
+    handler: async (args, sb) => {
+      // horizonMonths is already validated (a number >= 1) by the time it reaches here — see
+      // validateArgs in mcp-schema-validate.ts.
+      const horizonMonths = typeof args.horizonMonths === "number" ? args.horizonMonths : 24;
+
+      const p = await getCurrentPortfolio(sb);
+      const symbols = [...new Set(p.txns.map((t) => t.symbol))];
+
+      let priceRows: { symbol: string; date: string; close: number }[] = [];
+      if (symbols.length > 0) {
+        const { data, error } = await sb
+          .from("historical_prices")
+          .select("symbol, date, close")
+          .in("symbol", symbols)
+          .order("date", { ascending: true });
+        if (error) {
+          throw new Error("forecast_portfolio_value: a database error occurred");
+        }
+        priceRows = (data || []) as { symbol: string; date: string; close: number }[];
+      }
+
+      const pricesBySymbol: Record<string, { date: string; close: number }[]> = {};
+      for (const r of priceRows) (pricesBySymbol[r.symbol] ||= []).push({ date: r.date, close: Number(r.close) });
+
+      const seriesTxns: SeriesTransaction[] = p.txns.map((t) => ({
+        symbol: t.symbol,
+        type: t.type,
+        quantity: Number(t.quantity),
+        price: Number(t.price),
+        date: t.date,
+      }));
+      const series = buildValueSeries(seriesTxns, pricesBySymbol);
+      const returns = flowAdjustedReturns(series);
+
+      const lastComplete = [...series.points].reverse().find((pt) => pt.complete);
+      if (!lastComplete) {
+        return {
+          note:
+            "Not enough priced history to build a portfolio value series yet — no forecast available. " +
+            "Backfill daily prices for this portfolio's held symbols first.",
+        };
+      }
+
+      const categoryWeights = exposureBy(p.holdings, "category").map((e) => ({ label: e.label, weight: e.value }));
+      const fallback = weightedAssumptions(categoryWeights);
+      const fit = fitParameters(returns, series.periodsPerYear, fallback);
+
+      // Equity-only fit (see forecast.ts), with today's cash/PF/credit-card-debt added back as a
+      // flat, non-stochastic offset — same approach as the Forecast page's cashOffset (see its doc
+      // comment in src/pages/Forecast.tsx): only the market-driven portion carries fitted risk.
+      const cashOffset = p.cash.liquid + p.cash.vault + p.cash.pf - p.cash.creditCardDebt;
+      const startValue = lastComplete.value + cashOffset;
+
+      const terminal = forecastParametricTerminal(startValue, fit.driftAnnual, fit.volAnnual, horizonMonths, 1000);
+
+      const noteParts = fitCaveats(fit, series.granularity);
+      if (series.symbolsWithoutPrices.length > 0) {
+        noteParts.push(
+          `No price history for ${series.symbolsWithoutPrices.join(", ")} while held — ` +
+            `${series.incompletePoints} date(s) excluded from the fit.`,
+        );
+      }
+      if (p.missingPriceSymbols.length > 0) {
+        noteParts.push(
+          `No current price available for ${p.missingPriceSymbols.join(", ")} — excluded from startValue ` +
+            "rather than shown as a fabricated ₹0 value.",
+        );
+      }
+
+      return {
+        startValue: Math.round(startValue),
+        horizonMonths,
+        fittedDriftPercent: Number((fit.driftAnnual * 100).toFixed(2)),
+        fittedVolatilityPercent: Number((fit.volAnnual * 100).toFixed(2)),
+        dataPointsUsed: fit.observations,
+        granularity: series.granularity,
+        usedFallbackAssumptions: fit.usedFallback,
+        driftClamped: fit.driftClamped,
+        forecast: {
+          p10: Math.round(terminal.p10),
+          p25: Math.round(terminal.p25),
+          p50: Math.round(terminal.p50),
+          p75: Math.round(terminal.p75),
+          p90: Math.round(terminal.p90),
+        },
+        ...(p.missingPriceSymbols.length > 0 ? { missingPriceSymbols: p.missingPriceSymbols } : {}),
+        ...(noteParts.length > 0 ? { note: noteParts.join(" ") } : {}),
+      };
     },
   },
 ];

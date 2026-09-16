@@ -327,11 +327,21 @@ const ProjectionsContent = () => {
 
         {/* Main Tabs */}
         <Tabs defaultValue="overview" className="space-y-4">
+          {/* Each hint sits as its own sibling right after its TabsTrigger, not nested inside it —
+              InfoHint renders its own <button>, and TabsTrigger already renders a <button role="tab">,
+              so nesting one inside the other was invalid HTML (button-in-button) and broke keyboard/
+              screen-reader semantics for the tab. Radix's roving-focus/Collection context tracks
+              TabsTrigger by registration, not strict DOM adjacency, so extra sibling elements inside
+              TabsList (the hint icons here) don't interfere with arrow-key tab navigation. */}
           <TabsList className="w-full flex overflow-x-auto">
-            <TabsTrigger value="overview" className="shrink-0 text-xs gap-1"><Play className="w-3 h-3" /> Overview<InfoHint title="Overview" side="bottom">A what-if sandbox: enter a corpus, SIP and horizon, then run five independent scenarios (XIRR, crash, Monte Carlo, sequence risk, inflation) on those inputs.</InfoHint></TabsTrigger>
-            <TabsTrigger value="goals" className="shrink-0 text-xs gap-1"><Target className="w-3 h-3" /> Goals<InfoHint title="Goals" side="bottom">Runs a Monte Carlo on one saved goal using the money actually allocated to it, and answers: what is the probability of hitting the target by its date, and what SIP would be required?</InfoHint></TabsTrigger>
-            <TabsTrigger value="fire" className="shrink-0 text-xs gap-1"><Flame className="w-3 h-3" /> FIRE<InfoHint title="FIRE" side="bottom">Two-phase retirement simulation: accumulate with SIPs until your retirement age, then withdraw inflation-adjusted expenses until life expectancy, reporting corpus gap and survival probability.</InfoHint></TabsTrigger>
-            <TabsTrigger value="stress" className="shrink-0 text-xs gap-1"><AlertTriangle className="w-3 h-3" /> Stress Lab<InfoHint title="Stress Lab" side="bottom">Replays real crisis windows (2008 GFC, 2020 COVID, 2000 dot-com) on your current AUM at your equity weight, showing drawdown, trough and recovery time.</InfoHint></TabsTrigger>
+            <TabsTrigger value="overview" className="shrink-0 text-xs gap-1"><Play className="w-3 h-3" /> Overview</TabsTrigger>
+            <InfoHint title="Overview" side="bottom" className="shrink-0 -ml-1 mr-1">A what-if sandbox: enter a corpus, SIP and horizon, then run five independent scenarios (XIRR, crash, Monte Carlo, sequence risk, inflation) on those inputs.</InfoHint>
+            <TabsTrigger value="goals" className="shrink-0 text-xs gap-1"><Target className="w-3 h-3" /> Goals</TabsTrigger>
+            <InfoHint title="Goals" side="bottom" className="shrink-0 -ml-1 mr-1">Runs a Monte Carlo on one saved goal using the money actually allocated to it, and answers: what is the probability of hitting the target by its date, and what SIP would be required?</InfoHint>
+            <TabsTrigger value="fire" className="shrink-0 text-xs gap-1"><Flame className="w-3 h-3" /> FIRE</TabsTrigger>
+            <InfoHint title="FIRE" side="bottom" className="shrink-0 -ml-1 mr-1">Two-phase retirement simulation: accumulate with SIPs until your retirement age, then withdraw inflation-adjusted expenses until life expectancy, reporting corpus gap and survival probability.</InfoHint>
+            <TabsTrigger value="stress" className="shrink-0 text-xs gap-1"><AlertTriangle className="w-3 h-3" /> Stress Lab</TabsTrigger>
+            <InfoHint title="Stress Lab" side="bottom" className="shrink-0 -ml-1 mr-1">Replays real crisis windows (2008 GFC, 2020 COVID, 2000 dot-com) on your current AUM at your equity weight, showing drawdown, trough and recovery time.</InfoHint>
           </TabsList>
 
 
@@ -359,13 +369,19 @@ const ProjectionsContent = () => {
 
             {hasRun && (
               <Tabs defaultValue="xirr" className="space-y-4">
+                {/* See the main TabsList above for why each hint is a sibling after its trigger
+                    rather than nested inside it (button-in-button was invalid HTML). */}
                 <TabsList className="w-full flex overflow-x-auto">
-                  <TabsTrigger value="xirr" className="shrink-0 text-xs gap-1"><Play className="w-3 h-3" /> XIRR<InfoHint title="XIRR projection" formula="FV = compound(initial + monthly SIP) @ XIRR; conservative = XIRR × 0.8">Grows your current corpus and SIP forward at the money-weighted return your portfolio has actually earned, plus a −20% stress line.</InfoHint></TabsTrigger>
-                  <TabsTrigger value="crash" className="shrink-0 text-xs gap-1"><TrendingDown className="w-3 h-3" /> Crash<InfoHint title="Crash scenarios" formula="drops of −20% / −35% / −50% applied today, then recovery at expected return">Applies an instant market shock to today's corpus and shows the drawdown, years to get back to the pre-crash level, and end-of-horizon value.</InfoHint></TabsTrigger>
-                  <TabsTrigger value="montecarlo" className="shrink-0 text-xs gap-1"><Shuffle className="w-3 h-3" /> Monte Carlo<InfoHint title="Monte Carlo" formula="1,000 random return paths ~ N(expected return, volatility)">Instead of one straight-line return, it simulates 1,000 possible futures and reports the spread — worst, p10, median, p90 — plus the chance of doubling.</InfoHint></TabsTrigger>
-                  <TabsTrigger value="sequence" className="shrink-0 text-xs gap-1"><ArrowDownUp className="w-3 h-3" /> Sequence<InfoHint title="Sequence-of-returns risk" caveat="Same average return in all three paths — only the order changes.">Shows that *when* bad years arrive matters. Identical average returns are re-ordered so the bad years hit early vs late; with SIPs or withdrawals the end value differs.</InfoHint></TabsTrigger>
-                  <TabsTrigger value="inflation" className="shrink-0 text-xs gap-1"><Percent className="w-3 h-3" /> Inflation<InfoHint title="Inflation impact" formula="real = nominal ÷ (1 + i)^years, for i = 5% / 7% / 9%">Restates the projected corpus in today's rupees so you can see how much purchasing power the headline number loses.</InfoHint></TabsTrigger>
-
+                  <TabsTrigger value="xirr" className="shrink-0 text-xs gap-1"><Play className="w-3 h-3" /> XIRR</TabsTrigger>
+                  <InfoHint title="XIRR projection" formula="FV = compound(initial + monthly SIP) @ XIRR; conservative = XIRR × 0.8" className="shrink-0 -ml-1 mr-1">Grows your current corpus and SIP forward at the money-weighted return your portfolio has actually earned, plus a −20% stress line.</InfoHint>
+                  <TabsTrigger value="crash" className="shrink-0 text-xs gap-1"><TrendingDown className="w-3 h-3" /> Crash</TabsTrigger>
+                  <InfoHint title="Crash scenarios" formula="drops of −20% / −35% / −50% applied today, then recovery at expected return" className="shrink-0 -ml-1 mr-1">Applies an instant market shock to today's corpus and shows the drawdown, years to get back to the pre-crash level, and end-of-horizon value.</InfoHint>
+                  <TabsTrigger value="montecarlo" className="shrink-0 text-xs gap-1"><Shuffle className="w-3 h-3" /> Monte Carlo</TabsTrigger>
+                  <InfoHint title="Monte Carlo" formula="1,000 random return paths ~ N(expected return, volatility)" className="shrink-0 -ml-1 mr-1">Instead of one straight-line return, it simulates 1,000 possible futures and reports the spread — worst, p10, median, p90 — plus the chance of doubling.</InfoHint>
+                  <TabsTrigger value="sequence" className="shrink-0 text-xs gap-1"><ArrowDownUp className="w-3 h-3" /> Sequence</TabsTrigger>
+                  <InfoHint title="Sequence-of-returns risk" caveat="Same average return in all three paths — only the order changes." className="shrink-0 -ml-1 mr-1">Shows that *when* bad years arrive matters. Identical average returns are re-ordered so the bad years hit early vs late; with SIPs or withdrawals the end value differs.</InfoHint>
+                  <TabsTrigger value="inflation" className="shrink-0 text-xs gap-1"><Percent className="w-3 h-3" /> Inflation</TabsTrigger>
+                  <InfoHint title="Inflation impact" formula="real = nominal ÷ (1 + i)^years, for i = 5% / 7% / 9%" className="shrink-0 -ml-1 mr-1">Restates the projected corpus in today's rupees so you can see how much purchasing power the headline number loses.</InfoHint>
                 </TabsList>
                 <TabsContent value="xirr">{xirrResult && <XIRRTab result={xirrResult} hidden={hidden} inputs={inputs} />}</TabsContent>
                 <TabsContent value="crash">{crashResult && <CrashTab result={crashResult} hidden={hidden} />}</TabsContent>

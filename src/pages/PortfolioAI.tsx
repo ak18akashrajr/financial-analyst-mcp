@@ -17,6 +17,7 @@ import {
   Activity,
   Trophy,
   AlertOctagon,
+  LineChart,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { AssistantMarkdown } from '@/components/portfolio-ai/AssistantMarkdown';
@@ -58,6 +59,7 @@ export const PRESET_QUESTIONS = [
   { icon: Activity, text: "How volatile is my portfolio, and what's my beta versus NIFTY 50?", cat: 'Risk Metrics' },
   { icon: Trophy, text: 'How has my portfolio performed against NIFTY 50 over the last 90 days?', cat: 'Benchmark' },
   { icon: AlertOctagon, text: 'Have I breached any of my concentration or exposure limits?', cat: 'Limit Breaches' },
+  { icon: LineChart, text: 'What might my portfolio be worth in 5 years, based on its own history?', cat: 'Forecast' },
 ];
 
 const PortfolioAI = () => {

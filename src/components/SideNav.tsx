@@ -18,6 +18,7 @@ import {
   TrendingUp,
   Terminal,
   Gauge,
+  LineChart,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
@@ -43,6 +44,7 @@ const navGroups = [
     items: [
       { to: '/taxes', label: 'Taxes', icon: FileText },
       { to: '/projections', label: 'Projections', icon: Crosshair },
+      { to: '/forecast', label: 'Forecast', icon: LineChart },
       { to: '/deployment-plan', label: 'Deploy', icon: Target },
       { to: '/goal-track', label: 'Goals', icon: Flag },
     ],

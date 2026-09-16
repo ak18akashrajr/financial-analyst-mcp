@@ -86,7 +86,9 @@ The Portfolio AI feature is a real MCP implementation, not a prose-based tool si
 hand-rolled JSON-RPC 2.0 / MCP "Streamable HTTP" endpoint. Its tools are registered in
 [`supabase/functions/_shared/mcp-tools.ts`](supabase/functions/_shared/mcp-tools.ts)
 (`get_portfolio_summary`, `list_holdings`, `get_exposure_by_*`, `get_risk_metrics`,
-`run_stress_test`, `compare_to_benchmark`, and others), each backed by a SQL query.
+`run_stress_test`, `compare_to_benchmark`, `forecast_portfolio_value`, and others), each backed by a
+SQL query (forecast_portfolio_value additionally fits drift/volatility from the query results — see
+[`_shared/forecast.ts`](supabase/functions/_shared/forecast.ts)).
 [`supabase/functions/portfolio-ai/`](supabase/functions/portfolio-ai/index.ts) is the agent loop
 that calls those tools through [`_shared/mcp-client.ts`](supabase/functions/_shared/mcp-client.ts).
 Groq ([`_shared/providers/groq.ts`](supabase/functions/_shared/providers/groq.ts)) is the only

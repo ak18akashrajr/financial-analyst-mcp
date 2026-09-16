@@ -35,7 +35,7 @@ describe('SideNav grouping', () => {
     expect(screen.getByText('Overview')).toBeInTheDocument();
 
     // A representative item from each group is still rendered
-    ['Charts', 'Benchmark', 'Rolling', 'Taxes', 'Goals', 'AI', 'Dev Zone'].forEach((label) => {
+    ['Charts', 'Benchmark', 'Rolling', 'Taxes', 'Forecast', 'Goals', 'AI', 'Dev Zone'].forEach((label) => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
   });

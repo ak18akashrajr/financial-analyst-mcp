@@ -32,6 +32,7 @@ const Reports = lazy(() => import("./pages/Reports.tsx"));
 const DollarAdjustedReturns = lazy(() => import("./pages/DollarAdjustedReturns.tsx"));
 const Benchmark = lazy(() => import("./pages/Benchmark.tsx"));
 const RiskMetrics = lazy(() => import("./pages/RiskMetrics.tsx"));
+const Forecast = lazy(() => import("./pages/Forecast.tsx"));
 const DevZone = lazy(() => import("./pages/DevZone.tsx"));
 
 const queryClient = new QueryClient();
@@ -80,6 +81,7 @@ const App = () => (
                     <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
                     <Route path="/benchmark" element={<Benchmark />} />
                     <Route path="/risk-metrics" element={<RiskMetrics />} />
+                    <Route path="/forecast" element={<Forecast />} />
                     <Route path="/dev-zone" element={<DevZone />} />
                   </Route>
                 </Route>
