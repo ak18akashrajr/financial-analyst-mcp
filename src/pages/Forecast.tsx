@@ -53,6 +53,17 @@ function subtractYears(date: string, years: number): string {
   return result.toISOString().slice(0, 10);
 }
 
+/**
+ * Formats a chart tooltip value. Every series here is a plain number EXCEPT `band`, whose recharts
+ * `Area` dataKey holds a `[p10, p90]` tuple (the range-Area convention) — formatting that tuple as a
+ * single currency figure via `Number()`/`Intl.NumberFormat` silently produced "₹NaN" rather than
+ * throwing, which is what shipped to production before this was caught. Exported so this branch has
+ * direct unit coverage without needing to drive recharts' own hover/tooltip DOM in a test.
+ */
+export function formatChartTooltipValue(value: number | [number, number], formatOne: (n: number) => string): string {
+  return Array.isArray(value) ? `${formatOne(value[0])} – ${formatOne(value[1])}` : formatOne(value);
+}
+
 interface PriceRow {
   symbol: string;
   date: string;
@@ -467,7 +478,10 @@ const ForecastContent = () => {
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} className="fill-muted-foreground" minTickGap={40} />
                   <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" tickFormatter={(v) => mask(fmt(v))} width={70} />
                   <Tooltip
-                    formatter={(value: number, name: string) => [mask(fmtFull(value)), name]}
+                    formatter={(value: number | [number, number], name: string) => [
+                      mask(formatChartTooltipValue(value, fmtFull)),
+                      name,
+                    ]}
                     labelFormatter={(label) => label}
                   />
                   <ChartRangeReferenceArea selection={rangeSelection.selection} data={displayData} labelKey="date" />

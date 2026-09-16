@@ -6,7 +6,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import Forecast from '@/pages/Forecast';
+import Forecast, { formatChartTooltipValue } from '@/pages/Forecast';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import type { Transaction } from '@/types/portfolio';
@@ -234,5 +234,25 @@ describe('Forecast page', () => {
     mockPortfolio({ loading: true });
     renderPage();
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
+  });
+});
+
+describe('formatChartTooltipValue', () => {
+  const fmt = (n: number) => `₹${n}`;
+
+  it('formats a plain number with the given formatter', () => {
+    expect(formatChartTooltipValue(1000, fmt)).toBe('₹1000');
+  });
+
+  it('formats a [p10, p90] tuple as a range, not "₹NaN"', () => {
+    // Regression case: the `band` series' recharts Area dataKey holds a [lo, hi] tuple (the
+    // range-Area convention). Calling a plain currency formatter directly on that array silently
+    // produced "₹NaN" instead of throwing — this is exactly the shape that shipped broken.
+    expect(formatChartTooltipValue([100, 200], fmt)).toBe('₹100 – ₹200');
+  });
+
+  it('never contains the literal string "NaN" for either input shape', () => {
+    expect(formatChartTooltipValue(500, fmt)).not.toContain('NaN');
+    expect(formatChartTooltipValue([500, 900], fmt)).not.toContain('NaN');
   });
 });
