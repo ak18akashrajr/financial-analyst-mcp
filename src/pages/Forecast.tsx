@@ -23,7 +23,8 @@ import { Label } from '@/components/ui/label';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import { computeRangeReturn } from '@/lib/chartRange';
-import { buildValueSeries, flowAdjustedReturns, type SeriesTransaction } from '@/lib/portfolioSeries';
+import { buildValueSeries, flowAdjustedReturns, daysBetween, type SeriesTransaction } from '@/lib/portfolioSeries';
+import { todayLocalDateString } from '@/lib/dateUtils';
 import {
   fitParameters,
   fitCaveats,
@@ -223,6 +224,15 @@ const ForecastContent = () => {
   const lastPoint = completePoints[completePoints.length - 1];
   const startValue = (lastPoint?.value ?? 0) + cashOffset;
 
+  // The forecast is anchored at the last date with a real historical_prices row for this
+  // portfolio's holdings — NOT the literal calendar date — since there's no realized value to plot
+  // for a date with no price. If historical_prices hasn't been refreshed in a while, that anchor can
+  // be meaningfully behind today (backfilling only happens when the user clicks the button below),
+  // which silently makes every "in N years" figure count forward from a stale starting point instead
+  // of from now. `staleDays` drives the caveat below rather than leaving that gap unexplained.
+  const staleDays = lastPoint ? daysBetween(lastPoint.date, todayLocalDateString()) : 0;
+  const STALE_THRESHOLD_DAYS = 7;
+
   const fan = useMemo(() => {
     if (!lastPoint) return null;
     const vol = useEwma ? fit.ewmaVolAnnual : fit.volAnnual;
@@ -347,6 +357,13 @@ const ForecastContent = () => {
           </div>
         ) : (
           <>
+            {staleDays > STALE_THRESHOLD_DAYS && (
+              <p className="text-xs text-amber-500">
+                ⚠ Price data is current as of <strong>{lastPoint!.date}</strong> — {staleDays} days behind today.
+                The forecast is anchored there, not today, so every "in N years" figure counts forward from that
+                date. Click "Backfill 2y daily prices" above to bring this current.
+              </p>
+            )}
             {series.symbolsWithoutPrices.length > 0 && (
               <p className="text-xs text-amber-500">
                 ⚠ No price history for: {series.symbolsWithoutPrices.join(', ')} — {series.incompletePoints} date(s)
@@ -455,7 +472,12 @@ const ForecastContent = () => {
                 value={mask(`${((useEwma ? fit.ewmaVolAnnual : fit.volAnnual) * 100).toFixed(1)}%`)}
               />
               <Stat
-                label={<LabelWithHint label="Current Value" title="Starting Value" side="top">Equity + cash/PF − credit-card debt, today.</LabelWithHint>}
+                label={
+                  <LabelWithHint label="Current Value" title="Starting Value" side="top">
+                    Equity as of the last priced date ({lastPoint?.date ?? '—'}) + today's cash/PF − credit-card
+                    debt. If price data is stale, the equity portion is as-of that older date, not literally today.
+                  </LabelWithHint>
+                }
                 value={mask(fmt(startValue))}
               />
               <Stat
