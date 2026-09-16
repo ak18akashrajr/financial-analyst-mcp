@@ -81,6 +81,21 @@ function seedDailyPrices(count: number) {
   }
 }
 
+/**
+ * `count` consecutive daily closes for AAPL, ending `endDaysAgo` days before the real "today" —
+ * computed relative to the actual system clock (unlike `seedDailyPrices`' fixed 2026-01-01 start)
+ * so a staleness assertion stays correct regardless of when the suite runs.
+ */
+function seedDailyPricesEndingDaysAgo(count: number, endDaysAgo: number) {
+  const end = new Date();
+  end.setDate(end.getDate() - endDaysAgo);
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - i);
+    historicalPriceRows.push({ symbol: 'AAPL', date: d.toISOString().slice(0, 10), close: 100 * 1.001 ** (count - 1 - i) });
+  }
+}
+
 describe('Forecast page', () => {
   beforeEach(() => {
     historicalPriceRows.length = 0;
@@ -124,6 +139,31 @@ describe('Forecast page', () => {
     expect(screen.queryByText(/blended asset-class assumptions/i)).not.toBeInTheDocument();
     expect(screen.getByText('Fitted Volatility')).toBeInTheDocument();
     expect(screen.getByText('Current Value')).toBeInTheDocument();
+  });
+
+  it('warns when the forecast is anchored on stale price data, well behind today', async () => {
+    // Reported live: a user saw a date from over a year ago rendered as part of the forecast band
+    // and assumed the chart was broken. It wasn't — the forecast correctly starts from the last
+    // date with a real historical_prices row, not the literal calendar date, since there's no
+    // realized value to plot for an unpriced day. The actual gap was that nothing on the page said
+    // so. 90 days ending 400 days ago is unambiguously stale.
+    // The transaction date must be on/before the earliest seeded price bar — buildValueSeries only
+    // includes price bars on or after the first transaction date.
+    seedDailyPricesEndingDaysAgo(90, 400);
+    mockPortfolio({ transactions: [txn({ date: '2020-01-01' })] });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/days behind today/i)).toBeInTheDocument());
+    expect(screen.getByText(/anchored there, not today/i)).toBeInTheDocument();
+  });
+
+  it('shows no staleness caveat when price data is current', async () => {
+    seedDailyPricesEndingDaysAgo(90, 0); // last priced day is today
+    mockPortfolio({ transactions: [txn({ date: '2020-01-01' })] });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Fitted Drift')).toBeInTheDocument());
+    expect(screen.queryByText(/days behind today/i)).not.toBeInTheDocument();
   });
 
   it('restricts the fit to the selected lookback window without changing the default (All) behavior', async () => {
