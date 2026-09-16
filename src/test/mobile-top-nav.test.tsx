@@ -28,7 +28,7 @@ describe('MobileTopNav', () => {
       </MemoryRouter>,
     );
 
-    ['Overview', 'Charts', 'Reports', 'Benchmark', 'Taxes', 'Projections', 'AI', 'Dev Zone'].forEach((label) => {
+    ['Overview', 'Charts', 'Reports', 'Benchmark', 'Taxes', 'Projections', 'Forecast', 'AI', 'Dev Zone'].forEach((label) => {
       expect(screen.getByText(label)).toBeInTheDocument();
     });
 

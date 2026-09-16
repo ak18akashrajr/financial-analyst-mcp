@@ -21,6 +21,9 @@ const COMPLEXITY_KEYWORDS = [
   "limit",
   "crash",
   "correlat",
+  "forecast",
+  "predict",
+  "projection",
 ];
 
 export interface ComplexityVerdict {

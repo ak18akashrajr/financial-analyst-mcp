@@ -14,6 +14,9 @@ describe("isComplexQuery", () => {
     expect(isComplexQuery("Compare my returns to the benchmark")).toBe(true);
     expect(isComplexQuery("What's my portfolio beta?")).toBe(true);
     expect(isComplexQuery("Am I breaching any limits?")).toBe(true);
+    expect(isComplexQuery("Can you forecast my portfolio value?")).toBe(true);
+    expect(isComplexQuery("What would you predict for next year?")).toBe(true);
+    expect(isComplexQuery("Give me a projection for the next 2 years")).toBe(true);
   });
 
   it("routes multi-part questions to the complex tier", () => {

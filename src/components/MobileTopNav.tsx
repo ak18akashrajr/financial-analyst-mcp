@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Terminal,
   Gauge,
+  LineChart,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
@@ -28,6 +29,7 @@ const tabs = [
   { to: '/dollar-adjusted-returns', label: 'USD View', icon: DollarSign },
   { to: '/taxes', label: 'Taxes', icon: FileText },
   { to: '/projections', label: 'Projections', icon: Crosshair },
+  { to: '/forecast', label: 'Forecast', icon: LineChart },
   { to: '/deployment-plan', label: 'Deploy', icon: Target },
   { to: '/goal-track', label: 'Goals', icon: Flag },
   { to: '/rolling-returns', label: 'Rolling', icon: Activity },

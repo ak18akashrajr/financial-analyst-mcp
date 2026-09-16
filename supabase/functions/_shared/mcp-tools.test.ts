@@ -276,3 +276,99 @@ describe("run_stress_test", () => {
     expect(result.totalLossPercent).toBeCloseTo((60 / 1300) * 100, 2);
   });
 });
+
+describe("forecast_portfolio_value", () => {
+  /** `count` consecutive daily closes for a symbol starting 2026-01-01, drifting gently upward. */
+  function dailyCloses(symbol: string, count: number, base: number) {
+    return Array.from({ length: count }, (_, i) => {
+      const d = new Date(Date.UTC(2026, 0, 1));
+      d.setUTCDate(d.getUTCDate() + i);
+      return { symbol, date: d.toISOString().slice(0, 10), close: base * 1.001 ** i };
+    });
+  }
+
+  it("fits drift/volatility from daily price history and returns an ordered percentile band", async () => {
+    const sb = makeFakeSb({
+      ...BASE_TABLES,
+      current_prices: { rows: [{ symbol: "TCS", price: 110 }, { symbol: "HDFC", price: 210 }] },
+      historical_prices: { rows: [...dailyCloses("TCS", 90, 100), ...dailyCloses("HDFC", 90, 200)] },
+    });
+
+    const result = (await findTool("forecast_portfolio_value")!.handler({ horizonMonths: 12 }, sb)) as {
+      startValue: number;
+      horizonMonths: number;
+      dataPointsUsed: number;
+      granularity: string;
+      usedFallbackAssumptions: boolean;
+      forecast: { p10: number; p25: number; p50: number; p75: number; p90: number };
+    };
+
+    expect(Number.isInteger(result.startValue)).toBe(true);
+    expect(result.horizonMonths).toBe(12);
+    expect(result.granularity).toBe("daily");
+    expect(result.dataPointsUsed).toBeGreaterThanOrEqual(60);
+    expect(result.usedFallbackAssumptions).toBe(false);
+    expect(Number.isInteger(result.forecast.p50)).toBe(true);
+    expect(result.forecast.p10).toBeLessThanOrEqual(result.forecast.p25);
+    expect(result.forecast.p25).toBeLessThanOrEqual(result.forecast.p50);
+    expect(result.forecast.p50).toBeLessThanOrEqual(result.forecast.p75);
+    expect(result.forecast.p75).toBeLessThanOrEqual(result.forecast.p90);
+  });
+
+  it("falls back to blended asset-class assumptions with too little price history, and says so", async () => {
+    const sb = makeFakeSb({
+      ...BASE_TABLES,
+      current_prices: { rows: [{ symbol: "TCS", price: 110 }, { symbol: "HDFC", price: 210 }] },
+      historical_prices: { rows: [...dailyCloses("TCS", 5, 100), ...dailyCloses("HDFC", 5, 200)] },
+    });
+
+    const result = (await findTool("forecast_portfolio_value")!.handler({}, sb)) as {
+      usedFallbackAssumptions: boolean;
+      dataPointsUsed: number;
+      note?: string;
+      horizonMonths: number;
+    };
+
+    expect(result.usedFallbackAssumptions).toBe(true);
+    expect(result.horizonMonths).toBe(24); // default, not passed
+    expect(String(result.note)).toContain("return observations available");
+    expect(String(result.note)).toContain("blended asset-class assumptions");
+  });
+
+  it("returns a plain note with no forecast when there is no priced history at all", async () => {
+    const sb = makeFakeSb({ ...BASE_TABLES, current_prices: { rows: [{ symbol: "TCS", price: 110 }, { symbol: "HDFC", price: 210 }] } });
+
+    const result = (await findTool("forecast_portfolio_value")!.handler({}, sb)) as {
+      note?: string;
+      forecast?: unknown;
+    };
+
+    expect(result.forecast).toBeUndefined();
+    expect(String(result.note)).toContain("Backfill");
+  });
+
+  it("flags a symbol missing its current price rather than silently excluding it from startValue", async () => {
+    const sb = makeFakeSb({
+      ...BASE_TABLES,
+      current_prices: { rows: [{ symbol: "TCS", price: 110 }] }, // HDFC missing
+      historical_prices: { rows: [...dailyCloses("TCS", 90, 100), ...dailyCloses("HDFC", 90, 200)] },
+    });
+
+    const result = (await findTool("forecast_portfolio_value")!.handler({}, sb)) as {
+      missingPriceSymbols?: string[];
+      note?: string;
+    };
+
+    expect(result.missingPriceSymbols).toEqual(["HDFC"]);
+    expect(String(result.note)).toContain("HDFC");
+  });
+
+  it("rejects an invalid horizonMonths before the handler runs", async () => {
+    // 0 fails the schema's `minimum: 1` — this is a schema-validation concern
+    // (mcp-schema-validate.test.ts), asserted here only to confirm the tool's own inputSchema
+    // actually declares the bound, not to re-test the validator itself.
+    const { validateArgs } = await import("./mcp-schema-validate.ts");
+    const tool = findTool("forecast_portfolio_value")!;
+    expect(validateArgs(tool.inputSchema, { horizonMonths: 0 })).toMatch(/must be >= 1/);
+  });
+});
