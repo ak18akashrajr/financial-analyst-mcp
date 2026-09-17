@@ -4,7 +4,6 @@ import { HoldingsTable } from '@/components/HoldingsTable';
 import { TopMovers } from '@/components/TopMovers';
 import { RecentActivity } from '@/components/RecentActivity';
 import { SIPSummary } from '@/components/SIPSummary';
-import { CashSection } from '@/components/CashSection';
 import { AddTransactionForm } from '@/components/AddTransactionForm';
 import { ExposureSection } from '@/components/ExposureSection';
 import { DollarReturnsCard } from '@/components/DollarReturnsCard';
@@ -119,14 +118,18 @@ const IndexContent = () => {
           </div>
         )}
 
-        {/* Summary */}
-        <SummaryBar summary={summary} transactions={transactions} />
+        {/* Summary — Operating Cash / Cash Reserve / PF / Outstanding Liabilities are
+            editable directly from their boxes here (Settle Now included on the
+            liability box); the old separate Cash Management section was removed. */}
+        <SummaryBar
+          summary={summary}
+          transactions={transactions}
+          onUpdateCash={handleUpdateCash}
+          onPayCreditCard={payCreditCardBill}
+        />
 
         {/* Dollar-Adjusted Returns overview */}
         <DollarReturnsCard holdings={holdings} summary={summary} />
-
-        {/* Cash Management — image-2 inspired card grid */}
-        <CashSection cash={cash} onUpdate={handleUpdateCash} onPayCreditCard={payCreditCardBill} />
 
         {/* Expense-to-Income Ratio — auto-tracked from bank balance changes */}
         <ExpenseIncomeRatioCard cashflow={monthlyCashflow} />

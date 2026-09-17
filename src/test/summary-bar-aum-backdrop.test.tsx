@@ -49,7 +49,12 @@ const transactions: Transaction[] = [];
 function renderSummary(summary: PortfolioSummary) {
   render(
     <MemoryRouter>
-      <SummaryBar summary={summary} transactions={transactions} />
+      <SummaryBar
+        summary={summary}
+        transactions={transactions}
+        onUpdateCash={vi.fn()}
+        onPayCreditCard={vi.fn()}
+      />
     </MemoryRouter>,
   );
 }
