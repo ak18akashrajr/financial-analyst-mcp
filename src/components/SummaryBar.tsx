@@ -1,6 +1,7 @@
-import type { PortfolioSummary, Transaction } from '@/types/portfolio';
+import { useState } from 'react';
+import type { CashSettings, PortfolioSummary, Transaction } from '@/types/portfolio';
 import { usePrivacy } from '@/contexts/PrivacyContext';
-import { TrendingUp, TrendingDown, ArrowUpRight, Wallet, Vault, CreditCard, Landmark } from 'lucide-react';
+import { TrendingUp, TrendingDown, ArrowUpRight, Wallet, Vault, CreditCard, Landmark, Pencil, Check } from 'lucide-react';
 import { XirrDetailsCard } from '@/components/XirrDetailsCard';
 
 function fmtRaw(n: number): string {
@@ -10,13 +11,52 @@ function fmtRaw(n: number): string {
 interface Props {
   summary: PortfolioSummary;
   transactions: Transaction[];
+  onUpdateCash: (updates: Partial<CashSettings>, options?: { excludeFromCashflow?: boolean }) => void;
+  onPayCreditCard: () => void;
 }
 
-export function SummaryBar({ summary, transactions }: Props) {
+type CashField = 'liquid' | 'vault' | 'pf' | 'debt';
+
+// Only these two are real bank balances for income/expense tracking purposes
+// (see src/lib/expenseIncomeRatio.ts) — PF and credit-card-debt edits never
+// show the "exclude from tracking" toggle.
+const CASHFLOW_TRACKED_FIELDS: CashField[] = ['liquid', 'vault'];
+
+export function SummaryBar({ summary, transactions, onUpdateCash, onPayCreditCard }: Props) {
   const { mask } = usePrivacy();
   const fmt = (n: number) => mask(fmtRaw(n));
 
   const pnlPositive = summary.totalPnl >= 0;
+
+  const [editing, setEditing] = useState<CashField | null>(null);
+  const [inputVal, setInputVal] = useState('');
+  const [excludeFromCashflow, setExcludeFromCashflow] = useState(false);
+
+  const fieldValue = (field: CashField) =>
+    field === 'liquid' ? summary.liquidCash :
+    field === 'vault' ? summary.vaultCash :
+    field === 'pf' ? summary.pfBalance :
+    summary.creditCardDebt;
+
+  const startEdit = (field: CashField) => {
+    setEditing(field);
+    setInputVal(fieldValue(field).toString());
+    setExcludeFromCashflow(false);
+  };
+
+  const save = () => {
+    const val = parseFloat(inputVal);
+    if (!isNaN(val) && val >= 0 && editing) {
+      const key =
+        editing === 'liquid' ? 'liquidCash' :
+        editing === 'vault' ? 'vaultCash' :
+        editing === 'pf' ? 'pfBalance' :
+        'creditCardDebt';
+      const options = CASHFLOW_TRACKED_FIELDS.includes(editing) ? { excludeFromCashflow } : undefined;
+      onUpdateCash({ [key]: val } as Partial<CashSettings>, options);
+    }
+    setEditing(null);
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -60,16 +100,59 @@ export function SummaryBar({ summary, transactions }: Props) {
       {/* XIRR — click for Overall / ex-PF / benchmark breakdown */}
       <XirrDetailsCard overallXirr={summary.xirr} portfolioXirr={summary.xirrExPf} transactions={transactions} />
 
-      {/* Cash row */}
+      {/* Cash row — Operating Cash / Cash Reserve / PF / Outstanding Liabilities are
+          editable in place (moved here from the old Cash Management section); Principal
+          Capital Allocated is a derived figure, so it stays read-only. */}
       <div className="lg:col-span-12 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-        <MiniStat icon={<Wallet className="w-3.5 h-3.5" />} label="Operating Cash" value={fmt(summary.liquidCash)} />
-        <MiniStat icon={<Vault className="w-3.5 h-3.5" />} label="Cash Reserve" value={fmt(summary.vaultCash)} />
-        <MiniStat icon={<Landmark className="w-3.5 h-3.5" />} label="PF (PPF/EPF)" value={fmt(summary.pfBalance)} />
-        <MiniStat
+        <EditableMiniStat
+          icon={<Wallet className="w-3.5 h-3.5" />}
+          label="Operating Cash"
+          value={fmt(summary.liquidCash)}
+          editing={editing === 'liquid'}
+          inputVal={inputVal}
+          setInputVal={setInputVal}
+          onEdit={() => startEdit('liquid')}
+          onSave={save}
+          showExcludeToggle
+          excludeChecked={excludeFromCashflow}
+          onExcludeChange={setExcludeFromCashflow}
+        />
+        <EditableMiniStat
+          icon={<Vault className="w-3.5 h-3.5" />}
+          label="Cash Reserve"
+          value={fmt(summary.vaultCash)}
+          editing={editing === 'vault'}
+          inputVal={inputVal}
+          setInputVal={setInputVal}
+          onEdit={() => startEdit('vault')}
+          onSave={save}
+          showExcludeToggle
+          excludeChecked={excludeFromCashflow}
+          onExcludeChange={setExcludeFromCashflow}
+        />
+        <EditableMiniStat
+          icon={<Landmark className="w-3.5 h-3.5" />}
+          label="PF (PPF/EPF)"
+          value={fmt(summary.pfBalance)}
+          editing={editing === 'pf'}
+          inputVal={inputVal}
+          setInputVal={setInputVal}
+          onEdit={() => startEdit('pf')}
+          onSave={save}
+        />
+        <EditableMiniStat
           icon={<CreditCard className="w-3.5 h-3.5" />}
           label="Outstanding Liabilities"
           value={summary.creditCardDebt > 0 ? `−${fmt(summary.creditCardDebt)}` : fmt(0)}
           tone={summary.creditCardDebt > 0 ? 'loss' : 'default'}
+          editing={editing === 'debt'}
+          inputVal={inputVal}
+          setInputVal={setInputVal}
+          onEdit={() => startEdit('debt')}
+          onSave={save}
+          showSettle={summary.creditCardDebt > 0}
+          onSettle={onPayCreditCard}
+          settleDisabled={summary.vaultCash < summary.creditCardDebt}
         />
         <MiniStat
           icon={<TrendingUp className="w-3.5 h-3.5" />}
@@ -172,6 +255,112 @@ function MiniStat({
           {value}
         </p>
       </div>
+    </div>
+  );
+}
+
+/** Same footprint as `MiniStat` at rest — grows in place only while editing (or when
+ * "Settle Now" is shown for an outstanding liability), matching the other cash boxes. */
+function EditableMiniStat({
+  icon,
+  label,
+  value,
+  tone = 'default',
+  editing,
+  inputVal,
+  setInputVal,
+  onEdit,
+  onSave,
+  showExcludeToggle,
+  excludeChecked,
+  onExcludeChange,
+  showSettle,
+  onSettle,
+  settleDisabled,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone?: 'default' | 'loss';
+  editing: boolean;
+  inputVal: string;
+  setInputVal: (v: string) => void;
+  onEdit: () => void;
+  onSave: () => void;
+  /** Shown only for balances that feed the expense-to-income ratio (Operating Cash / Cash Reserve). */
+  showExcludeToggle?: boolean;
+  excludeChecked?: boolean;
+  onExcludeChange?: (checked: boolean) => void;
+  showSettle?: boolean;
+  onSettle?: () => void;
+  settleDisabled?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-3.5">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-secondary text-foreground flex items-center justify-center shrink-0">
+          {icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-1">
+            <p className="text-[11px] text-muted-foreground truncate">{label}</p>
+            {!editing && (
+              <button onClick={onEdit} className="text-muted-foreground hover:text-foreground transition shrink-0">
+                <Pencil className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          {!editing && (
+            <p
+              className={`text-sm font-semibold tracking-tight truncate ${
+                tone === 'loss' ? 'text-loss' : 'text-foreground'
+              }`}
+            >
+              {value}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {editing && (
+        <div className="mt-2.5 space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              className="flex-1 px-2 py-1.5 border border-input rounded-md text-sm bg-background text-foreground"
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && onSave()}
+              autoFocus
+            />
+            <button onClick={onSave} className="p-1.5 rounded-md bg-foreground text-background">
+              <Check className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {showExcludeToggle && (
+            <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer">
+              <input
+                type="checkbox"
+                checked={excludeChecked ?? false}
+                onChange={(e) => onExcludeChange?.(e.target.checked)}
+                className="rounded border-input"
+              />
+              Transfer or correction — exclude from income/expense
+            </label>
+          )}
+        </div>
+      )}
+
+      {!editing && showSettle && (
+        <button
+          onClick={onSettle}
+          disabled={settleDisabled}
+          title={settleDisabled ? 'Insufficient Cash Reserve' : 'Settle outstanding liability from Cash Reserve'}
+          className="mt-2 w-full text-[11px] px-2 py-1.5 rounded-md bg-foreground text-background hover:opacity-90 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+        >
+          <CreditCard className="w-3 h-3" /> Settle Now
+        </button>
+      )}
     </div>
   );
 }
