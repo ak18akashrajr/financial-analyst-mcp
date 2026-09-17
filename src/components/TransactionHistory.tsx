@@ -5,8 +5,19 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 
 interface Props {
   transactions: Transaction[];
-  onUpdate: (id: string, updates: { quantity?: number; price?: number }) => void;
+  onUpdate: (id: string, updates: { quantity?: number; price?: number; date?: string }) => void;
   onDelete: (id: string) => void;
+}
+
+/** yyyy-mm-dd for an <input type="date">, in the transaction's own local calendar day
+ * rather than UTC — otherwise a transaction stored just after midnight IST can show the
+ * previous day in the edit field. */
+function toDateInputValue(iso: string): string {
+  const d = new Date(iso);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 // How many rows render before the "Show more" control appears. This is the
@@ -25,6 +36,7 @@ export function TransactionHistory({ transactions, onUpdate, onDelete }: Props) 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState('');
   const [editPrice, setEditPrice] = useState('');
+  const [editDate, setEditDate] = useState('');
   // No reset effect needed: HoldingsTable keys this component per symbol
   // (`${h.symbol}-history`) and only mounts it for the expanded row, so
   // switching symbols remounts with a fresh count rather than inheriting the
@@ -40,13 +52,14 @@ export function TransactionHistory({ transactions, onUpdate, onDelete }: Props) 
     setEditingId(t.id);
     setEditQty(t.quantity.toString());
     setEditPrice(t.price.toString());
+    setEditDate(toDateInputValue(t.date));
   };
 
   const saveEdit = (id: string) => {
     const qty = parseFloat(editQty);
     const price = parseFloat(editPrice);
-    if (!isNaN(qty) && qty > 0 && !isNaN(price) && price > 0) {
-      onUpdate(id, { quantity: qty, price });
+    if (!isNaN(qty) && qty > 0 && !isNaN(price) && price > 0 && editDate) {
+      onUpdate(id, { quantity: qty, price, date: editDate });
     }
     setEditingId(null);
   };
@@ -64,9 +77,18 @@ export function TransactionHistory({ transactions, onUpdate, onDelete }: Props) 
       <div className="space-y-1">
         {visible.map((t) => (
           <div key={t.id} className="flex items-center gap-3 text-xs py-1.5 px-2 rounded hover:bg-muted/50">
-            <span className="text-muted-foreground w-20">
-              {new Date(t.date).toLocaleDateString('en-IN')}
-            </span>
+            {editingId === t.id ? (
+              <input
+                type="date"
+                className="w-28 px-1 py-0.5 border border-input rounded bg-background text-foreground text-xs"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+              />
+            ) : (
+              <span className="text-muted-foreground w-20">
+                {new Date(t.date).toLocaleDateString('en-IN')}
+              </span>
+            )}
             <span className={`w-10 font-medium ${t.type === 'BUY' ? 'text-gain' : 'text-loss'}`}>
               {t.type}
             </span>

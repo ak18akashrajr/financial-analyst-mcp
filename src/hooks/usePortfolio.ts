@@ -273,7 +273,7 @@ export function usePortfolio() {
     await recordNetWorthSnapshot();
   }, [recordNetWorthSnapshot, activeMemberId]);
 
-  const updateTransaction = useCallback(async (id: string, updates: Partial<Pick<Transaction, 'quantity' | 'price'>>) => {
+  const updateTransaction = useCallback(async (id: string, updates: Partial<Pick<Transaction, 'quantity' | 'price' | 'date'>>) => {
     const { error } = await supabase
       .from('transactions')
       .update(updates)

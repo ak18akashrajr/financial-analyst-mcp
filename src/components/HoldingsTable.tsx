@@ -14,7 +14,7 @@ const CATEGORIES: Category[] = ['Stocks', 'Mutual Funds', 'Fixed Deposits', 'Gol
 interface Props {
   holdings: DerivedHolding[];
   onUpdatePrice: (symbol: string, price: number) => void;
-  onUpdateTransaction: (id: string, updates: { quantity?: number; price?: number }) => void;
+  onUpdateTransaction: (id: string, updates: { quantity?: number; price?: number; date?: string }) => void;
   onDeleteTransaction: (id: string) => void;
   onUpdateMetadata: (symbol: string, geography: string, sector: string) => void;
 }
