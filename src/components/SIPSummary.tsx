@@ -1,9 +1,18 @@
 import { useMemo, useState, useEffect } from 'react';
 import type { Transaction } from '@/types/portfolio';
 import { usePrivacy } from '@/contexts/PrivacyContext';
-import { TrendingUp, Calendar, Target, Pencil, Check, X, Sparkles } from 'lucide-react';
+import { TrendingUp, TrendingDown, Calendar, Target, Pencil, Check, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+
+const TARGET_HIT_MESSAGES = [
+  'Mapla! Target smashed this month 🎯 Compounding loves consistency — keep it rolling!',
+  'Another month, another brick in the wall. Future you says thanks.',
+  "That's the habit that builds wealth. Don't stop now.",
+  'Consistency beats intensity. You just proved it again.',
+  'The market rewards those who show up every month — you just did.',
+];
 
 function fmtRaw(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -49,7 +58,7 @@ export function SIPSummary({ transactions }: Props) {
     const cy = now.getFullYear();
 
     let thisMonthTotal = 0;
-    const byFY: Record<string, { total: number; months: Set<string> }> = {};
+    const byFY: Record<string, { total: number; months: Set<string>; startYear: number }> = {};
 
     for (const t of transactions) {
       if (t.type !== 'BUY') continue;
@@ -57,17 +66,32 @@ export function SIPSummary({ transactions }: Props) {
       const amt = t.quantity * t.price;
       if (d.getMonth() === cm && d.getFullYear() === cy) thisMonthTotal += amt;
       const fy = getFY(d);
-      if (!byFY[fy]) byFY[fy] = { total: 0, months: new Set() };
+      const startYear = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+      if (!byFY[fy]) byFY[fy] = { total: 0, months: new Set(), startYear };
       byFY[fy].total += amt;
       byFY[fy].months.add(`${d.getFullYear()}-${d.getMonth()}`);
     }
 
+    const avgByStartYear = new Map<number, number>();
+    for (const v of Object.values(byFY)) {
+      avgByStartYear.set(v.startYear, v.total / Math.max(v.months.size, 1));
+    }
+
+    const fyLabel = (startYear: number) => `FY ${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
+
     const fyAverages = Object.entries(byFY)
-      .map(([fy, v]) => ({ fy, total: v.total, monthsActive: v.months.size, avg: v.total / Math.max(v.months.size, 1) }))
+      .map(([fy, v]) => {
+        const avg = v.total / Math.max(v.months.size, 1);
+        const prevAvg = avgByStartYear.get(v.startYear - 1);
+        const yoyPct = prevAvg && prevAvg > 0 ? ((avg - prevAvg) / prevAvg) * 100 : null;
+        return { fy, total: v.total, monthsActive: v.months.size, avg, yoyPct, prevFyLabel: fyLabel(v.startYear - 1) };
+      })
       .sort((a, b) => b.fy.localeCompare(a.fy));
 
     return { thisMonthTotal, fyAverages, currentFY: getFY(now) };
   }, [transactions]);
+
+  const [hitMessage, setHitMessage] = useState(TARGET_HIT_MESSAGES[0]);
 
   const progressPct = target > 0 ? Math.min(100, (thisMonthTotal / target) * 100) : 0;
   const achieved = target > 0 && thisMonthTotal >= target;
@@ -127,13 +151,22 @@ export function SIPSummary({ transactions }: Props) {
                   <p className="text-sm font-semibold text-foreground">{fmt(target)}</p>
                   <p className="text-[11px] text-muted-foreground">{progressPct.toFixed(0)}%</p>
                 </div>
-                <Progress value={progressPct} className="h-1.5 mt-1.5" />
                 {achieved ? (
-                  <div className="mt-2 flex items-start gap-1.5 text-[11px] text-gain font-medium">
-                    <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
-                    <span>Mapla! Target smashed this month 🎯 Compounding loves consistency — keep it rolling!</span>
-                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className="cursor-help"
+                        onMouseEnter={() => setHitMessage(TARGET_HIT_MESSAGES[Math.floor(Math.random() * TARGET_HIT_MESSAGES.length)])}
+                      >
+                        <Progress value={progressPct} className="h-1.5 mt-1.5 [&>div]:bg-gain" />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>{hitMessage}</TooltipContent>
+                  </Tooltip>
                 ) : (
+                  <Progress value={progressPct} className="h-1.5 mt-1.5" />
+                )}
+                {!achieved && (
                   <p className="text-[11px] text-muted-foreground mt-2">
                     {fmt(remaining)} left to hit target
                   </p>
@@ -169,7 +202,20 @@ export function SIPSummary({ transactions }: Props) {
                       <td className="py-1.5 pr-3 font-medium text-foreground">
                         {r.fy}{r.fy === currentFY && <span className="ml-1.5 text-[10px] text-primary">(current)</span>}
                       </td>
-                      <td className="py-1.5 pr-3 text-foreground">{fmt(r.total)}</td>
+                      <td className="py-1.5 pr-3 text-foreground">
+                        <div className="flex items-center gap-1.5">
+                          <span>{fmt(r.total)}</span>
+                          {r.yoyPct !== null && (
+                            <span
+                              className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${r.yoyPct >= 0 ? 'text-gain' : 'text-loss'}`}
+                              title={`Avg/month vs ${r.prevFyLabel}`}
+                            >
+                              {r.yoyPct >= 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+                              {Math.abs(r.yoyPct).toFixed(0)}%
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-1.5 pr-3 text-muted-foreground">{r.monthsActive}</td>
                       <td className="py-1.5 font-semibold text-foreground">{fmt(r.avg)}</td>
                     </tr>
