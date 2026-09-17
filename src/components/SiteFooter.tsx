@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
+import { useActiveMemberName } from '@/hooks/useActiveMemberName';
 
 export function SiteFooter() {
+  const activeMemberName = useActiveMemberName();
   return (
     <footer className="border-t border-border mt-16">
       <div className="max-w-6xl mx-auto px-4 pt-20 pb-10">
@@ -20,7 +22,7 @@ export function SiteFooter() {
 
         <div className="mt-16 pt-5 border-t border-border flex items-center justify-between text-xs">
           <span className="font-mono text-muted-foreground">
-            Akash's Networth Over Time
+            {activeMemberName}'s Networth Over Time
           </span>
           <Link
             to="/updates"

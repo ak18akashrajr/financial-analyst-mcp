@@ -18,6 +18,7 @@ import { Eye, EyeOff, CreditCard, AlertTriangle } from 'lucide-react';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { SiteFooter } from '@/components/SiteFooter';
 import { getDynamicGreeting } from '@/lib/greeting';
+import { useActiveMemberName } from '@/hooks/useActiveMemberName';
 
 const IndexContent = () => {
   const { hidden, toggle } = usePrivacy();
@@ -170,7 +171,8 @@ const IndexContent = () => {
 };
 
 function DynamicWelcome() {
-  const greeting = useMemo(() => getDynamicGreeting(), []);
+  const activeMemberName = useActiveMemberName();
+  const greeting = useMemo(() => getDynamicGreeting(activeMemberName), [activeMemberName]);
   const dateStr = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   // The title already ends with the same emoji surfaced separately as an icon badge below —
   // strip it here so it isn't shown twice.

@@ -35,6 +35,9 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (table === 'goal_allocations') {
         return { select: () => Promise.resolve({ data: allocationRows, error: null }) };
       }
+      if (table === 'family_members') {
+        return { select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) };
+      }
       return { select: () => Promise.resolve({ data: [], error: null }) };
     },
   },
