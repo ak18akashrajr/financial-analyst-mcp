@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 1180 1220" xmlns="http://www.w3.org/2000/svg" role="img"
-     aria-label="Portfolio AI architecture: the chat UI sends a request through Supabase Edge auth and rate limiting to the portfolio-ai coordinator agent, which picks a Groq model tier via keyword routing, calls MCP tools over JSON-RPC against portfolio-mcp-server, which runs SQL against Postgres under RLS, and streams a token response back over SSE. A second provider, OpenRouter (Nemotron 3 Ultra / MiniMax M2.7), is available as an opt-in escalation the user selects per-turn from the chat UI, and falls back to Groq automatically on failure or quota exhaustion. Dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop. Below, a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX rates and fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX) into the same Postgres tables.">
+     aria-label="Portfolio AI architecture: the chat UI sends a request through Supabase Edge auth and rate limiting to the portfolio-ai coordinator agent, which picks a Groq model tier via keyword routing, calls MCP tools over JSON-RPC against portfolio-mcp-server, which runs SQL against Postgres under RLS, and streams a token response back over SSE. A second provider, OpenRouter (Nemotron 3 Ultra / MiniMax M2.7), is available as an opt-in escalation the user selects per-turn from the chat UI, and falls back to Groq automatically on failure or quota exhaustion. Dashboard pages query Postgres directly via usePortfolio, bypassing the agent and MCP hop; usePortfolio and the chart hooks are now family-member-aware, reading a new family_members table and a family_member_id column on transactions/cash_settings/monthly_cashflow/net_worth_history — a per-member view filters on it, the combined 'All Family' view sums/rolls it up client-side. RLS stays authenticated-only and unpartitioned (still one login, not multi-tenant); portfolio-ai/portfolio-mcp-server are unchanged this release and keep reading the combined household data. Below, a separate on-demand data-ingestion pipeline of six edge functions pulls prices, FX rates and fundamentals from Yahoo Finance (with a Frankfurter/open.er-api.com fallback chain for FX) into the same Postgres tables.">
   <style>
     text { font-family: 'IBM Plex Sans', 'Segoe UI', ui-sans-serif, system-ui, sans-serif; }
     .mono { font-family: 'IBM Plex Mono', 'Cascadia Code', ui-monospace, Consolas, monospace; }
@@ -171,12 +171,13 @@
   </g>
 
   <g>
-    <path d="M 505 886 v -60 a150,13 0 0 1 300,0 v 60 a150,13 0 0 1 -300,0 z" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
+    <path d="M 505 900 v -74 a150,13 0 0 1 300,0 v 74 a150,13 0 0 1 -300,0 z" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
     <ellipse cx="655" cy="826" rx="150" ry="13" fill="#26282a" stroke="#6f716c" stroke-width="1.4"/>
     <text class="label" x="655" y="846" text-anchor="middle" fill="#c7c5bc">Postgres</text>
-    <text class="mono sub" x="655" y="860" text-anchor="middle" fill="#c7c5bc">transactions · cash_settings · symbol_metadata</text>
-    <text class="mono sub" x="655" y="872" text-anchor="middle" fill="#c7c5bc">current_prices · historical_prices</text>
-    <text class="mono sub" x="655" y="884" text-anchor="middle" fill="#c7c5bc">benchmark_history · fx_rates</text>
+    <text class="mono sub" x="655" y="859" text-anchor="middle" fill="#c7c5bc">transactions · cash_settings · symbol_metadata</text>
+    <text class="mono sub" x="655" y="870" text-anchor="middle" fill="#c7c5bc">current_prices · historical_prices</text>
+    <text class="mono sub" x="655" y="881" text-anchor="middle" fill="#c7c5bc">benchmark_history · fx_rates</text>
+    <text class="mono sub" x="655" y="892" text-anchor="middle" fill="#8fd8ab">family_members (new — family portfolio view)</text>
   </g>
 
   <g>
@@ -189,6 +190,7 @@
     <text class="label" x="940" y="140" text-anchor="middle" fill="#a9cdf2">usePortfolio hook</text>
     <text class="mono sub" x="940" y="155" text-anchor="middle" fill="#a9cdf2">browser → Supabase (anon key)</text>
   </g>
+  <text class="edge" x="850" y="182">family-member-scoped: one member, or combined "All Family"</text>
   <g>
     <rect class="box" x="850" y="212" width="240" height="46" rx="6" fill="#26282a" stroke="#6f716c"/>
     <text class="label" x="970" y="231" text-anchor="middle" fill="#c7c5bc">src/lib pure functions</text>
