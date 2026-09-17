@@ -371,4 +371,15 @@ describe("forecast_portfolio_value", () => {
     const tool = findTool("forecast_portfolio_value")!;
     expect(validateArgs(tool.inputSchema, { horizonMonths: 0 })).toMatch(/must be >= 1/);
   });
+
+  it("rejects an excessive horizonMonths before the handler runs", async () => {
+    // Regression test (2026-09-17 security scan): horizonMonths had no upper bound at all, so an
+    // LLM-supplied value in the millions would reach forecastParametricTerminal's
+    // simulations×months loop uncapped, pinning the edge function's CPU. `maximum: 120` on this
+    // tool's own inputSchema (mcp-tools.ts) is the actual fix; asserted here only to confirm the
+    // tool declares the bound, not to re-test the validator itself (mcp-schema-validate.test.ts).
+    const { validateArgs } = await import("./mcp-schema-validate.ts");
+    const tool = findTool("forecast_portfolio_value")!;
+    expect(validateArgs(tool.inputSchema, { horizonMonths: 100000000 })).toMatch(/must be <= 120/);
+  });
 });

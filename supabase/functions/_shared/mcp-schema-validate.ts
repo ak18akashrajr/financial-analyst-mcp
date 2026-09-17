@@ -9,9 +9,9 @@
 // computed from a different input than it asked for, with no signal that
 // happened. This covers the narrow subset of JSON Schema our tools actually
 // use (flat "object" schemas, primitive-typed properties plus a
-// string-array property, required, additionalProperties, minimum, pattern,
-// minLength, enum, minItems) — not a general-purpose validator, and not
-// meant to become one.
+// string-array property, required, additionalProperties, minimum, maximum,
+// pattern, minLength, enum, minItems) — not a general-purpose validator, and
+// not meant to become one.
 export type JsonSchema = Record<string, unknown>;
 
 function typeOf(value: unknown): string {
@@ -52,6 +52,10 @@ export function validateArgs(schema: JsonSchema, args: Record<string, unknown>):
       const minimum = propSchema.minimum as number | undefined;
       if (typeof minimum === "number" && (value as number) < minimum) {
         return `Argument "${key}" must be >= ${minimum}`;
+      }
+      const maximum = propSchema.maximum as number | undefined;
+      if (typeof maximum === "number" && (value as number) > maximum) {
+        return `Argument "${key}" must be <= ${maximum}`;
       }
     } else if (expectedType === "string") {
       if (typeOf(value) !== "string") {
