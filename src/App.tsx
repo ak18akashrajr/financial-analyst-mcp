@@ -10,6 +10,7 @@ import Landing from "./pages/Landing.tsx";
 import Login from "./pages/Login.tsx";
 import { AppLayout } from "@/components/AppLayout";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { FamilyMemberProvider } from "@/contexts/FamilyMemberContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -34,6 +35,7 @@ const Benchmark = lazy(() => import("./pages/Benchmark.tsx"));
 const RiskMetrics = lazy(() => import("./pages/RiskMetrics.tsx"));
 const Forecast = lazy(() => import("./pages/Forecast.tsx"));
 const DevZone = lazy(() => import("./pages/DevZone.tsx"));
+const FamilyMembers = lazy(() => import("./pages/FamilyMembers.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -50,6 +52,7 @@ const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <FamilyMemberProvider>
         <TooltipProvider>
           <Toaster />
           <Sonner />
@@ -83,6 +86,7 @@ const App = () => (
                     <Route path="/risk-metrics" element={<RiskMetrics />} />
                     <Route path="/forecast" element={<Forecast />} />
                     <Route path="/dev-zone" element={<DevZone />} />
+                    <Route path="/family-members" element={<FamilyMembers />} />
                   </Route>
                 </Route>
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
@@ -91,6 +95,7 @@ const App = () => (
             </Suspense>
           </BrowserRouter>
         </TooltipProvider>
+        </FamilyMemberProvider>
       </AuthProvider>
     </QueryClientProvider>
   </ErrorBoundary>

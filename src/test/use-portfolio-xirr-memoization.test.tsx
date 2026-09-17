@@ -20,6 +20,13 @@ import { calculateXIRR } from '@/lib/xirr';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
+// updateCash requires a specific family member selected (not the combined 'all' view) — stand
+// in for the default FamilyMemberProvider with one fixed member, same convention CLAUDE.md
+// documents for context/hook consumers (mock the hook directly rather than wrapping a provider).
+vi.mock('@/contexts/FamilyMemberContext', () => ({
+  useFamilyMemberSelection: () => ({ activeMemberId: 'member-1', setActiveMemberId: vi.fn() }),
+}));
+
 vi.mock('@/lib/xirr', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/xirr')>();
   return { ...actual, calculateXIRR: vi.fn(actual.calculateXIRR) };
@@ -45,12 +52,12 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'transactions') {
-        return { select: () => ({ order: () => Promise.resolve({ data: transactionRows, error: null }) }) };
+        return { select: () => ({ order: () => ({ eq: () => Promise.resolve({ data: transactionRows, error: null }) }) }) };
       }
       if (table === 'cash_settings') {
         return {
-          select: () => ({ limit: () => ({ single: () => Promise.resolve({ data: cashState, error: null }) }) }),
-          update: () => ({ not: () => Promise.resolve({ data: null, error: null }) }),
+          select: () => ({ eq: () => Promise.resolve({ data: [cashState], error: null }) }),
+          upsert: () => Promise.resolve({ data: null, error: null }),
         };
       }
       if (table === 'current_prices') {
@@ -64,13 +71,13 @@ vi.mock('@/integrations/supabase/client', () => ({
       }
       if (table === 'net_worth_history') {
         return {
-          select: () => ({ order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }),
+          select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }) }),
           insert: () => Promise.resolve({ data: null, error: null }),
         };
       }
       if (table === 'monthly_cashflow') {
         return {
-          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }),
           upsert: () => Promise.resolve({ data: null, error: null }),
         };
       }

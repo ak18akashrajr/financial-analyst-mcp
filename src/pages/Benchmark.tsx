@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, TrendingUp, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
+import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
 import {
@@ -57,29 +58,18 @@ const BenchmarkContent = () => {
   const { hidden, toggle, mask } = usePrivacy();
   const [benchmarkSymbol, setBenchmarkSymbol] = useState<BenchmarkSymbol>('NIFTY50');
   const [windowDays, setWindowDays] = useState<WindowDays>(90);
-  const [netWorthHistory, setNetWorthHistory] = useState<NetWorthRow[]>([]);
   const [benchmarkHistory, setBenchmarkHistory] = useState<BenchmarkRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [backfilling, setBackfilling] = useState(false);
 
   const { selection, handlers, clear } = useChartRangeSelection();
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      // Ordered newest-first and limited to windowDays+1, then reversed to ascending — the same
-      // fetch shape compareToBenchmark uses server-side, so the headline stats below match what
-      // the portfolio AI reports for the same question.
-      const { data, error } = await supabase
-        .from('net_worth_history')
-        .select('recorded_at, portfolio_value')
-        .order('recorded_at', { ascending: false })
-        .limit(windowDays + 1);
-      if (error) toast.error(`Failed to load portfolio history: ${error.message}`);
-      if (data) setNetWorthHistory((data as NetWorthRow[]).slice().reverse());
-      setLoading(false);
-    })();
-  }, [windowDays]);
+  // Family-member-scoped (or combined, rolled up) net worth series — same "last windowDays+1
+  // points" shape compareToBenchmark uses server-side, so the headline stats below match what
+  // the portfolio AI reports for the same question. useNetWorthHistory always returns the full
+  // ascending series, so the window is sliced off the end here instead of via a bounded query.
+  const { data: fullHistory, loading: netWorthLoading } = useNetWorthHistory();
+  const netWorthHistory: NetWorthRow[] = fullHistory.slice(-1 * (windowDays + 1));
+  const loading = netWorthLoading;
 
   const loadBenchmarkHistory = async (symbol: BenchmarkSymbol, days: WindowDays) => {
     // benchmark_history isn't in the generated Supabase types (see the codegen-drift note on

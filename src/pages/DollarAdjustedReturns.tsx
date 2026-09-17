@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Area,
   AreaChart,
@@ -10,8 +10,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { supabase } from '@/integrations/supabase/client';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
+import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { SiteFooter } from '@/components/SiteFooter';
 import { AuditPopover, AuditSection, AuditTable, Formula } from '@/components/AuditPopover';
 import { useDollarReturns } from '@/hooks/useDollarReturns';
@@ -45,23 +45,11 @@ function Content() {
   } = useDollarReturns();
 
   const [range, setRange] = useState<(typeof RANGES)[number]['key']>('5y');
-  const [nwHistory, setNwHistory] = useState<Array<{ date: string; inr: number }>>([]);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('net_worth_history')
-        .select('net_worth, recorded_at')
-        .order('recorded_at', { ascending: true })
-        .limit(1000);
-      setNwHistory(
-        (data ?? []).map((r) => ({
-          date: new Date(r.recorded_at as string).toISOString().slice(0, 10),
-          inr: Number(r.net_worth),
-        }))
-      );
-    })();
-  }, []);
+  const { data: nwRows } = useNetWorthHistory();
+  const nwHistory = nwRows.map((r) => ({
+    date: new Date(r.recorded_at).toISOString().slice(0, 10),
+    inr: Number(r.net_worth),
+  }));
 
   const usdInr = (n: number) => mask(fmtUsd(n));
   const inr = (n: number) => mask(fmtInr(n));

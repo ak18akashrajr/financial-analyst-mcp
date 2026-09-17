@@ -15,6 +15,13 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.f
 const { logClientErrorMock } = vi.hoisted(() => ({ logClientErrorMock: vi.fn() }));
 vi.mock('@/lib/clientErrorLogging', () => ({ logClientError: logClientErrorMock }));
 
+// addTransaction/updateCash/resetAll require a specific family member selected (not the combined
+// 'all' view) — stand in for the default FamilyMemberProvider with one fixed member, same
+// convention CLAUDE.md documents for context/hook consumers (mock the hook directly).
+vi.mock('@/contexts/FamilyMemberContext', () => ({
+  useFamilyMemberSelection: () => ({ activeMemberId: 'member-1', setActiveMemberId: vi.fn() }),
+}));
+
 const { insertError, updateError, deleteErrors } = vi.hoisted(() => ({
   insertError: { value: null as { message: string } | null },
   updateError: { value: null as { message: string } | null },
@@ -26,13 +33,13 @@ vi.mock('@/integrations/supabase/client', () => ({
     from: (table: string) => {
       if (table === 'transactions') {
         return {
-          select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }),
+          select: () => ({ order: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }),
           insert: () => ({
             select: () => ({
               single: () => Promise.resolve(
                 insertError.value
                   ? { data: null, error: insertError.value }
-                  : { data: { id: 't1', symbol: 'TCS', type: 'BUY', quantity: 1, price: 100, date: '2026-01-01' }, error: null },
+                  : { data: { id: 't1', symbol: 'TCS', type: 'BUY', quantity: 1, price: 100, date: '2026-01-01', family_member_id: 'member-1' }, error: null },
               ),
             }),
           }),
@@ -42,9 +49,10 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (table === 'cash_settings') {
         return {
           select: () => ({
-            limit: () => ({ single: () => Promise.resolve({ data: { liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 }, error: null }) }),
+            eq: () => Promise.resolve({ data: [{ liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 }], error: null }),
           }),
           update: () => ({ not: () => Promise.resolve({ error: updateError.value }) }),
+          upsert: () => Promise.resolve({ error: updateError.value }),
         };
       }
       if (table === 'current_prices') {
@@ -56,14 +64,14 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (table === 'symbol_metadata') return { select: () => Promise.resolve({ data: [], error: null }) };
       if (table === 'monthly_cashflow') {
         return {
-          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }),
           upsert: () => Promise.resolve({ error: null }),
           delete: () => ({ not: () => Promise.resolve({ error: deleteErrors.value }) }),
         };
       }
       if (table === 'net_worth_history') {
         return {
-          select: () => ({ order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }),
+          select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }) }),
           insert: () => Promise.resolve({ error: null }),
         };
       }

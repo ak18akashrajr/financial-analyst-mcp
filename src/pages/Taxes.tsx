@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { usePortfolio } from '@/hooks/usePortfolio';
 import { generateTaxReport, getHarvestableLots, hasSameDayReentry, TaxReport } from '@/lib/taxCalculator';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { Eye, EyeOff, ArrowLeft, TrendingDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import type { Transaction, Category } from '@/types/portfolio';
+import type { Category } from '@/types/portfolio';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -14,35 +14,18 @@ const TaxesContent = () => {
   const { hidden, toggle, mask } = usePrivacy();
   const fmtV = (n: number) => mask(fmt(n));
 
+  // Family-member-scoped (or combined) transactions/prices/metadata, same data every other page
+  // reads — this used to duplicate its own direct transactions/current_prices/symbol_metadata
+  // fetch here, which would have kept reading every family member's transactions regardless of
+  // the active member selection.
+  const { transactions, currentPrices, symbolMetadata, loading } = usePortfolio();
   const [report, setReport] = useState<TaxReport | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      const [txnRes, priceRes, metaRes] = await Promise.all([
-        supabase.from('transactions').select('*'),
-        supabase.from('current_prices').select('*'),
-        supabase.from('symbol_metadata').select('*'),
-      ]);
-
-      const txns: Transaction[] = (txnRes.data || []).map(t => ({
-        id: t.id, symbol: t.symbol, type: t.type as 'BUY' | 'SELL',
-        quantity: Number(t.quantity), price: Number(t.price), date: t.date,
-      }));
-
-      const prices: Record<string, number> = {};
-      for (const p of priceRes.data || []) prices[p.symbol] = Number(p.price);
-
-      const meta: Record<string, { category?: Category }> = {};
-      for (const m of metaRes.data || []) meta[m.symbol] = { category: m.sector as Category };
-
-      setTransactions(txns);
-      setReport(generateTaxReport(txns, prices, meta));
-      setLoading(false);
-    }
-    load();
-  }, []);
+    const meta: Record<string, { category?: Category }> = {};
+    for (const [symbol, m] of Object.entries(symbolMetadata)) meta[symbol] = { category: m.category as Category };
+    setReport(generateTaxReport(transactions, currentPrices, meta));
+  }, [transactions, currentPrices, symbolMetadata]);
 
   const harvestableLots = report ? getHarvestableLots(report) : [];
   const totalHarvestableLoss = harvestableLots.reduce((s, l) => s + l.gain, 0);

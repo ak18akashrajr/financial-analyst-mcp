@@ -13,6 +13,13 @@ import { usePortfolio } from '@/hooks/usePortfolio';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
+// updateCash/resetAll require a specific family member selected (not the combined 'all' view) —
+// stand in for the default FamilyMemberProvider with one fixed member, same convention CLAUDE.md
+// documents for context/hook consumers (mock the hook directly rather than wrapping a provider).
+vi.mock('@/contexts/FamilyMemberContext', () => ({
+  useFamilyMemberSelection: () => ({ activeMemberId: 'member-1', setActiveMemberId: vi.fn() }),
+}));
+
 const { cashState, cashflowState, upsertMock, cashflowDeleteMock, transactionsDeleteMock, pricesDeleteMock } = vi.hoisted(() => ({
   cashState: { liquid_cash: 1000, vault_cash: 2000, pf_balance: 0, credit_card_debt: 500 },
   cashflowState: { row: null as null | { total_income: number; total_expense: number } },
@@ -30,14 +37,17 @@ vi.mock('@/integrations/supabase/client', () => ({
     from: (table: string) => {
       if (table === 'transactions') {
         return {
-          select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }),
+          select: () => ({ order: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }),
           delete: transactionsDeleteMock,
         };
       }
       if (table === 'cash_settings') {
         return {
-          select: () => ({ limit: () => ({ single: () => Promise.resolve({ data: cashState, error: null }) }) }),
+          select: () => ({ eq: () => Promise.resolve({ data: [cashState], error: null }) }),
+          // resetAll still does a blanket `.update(...).not('id','is',null)`; updateCash upserts
+          // scoped to family_member_id — both need to coexist here.
           update: () => ({ not: () => Promise.resolve({ data: null, error: null }) }),
+          upsert: () => Promise.resolve({ data: null, error: null }),
         };
       }
       if (table === 'current_prices') {
@@ -51,13 +61,13 @@ vi.mock('@/integrations/supabase/client', () => ({
       }
       if (table === 'net_worth_history') {
         return {
-          select: () => ({ order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }),
+          select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }) }),
           insert: () => Promise.resolve({ data: null, error: null }),
         };
       }
       if (table === 'monthly_cashflow') {
         return {
-          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: cashflowState.row, error: null }) }) }),
+          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: cashflowState.row, error: null }) }) }) }),
           upsert: upsertMock,
           delete: cashflowDeleteMock,
         };

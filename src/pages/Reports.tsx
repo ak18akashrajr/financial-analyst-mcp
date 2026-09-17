@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, FileSpreadsheet, Save, Printer, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Sparkles, AlertTriangle, Compass, Activity, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
   buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor,
-  type PeriodDef, type PeriodType, type NetWorthHistoryRow, type HistoricalPriceMap,
+  type PeriodDef, type PeriodType, type HistoricalPriceMap,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
 import {
@@ -48,7 +49,7 @@ const ReportsContent = () => {
 
   const [type, setType] = useState<PeriodType>('quarter');
   const [fyStartYear, setFyStartYear] = useState<number>(() => fyStartYearFor(new Date()));
-  const [history, setHistory] = useState<NetWorthHistoryRow[]>([]);
+  const { data: history } = useNetWorthHistory();
   const [historicalPrices, setHistoricalPrices] = useState<HistoricalPriceMap>({});
   const [reports, setReports] = useState<Record<string, PeriodReportRow>>({});
   const [activeKey, setActiveKey] = useState<string | null>(null);
@@ -140,16 +141,14 @@ const ReportsContent = () => {
     return Number.isFinite(v) ? v : 0;
   }, []);
 
-  // Load net worth history + saved period reports + historical prices
+  // Load saved period reports + historical prices (net worth history comes from
+  // useNetWorthHistory above, already family-member-scoped)
   useEffect(() => {
     (async () => {
-      const [hRes, rRes] = await Promise.all([
-        supabase.from('net_worth_history').select('*').order('recorded_at', { ascending: true }),
+      const [rRes] = await Promise.all([
         supabase.from('period_reports' as any).select('*'),
       ]);
-      if (hRes.error) logClientError('Reports.load', 'Failed to load net_worth_history', { error: hRes.error });
       if (rRes.error) logClientError('Reports.load', 'Failed to load period_reports', { error: rRes.error });
-      if (hRes.data) setHistory(hRes.data as any);
       if (rRes.data) {
         const map: Record<string, PeriodReportRow> = {};
         for (const r of rRes.data as any[]) map[r.period_key] = r;

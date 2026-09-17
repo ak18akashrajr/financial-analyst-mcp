@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import {
   ResponsiveContainer,
   XAxis,
@@ -9,8 +8,8 @@ import {
   Area,
   Line,
 } from 'recharts';
-import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
+import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
@@ -28,32 +27,20 @@ interface Point {
 
 export function DebtChart({ refreshKey }: { refreshKey: number }) {
   const { hidden } = usePrivacy();
-  const [data, setData] = useState<Point[]>([]);
   const { selection, handlers, clear } = useChartRangeSelection();
-
-  useEffect(() => {
-    (async () => {
-      const { data: rows } = await supabase
-        .from('net_worth_history')
-        .select('*')
-        .order('recorded_at', { ascending: true });
-      if (!rows) return;
-      setData(
-        rows.map((r: any) => {
-          const debt = Number(r.credit_card_debt ?? 0);
-          const nw = Number(r.net_worth);
-          // Use gross assets (nw + debt) as denominator so debt% is meaningful
-          const gross = nw + debt;
-          return {
-            label: new Date(r.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }),
-            net_worth: nw,
-            debt,
-            debt_pct: gross > 0 ? (debt / gross) * 100 : 0,
-          };
-        })
-      );
-    })();
-  }, [refreshKey]);
+  const { data: rows } = useNetWorthHistory(refreshKey);
+  const data: Point[] = rows.map((r) => {
+    const debt = Number(r.credit_card_debt ?? 0);
+    const nw = Number(r.net_worth);
+    // Use gross assets (nw + debt) as denominator so debt% is meaningful
+    const gross = nw + debt;
+    return {
+      label: new Date(r.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }),
+      net_worth: nw,
+      debt,
+      debt_pct: gross > 0 ? (debt / gross) * 100 : 0,
+    };
+  });
 
   if (data.length < 2) return null;
   const hasAnyDebt = data.some((d) => d.debt > 0);

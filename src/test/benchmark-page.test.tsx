@@ -39,11 +39,12 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'net_worth_history') {
+        // useNetWorthHistory fetches the FULL ascending series (no server-side limit) and the
+        // page itself slices off the last windowDays+1 points client-side.
         return {
           select: () => ({
-            order: (col: string, opts?: { ascending?: boolean }) => ({
-              limit: (n: number) => Promise.resolve({ data: sortedAndLimited(netWorthRows, col, opts?.ascending, n), error: null }),
-            }),
+            order: (col: string, opts?: { ascending?: boolean }) =>
+              Promise.resolve({ data: sortedAndLimited(netWorthRows, col, opts?.ascending, netWorthRows.length), error: null }),
           }),
         };
       }

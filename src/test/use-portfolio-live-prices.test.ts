@@ -27,13 +27,9 @@ vi.mock('@/integrations/supabase/client', () => ({
       }
       if (table === 'cash_settings') {
         return {
-          select: () => ({
-            limit: () => ({
-              single: () => Promise.resolve({
-                data: { liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 },
-                error: null,
-              }),
-            }),
+          select: () => Promise.resolve({
+            data: [{ liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 }],
+            error: null,
           }),
         };
       }
