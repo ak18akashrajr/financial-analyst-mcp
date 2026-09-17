@@ -17,9 +17,11 @@ import {
   Terminal,
   Gauge,
   LineChart,
+  Users2,
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
+import { FamilyMemberSwitcher } from '@/components/FamilyMemberSwitcher';
 
 const tabs = [
   { to: '/overview', label: 'Overview', icon: LayoutDashboard },
@@ -35,6 +37,7 @@ const tabs = [
   { to: '/rolling-returns', label: 'Rolling', icon: Activity },
   { to: '/risk-metrics', label: 'Risk Metrics', icon: Gauge },
   { to: '/ai', label: 'AI', icon: Bot },
+  { to: '/family-members', label: 'Family', icon: Users2 },
   { to: '/dev-zone', label: 'Dev Zone', icon: Terminal },
 ];
 
@@ -70,6 +73,9 @@ export function MobileTopNav() {
           </div>
         </Link>
         <div className="flex items-center gap-1 shrink-0">
+          <div className="w-32">
+            <FamilyMemberSwitcher />
+          </div>
           <ThemeToggle />
           <button
             onClick={logout}

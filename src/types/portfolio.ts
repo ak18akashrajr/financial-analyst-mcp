@@ -5,6 +5,18 @@ export interface Transaction {
   quantity: number;
   price: number;
   date: string; // ISO string
+  // Set on every real transaction (usePortfolio.ts requires a specific member selected before
+  // inserting one) — optional here only so pure-function tests/fixtures across the repo that
+  // don't care which member a transaction belongs to (xirr, cost-basis, tax calculations, etc.)
+  // don't all need a throwaway value.
+  familyMemberId?: string;
+}
+
+export interface FamilyMember {
+  id: string;
+  name: string;
+  relationship: string;
+  createdAt: string;
 }
 
 export interface DerivedHolding {

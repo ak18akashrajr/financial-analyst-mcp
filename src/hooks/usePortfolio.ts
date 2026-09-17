@@ -7,12 +7,21 @@ import { computeFifoPosition } from '@/lib/costBasis';
 import { isSameIstCalendarDay, shouldSkipNetWorthSnapshot, type NetWorthSnapshotFields } from '@/lib/netWorthSnapshot';
 import { classifyBalanceDelta, getIstYearMonth } from '@/lib/expenseIncomeRatio';
 import { logClientError } from '@/lib/clientErrorLogging';
+import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 
 function formatIstTimestamp(date: Date): string {
   return date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
+// Reads the active family member selection (a specific family_members.id, or 'all' for the
+// combined household view) from FamilyMemberContext rather than taking it as a parameter — every
+// existing call site across src/pages keeps calling usePortfolio() unchanged, and a test that
+// doesn't wrap a <FamilyMemberProvider> gets the context's default ('all'), matching today's
+// single-portfolio behavior exactly. 'all' means every query below reads across every member
+// instead of filtering — the existing FIFO/XIRR/exposure derivations already fold all rows into
+// one holdings list, which is exactly the correct combined-total behavior with no math changes.
 export function usePortfolio() {
+  const { activeMemberId } = useFamilyMemberSelection();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [cash, setCash] = useState<CashSettings>({ liquidCash: 0, vaultCash: 0, pfBalance: 0, creditCardDebt: 0 });
   const [monthlyCashflow, setMonthlyCashflow] = useState<MonthlyCashflow>({ totalIncome: 0, totalExpense: 0 });
@@ -28,17 +37,31 @@ export function usePortfolio() {
   const [lastPriceCheckTime, setLastPriceCheckTime] = useState<string | null>(null);
   const [lastPriceChangeTime, setLastPriceChangeTime] = useState<string | null>(null);
 
-  // Load all data from Supabase on mount
+  // Load all data from Supabase on mount, and again whenever the active family member selection
+  // changes — a distinct member id filters every per-member table, 'all' fetches every member's
+  // rows and folds/sums them into the combined household view.
   useEffect(() => {
     async function loadData() {
       setLoading(true);
       try {
+        let txnQuery = supabase.from('transactions').select('*').order('date', { ascending: false });
+        if (activeMemberId !== 'all') txnQuery = txnQuery.eq('family_member_id', activeMemberId);
+
+        let cashQuery = supabase.from('cash_settings').select('*');
+        if (activeMemberId !== 'all') cashQuery = cashQuery.eq('family_member_id', activeMemberId);
+
+        let cashflowQuery = supabase
+          .from('monthly_cashflow')
+          .select('total_income, total_expense')
+          .eq('year_month', getIstYearMonth());
+        if (activeMemberId !== 'all') cashflowQuery = cashflowQuery.eq('family_member_id', activeMemberId);
+
         const [txnRes, cashRes, priceRes, metaRes, cashflowRes] = await Promise.all([
-          supabase.from('transactions').select('*').order('date', { ascending: false }),
-          supabase.from('cash_settings').select('*').limit(1).single(),
+          txnQuery,
+          cashQuery,
           supabase.from('current_prices').select('*'),
           supabase.from('symbol_metadata').select('*'),
-          supabase.from('monthly_cashflow').select('total_income, total_expense').eq('year_month', getIstYearMonth()).maybeSingle(),
+          cashflowQuery,
         ]);
 
         // Each of these previously only ever checked `.data` — a real query
@@ -70,15 +93,19 @@ export function usePortfolio() {
             quantity: Number(t.quantity),
             price: Number(t.price),
             date: t.date,
+            familyMemberId: t.family_member_id,
           })));
         }
 
+        // A single member has at most one cash_settings row (UNIQUE(family_member_id)); 'all'
+        // sums every member's row into one combined figure.
         if (cashRes.data) {
+          const rows = cashRes.data as any[];
           setCash({
-            liquidCash: Number(cashRes.data.liquid_cash),
-            vaultCash: Number(cashRes.data.vault_cash),
-            pfBalance: Number((cashRes.data as any).pf_balance ?? 0),
-            creditCardDebt: Number((cashRes.data as any).credit_card_debt ?? 0),
+            liquidCash: rows.reduce((s, r) => s + Number(r.liquid_cash ?? 0), 0),
+            vaultCash: rows.reduce((s, r) => s + Number(r.vault_cash ?? 0), 0),
+            pfBalance: rows.reduce((s, r) => s + Number(r.pf_balance ?? 0), 0),
+            creditCardDebt: rows.reduce((s, r) => s + Number(r.credit_card_debt ?? 0), 0),
           });
         }
 
@@ -109,9 +136,10 @@ export function usePortfolio() {
         }
 
         if (cashflowRes.data) {
+          const rows = cashflowRes.data as any[];
           setMonthlyCashflow({
-            totalIncome: Number((cashflowRes.data as any).total_income ?? 0),
-            totalExpense: Number((cashflowRes.data as any).total_expense ?? 0),
+            totalIncome: rows.reduce((s, r) => s + Number(r.total_income ?? 0), 0),
+            totalExpense: rows.reduce((s, r) => s + Number(r.total_expense ?? 0), 0),
           });
         }
       } catch (err) {
@@ -122,7 +150,7 @@ export function usePortfolio() {
       }
     }
     loadData();
-  }, []);
+  }, [activeMemberId]);
 
   // Compute portfolio value from transactions + prices for snapshot recording
   const computePortfolioValue = useCallback(() => {
@@ -155,12 +183,19 @@ export function usePortfolio() {
       creditCardDebt: ccd,
     };
 
+    // Only ever called after a mutation scoped to one specific member (addTransaction/
+    // updateCash/etc. all require a real member selected, not 'all') — so this is always a
+    // per-member snapshot, and the same-day dedupe check below must compare against that same
+    // member's own latest row, not the household's.
+    if (activeMemberId === 'all') return;
+
     // Skip the insert if it'd be a no-op: same figures already recorded
     // today. A stale snapshot from an earlier day never blocks today's
     // first write — see docs/perf-findings.md#1.
     const { data: latest, error: latestError } = await supabase
       .from('net_worth_history')
       .select('net_worth, portfolio_value, liquid_cash, vault_cash, pf_balance, credit_card_debt, recorded_at')
+      .eq('family_member_id', activeMemberId)
       .order('recorded_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -194,6 +229,7 @@ export function usePortfolio() {
       vault_cash: vc,
       pf_balance: pf,
       credit_card_debt: ccd,
+      family_member_id: activeMemberId,
     } as any);
     if (insertError) {
       // Never surfaced to the user at all before this — every caller
@@ -202,12 +238,17 @@ export function usePortfolio() {
       // missing a data point for the day with nothing recording why.
       logClientError('usePortfolio.recordNetWorthSnapshot', 'Failed to insert net worth snapshot', { error: insertError, candidate });
     }
-  }, [cash, computePortfolioValue]);
+  }, [cash, computePortfolioValue, activeMemberId]);
 
-  const addTransaction = useCallback(async (txn: Omit<Transaction, 'id' | 'date'>) => {
+  const addTransaction = useCallback(async (txn: Omit<Transaction, 'id' | 'date' | 'familyMemberId'>) => {
+    if (activeMemberId === 'all') {
+      toast.error('Select a specific family member before adding a transaction');
+      return;
+    }
+
     const { data, error } = await supabase
       .from('transactions')
-      .insert({ symbol: txn.symbol, type: txn.type, quantity: txn.quantity, price: txn.price })
+      .insert({ symbol: txn.symbol, type: txn.type, quantity: txn.quantity, price: txn.price, family_member_id: activeMemberId })
       .select()
       .single();
 
@@ -225,11 +266,12 @@ export function usePortfolio() {
       quantity: Number(data.quantity),
       price: Number(data.price),
       date: data.date,
+      familyMemberId: data.family_member_id,
     };
     setTransactions(prev => [newTxn, ...prev]);
     toast.success('Transaction added');
     await recordNetWorthSnapshot();
-  }, [recordNetWorthSnapshot]);
+  }, [recordNetWorthSnapshot, activeMemberId]);
 
   const updateTransaction = useCallback(async (id: string, updates: Partial<Pick<Transaction, 'quantity' | 'price'>>) => {
     const { error } = await supabase
@@ -272,12 +314,14 @@ export function usePortfolio() {
   // callers don't need to guard the call themselves.
   const recordCashflowDelta = useCallback(async (deltaIncome: number, deltaExpense: number) => {
     if (deltaIncome === 0 && deltaExpense === 0) return;
+    if (activeMemberId === 'all') return; // only ever called from updateCash, which already guards this
 
     const yearMonth = getIstYearMonth();
     const { data: existing, error: readError } = await supabase
       .from('monthly_cashflow')
       .select('total_income, total_expense')
       .eq('year_month', yearMonth)
+      .eq('family_member_id', activeMemberId)
       .maybeSingle();
     if (readError) {
       // Not returned early on — a failed read here previously just fell
@@ -292,7 +336,10 @@ export function usePortfolio() {
 
     const { error } = await supabase
       .from('monthly_cashflow')
-      .upsert({ year_month: yearMonth, total_income: newIncome, total_expense: newExpense } as any, { onConflict: 'year_month' });
+      .upsert(
+        { year_month: yearMonth, total_income: newIncome, total_expense: newExpense, family_member_id: activeMemberId } as any,
+        { onConflict: 'family_member_id,year_month' },
+      );
 
     if (error) {
       console.error('Failed to record income/expense delta:', error);
@@ -300,7 +347,7 @@ export function usePortfolio() {
       return;
     }
     setMonthlyCashflow({ totalIncome: newIncome, totalExpense: newExpense });
-  }, []);
+  }, [activeMemberId]);
 
   // `excludeFromCashflow` opts a balance edit out of income/expense tracking
   // — for corrections, transfers between the user's own accounts, or any
@@ -312,16 +359,22 @@ export function usePortfolio() {
   // at settlement time is the only point real money actually leaves — it must
   // count, or the spend never shows up in the Expense-to-Income ratio at all.
   const updateCash = useCallback(async (newCash: Partial<CashSettings>, options?: { excludeFromCashflow?: boolean }) => {
-    const dbUpdates: {
-      liquid_cash?: number;
-      vault_cash?: number;
-      pf_balance?: number;
-      credit_card_debt?: number;
-    } = {};
-    if (newCash.liquidCash !== undefined) dbUpdates.liquid_cash = newCash.liquidCash;
-    if (newCash.vaultCash !== undefined) dbUpdates.vault_cash = newCash.vaultCash;
-    if (newCash.pfBalance !== undefined) dbUpdates.pf_balance = newCash.pfBalance;
-    if (newCash.creditCardDebt !== undefined) dbUpdates.credit_card_debt = newCash.creditCardDebt;
+    if (activeMemberId === 'all') {
+      toast.error('Select a specific family member before editing cash balances');
+      return;
+    }
+
+    // Full row, not a partial update: a member may not have a cash_settings row yet (e.g. a
+    // freshly-added member), so this upserts on family_member_id rather than assuming a row
+    // already exists — unlike the old single-row `.update(...).not('id','is',null)`, which
+    // relied on the singleton row seeded by migration always being present.
+    const dbRow = {
+      family_member_id: activeMemberId,
+      liquid_cash: newCash.liquidCash ?? cash.liquidCash,
+      vault_cash: newCash.vaultCash ?? cash.vaultCash,
+      pf_balance: newCash.pfBalance ?? cash.pfBalance,
+      credit_card_debt: newCash.creditCardDebt ?? cash.creditCardDebt,
+    };
 
     // Only Operating Cash (liquidCash) and Cash Reserve (vaultCash) are real
     // bank balances for income/expense purposes — PF and credit-card-debt
@@ -344,13 +397,12 @@ export function usePortfolio() {
 
     const { error } = await supabase
       .from('cash_settings')
-      .update(dbUpdates)
-      .not('id', 'is', null);
+      .upsert(dbRow as any, { onConflict: 'family_member_id' });
 
     if (error) {
       toast.error('Failed to update cash');
       console.error(error);
-      logClientError('usePortfolio.updateCash', 'Failed to update cash_settings', { error, dbUpdates });
+      logClientError('usePortfolio.updateCash', 'Failed to update cash_settings', { error, dbRow });
       return;
     }
 
@@ -360,7 +412,7 @@ export function usePortfolio() {
     // Record net worth snapshot with updated cash
     await recordNetWorthSnapshot(newCash);
     await recordCashflowDelta(deltaIncome, deltaExpense);
-  }, [cash, recordNetWorthSnapshot, recordCashflowDelta]);
+  }, [cash, recordNetWorthSnapshot, recordCashflowDelta, activeMemberId]);
 
   const payCreditCardBill = useCallback(async () => {
     const debt = cash.creditCardDebt;

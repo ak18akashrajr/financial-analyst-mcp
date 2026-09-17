@@ -19,14 +19,12 @@ vi.mock('@/integrations/supabase/client', () => ({
         return { select: () => ({ order: () => Promise.resolve({ data: transactionRows, error: null }) }) };
       }
       if (table === 'cash_settings') {
+        // No FamilyMemberContext mock here — activeMemberId defaults to 'all', so usePortfolio
+        // queries cash_settings with no further filter and sums across whatever rows come back.
         return {
-          select: () => ({
-            limit: () => ({
-              single: () => Promise.resolve({
-                data: { liquid_cash: 0, vault_cash: 0, pf_balance: 500000, credit_card_debt: 0 },
-                error: null,
-              }),
-            }),
+          select: () => Promise.resolve({
+            data: [{ liquid_cash: 0, vault_cash: 0, pf_balance: 500000, credit_card_debt: 0 }],
+            error: null,
           }),
         };
       }

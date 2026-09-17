@@ -1,13 +1,15 @@
 // Covers the "Harvestable Losses" section added to the Taxes page (docs/feature-ideas.md #3):
 // empty state, listing loss lots sorted biggest-loss-first, the same-day re-entry ⚠ flag, and
-// privacy masking. Mocks the Supabase client directly (CLAUDE.md convention) rather than driving
-// a real fetch — see src/test/benchmark-page.test.tsx for the same pattern on a data-fetching page.
+// privacy masking. Taxes.tsx reads transactions/prices/metadata from usePortfolio() (family-member-
+// scoped), so that hook is mocked directly — same convention CLAUDE.md documents for
+// context/hook consumers — rather than driving a real Supabase fetch.
 // generateTaxReport/getHarvestableLots/hasSameDayReentry's own math is covered by
 // src/test/tax-calculator.test.ts; this only checks the page wires them together correctly.
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Taxes from '@/pages/Taxes';
+import { usePortfolio } from '@/hooks/usePortfolio';
 
 const { txnRows, priceRows, metaRows } = vi.hoisted(() => ({
   txnRows: [] as { id: string; symbol: string; type: string; quantity: number; price: number; date: string }[],
@@ -15,14 +17,21 @@ const { txnRows, priceRows, metaRows } = vi.hoisted(() => ({
   metaRows: [] as { symbol: string; sector: string }[],
 }));
 
-vi.mock('@/integrations/supabase/client', () => ({
-  supabase: {
-    from: (table: string) => {
-      const rows = table === 'transactions' ? txnRows : table === 'current_prices' ? priceRows : metaRows;
-      return { select: () => Promise.resolve({ data: rows, error: null }) };
-    },
-  },
-}));
+vi.mock('@/hooks/usePortfolio', () => ({ usePortfolio: vi.fn() }));
+
+function syncPortfolioMock() {
+  const currentPrices: Record<string, number> = {};
+  for (const p of priceRows) currentPrices[p.symbol] = p.price;
+  const symbolMetadata: Record<string, { symbol: string; geography: string; category: string }> = {};
+  for (const m of metaRows) symbolMetadata[m.symbol] = { symbol: m.symbol, geography: 'India', category: m.sector };
+
+  vi.mocked(usePortfolio).mockReturnValue({
+    transactions: txnRows.map((t) => ({ ...t, type: t.type as 'BUY' | 'SELL' })),
+    currentPrices,
+    symbolMetadata,
+    loading: false,
+  } as unknown as ReturnType<typeof usePortfolio>);
+}
 
 function renderPage() {
   return render(
@@ -47,6 +56,7 @@ describe('Taxes page — Harvestable Losses section', () => {
     priceRows.push({ symbol: 'TCS', price: 150 }); // gain, not a loss
     metaRows.push({ symbol: 'TCS', sector: 'Equity' });
 
+    syncPortfolioMock();
     renderPage();
     await waitFor(() => expect(screen.getByText('Harvestable Losses')).toBeInTheDocument());
     expect(screen.getByText(/no lots are currently sitting at a loss/i)).toBeInTheDocument();
@@ -63,6 +73,7 @@ describe('Taxes page — Harvestable Losses section', () => {
     priceRows.push({ symbol: 'TCS', price: 150 });
     metaRows.push({ symbol: 'TCS', sector: 'Equity' });
 
+    syncPortfolioMock();
     renderPage();
     await waitFor(() => expect(screen.getByText('Harvestable Losses')).toBeInTheDocument());
     expect(screen.getByText('Total Harvestable Loss')).toBeInTheDocument();
@@ -74,6 +85,7 @@ describe('Taxes page — Harvestable Losses section', () => {
     priceRows.push({ symbol: 'TCS', price: 150 });
     metaRows.push({ symbol: 'TCS', sector: 'Equity' });
 
+    syncPortfolioMock();
     renderPage();
     await waitFor(() => expect(screen.getByText('Total Harvestable Loss')).toBeInTheDocument());
 
@@ -86,6 +98,7 @@ describe('Taxes page — Harvestable Losses section', () => {
     priceRows.push({ symbol: 'TCS', price: 150 });
     metaRows.push({ symbol: 'TCS', sector: 'Equity' });
 
+    syncPortfolioMock();
     renderPage();
     await waitFor(() => expect(screen.getByText('Harvestable Losses')).toBeInTheDocument());
 
@@ -106,6 +119,7 @@ describe('Taxes page — Harvestable Losses section', () => {
     priceRows.push({ symbol: 'TCS', price: 150 });
     metaRows.push({ symbol: 'TCS', sector: 'Equity' });
 
+    syncPortfolioMock();
     renderPage();
     await waitFor(() => expect(screen.getByText('Holdings Tax Breakdown (FIFO)')).toBeInTheDocument());
 

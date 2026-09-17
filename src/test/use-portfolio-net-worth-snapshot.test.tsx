@@ -9,6 +9,13 @@ import { usePortfolio } from '@/hooks/usePortfolio';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// updateCash requires a specific family member selected (not the combined 'all' view) — stand
+// in for the default FamilyMemberProvider with one fixed member, same convention CLAUDE.md
+// documents for context/hook consumers (mock the hook directly rather than wrapping a provider).
+vi.mock('@/contexts/FamilyMemberContext', () => ({
+  useFamilyMemberSelection: () => ({ activeMemberId: 'member-1', setActiveMemberId: vi.fn() }),
+}));
+
 type SnapshotRow = {
   net_worth: number; portfolio_value: number; liquid_cash: number; vault_cash: number;
   pf_balance: number; credit_card_debt: number; recorded_at: string;
@@ -26,19 +33,17 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'transactions') {
-        return { select: () => ({ order: () => Promise.resolve({ data: transactionRows, error: null }) }) };
+        return { select: () => ({ order: () => ({ eq: () => Promise.resolve({ data: transactionRows, error: null }) }) }) };
       }
       if (table === 'cash_settings') {
         return {
           select: () => ({
-            limit: () => ({
-              single: () => Promise.resolve({
-                data: { liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 },
-                error: null,
-              }),
+            eq: () => Promise.resolve({
+              data: [{ liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 }],
+              error: null,
             }),
           }),
-          update: () => ({ not: () => Promise.resolve({ data: null, error: null }) }),
+          upsert: () => Promise.resolve({ data: null, error: null }),
         };
       }
       if (table === 'current_prices') {
@@ -50,9 +55,11 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (table === 'net_worth_history') {
         return {
           select: () => ({
-            order: () => ({
-              limit: () => ({
-                maybeSingle: () => Promise.resolve({ data: snapshotState.row, error: null }),
+            eq: () => ({
+              order: () => ({
+                limit: () => ({
+                  maybeSingle: () => Promise.resolve({ data: snapshotState.row, error: null }),
+                }),
               }),
             }),
           }),
@@ -61,7 +68,7 @@ vi.mock('@/integrations/supabase/client', () => ({
       }
       if (table === 'monthly_cashflow') {
         return {
-          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }),
           upsert: () => Promise.resolve({ data: null, error: null }),
         };
       }

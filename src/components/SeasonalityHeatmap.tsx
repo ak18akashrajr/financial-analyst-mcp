@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { useMemo } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { usePrivacy } from '@/contexts/PrivacyContext';
+import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 
 type Snap = { recorded_at: string; net_worth: number };
 
@@ -27,19 +27,8 @@ function colorFor(pct: number): string {
 
 export function SeasonalityHeatmap() {
   const { hidden } = usePrivacy();
-  const [snaps, setSnaps] = useState<Snap[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase
-        .from('net_worth_history')
-        .select('recorded_at,net_worth')
-        .order('recorded_at', { ascending: true });
-      setSnaps((data as any[] | null)?.map(r => ({ recorded_at: r.recorded_at, net_worth: Number(r.net_worth) })) ?? []);
-      setLoading(false);
-    })();
-  }, []);
+  const { data: rows, loading } = useNetWorthHistory();
+  const snaps: Snap[] = rows.map((r) => ({ recorded_at: r.recorded_at, net_worth: Number(r.net_worth) }));
 
   const { fys, grid } = useMemo(() => {
     // Last snapshot per (FY, month) → take last for end-of-month value

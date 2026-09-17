@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import {
   ResponsiveContainer,
   XAxis,
@@ -8,8 +7,8 @@ import {
   AreaChart,
   Area,
 } from 'recharts';
-import { supabase } from '@/integrations/supabase/client';
 import { usePrivacy } from '@/contexts/PrivacyContext';
+import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn, computeRangeXIRR } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
@@ -45,35 +44,13 @@ interface Props {
 
 export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vaultCash, refreshKey, transactions }: Props) {
   const { hidden } = usePrivacy();
-  const [data, setData] = useState<NetWorthPoint[]>([]);
   const { selection, handlers, clear } = useChartRangeSelection();
-
-  // Load history on mount and when refreshKey changes
-  useEffect(() => {
-    loadHistory();
-  }, [refreshKey]);
-
-  // Load history on mount
-  useEffect(() => {
-    loadHistory();
-  }, []);
-
-  async function loadHistory() {
-    const { data: rows } = await supabase
-      .from('net_worth_history')
-      .select('*')
-      .order('recorded_at', { ascending: true });
-
-    if (rows) {
-      setData(
-        rows.map((r: any) => ({
-          recorded_at: r.recorded_at,
-          label: new Date(r.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }),
-          net_worth: Number(r.net_worth),
-        }))
-      );
-    }
-  }
+  const { data: rows } = useNetWorthHistory(refreshKey);
+  const data: NetWorthPoint[] = rows.map((r) => ({
+    recorded_at: r.recorded_at,
+    label: new Date(r.recorded_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }),
+    net_worth: Number(r.net_worth),
+  }));
 
   if (data.length < 2) return null;
 

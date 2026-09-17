@@ -13,6 +13,19 @@ vi.mock('@/contexts/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
+// MobileTopNav now also mounts FamilyMemberSwitcher (useFamilyMembers → family_members table) —
+// same convention as app-layout.test.tsx's supabase mock for SecurityIncidentsProvider.
+vi.mock('@/integrations/supabase/client', () => ({
+  supabase: {
+    from: (table: string) => {
+      if (table === 'family_members') {
+        return { select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) };
+      }
+      throw new Error(`Unexpected table in test: ${table}`);
+    },
+  },
+}));
+
 vi.mocked(useAuth).mockReturnValue({
   session: { access_token: 'fake' } as never,
   loading: false,

@@ -22,6 +22,8 @@ import {
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
+import { FamilyMemberSwitcher } from '@/components/FamilyMemberSwitcher';
+import { Users2 } from 'lucide-react';
 
 const navGroups = [
   {
@@ -53,6 +55,7 @@ const navGroups = [
     label: 'Tools',
     items: [
       { to: '/ai', label: 'AI', icon: Bot },
+      { to: '/family-members', label: 'Family', icon: Users2 },
       { to: '/dev-zone', label: 'Dev Zone', icon: Terminal },
     ],
   },
@@ -103,6 +106,11 @@ export function SideNav() {
             <Landmark className="w-4.5 h-4.5" />
           </Link>
         )}
+      </div>
+
+      {/* Active family member / combined household view */}
+      <div className={collapsed ? 'flex justify-center mb-3' : 'mb-3 px-1'}>
+        <FamilyMemberSwitcher collapsed={collapsed} />
       </div>
 
       {/* Collapse toggle */}

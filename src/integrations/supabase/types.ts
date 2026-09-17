@@ -91,6 +91,7 @@ export type Database = {
       cash_settings: {
         Row: {
           credit_card_debt: number
+          family_member_id: string
           id: string
           liquid_cash: number
           pf_balance: number
@@ -99,6 +100,7 @@ export type Database = {
         }
         Insert: {
           credit_card_debt?: number
+          family_member_id: string
           id?: string
           liquid_cash?: number
           pf_balance?: number
@@ -107,11 +109,33 @@ export type Database = {
         }
         Update: {
           credit_card_debt?: number
+          family_member_id?: string
           id?: string
           liquid_cash?: number
           pf_balance?: number
           updated_at?: string
           vault_cash?: number
+        }
+        Relationships: []
+      }
+      family_members: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          relationship: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          relationship: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          relationship?: string
         }
         Relationships: []
       }
@@ -362,6 +386,7 @@ export type Database = {
       }
       monthly_cashflow: {
         Row: {
+          family_member_id: string
           id: string
           total_expense: number
           total_income: number
@@ -369,6 +394,7 @@ export type Database = {
           year_month: string
         }
         Insert: {
+          family_member_id: string
           id?: string
           total_expense?: number
           total_income?: number
@@ -376,6 +402,7 @@ export type Database = {
           year_month: string
         }
         Update: {
+          family_member_id?: string
           id?: string
           total_expense?: number
           total_income?: number
@@ -387,6 +414,7 @@ export type Database = {
       net_worth_history: {
         Row: {
           credit_card_debt: number
+          family_member_id: string
           id: string
           liquid_cash: number
           net_worth: number
@@ -397,6 +425,7 @@ export type Database = {
         }
         Insert: {
           credit_card_debt?: number
+          family_member_id: string
           id?: string
           liquid_cash?: number
           net_worth: number
@@ -407,6 +436,7 @@ export type Database = {
         }
         Update: {
           credit_card_debt?: number
+          family_member_id?: string
           id?: string
           liquid_cash?: number
           net_worth?: number
@@ -580,6 +610,7 @@ export type Database = {
         Row: {
           created_at: string
           date: string
+          family_member_id: string
           id: string
           price: number
           quantity: number
@@ -589,6 +620,7 @@ export type Database = {
         Insert: {
           created_at?: string
           date?: string
+          family_member_id: string
           id?: string
           price: number
           quantity: number
@@ -598,6 +630,7 @@ export type Database = {
         Update: {
           created_at?: string
           date?: string
+          family_member_id?: string
           id?: string
           price?: number
           quantity?: number
