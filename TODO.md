@@ -12,9 +12,24 @@ check items off (`- [x]`) when merged, and note the PR number.
       Supabase Storage export), whether `pg_cron` is available/acceptable vs. a scheduled edge
       function, and `ai_rate_limits`' cleanup cadence.
 
-## Performance
+## Portfolio AI / MCP tools
 
-Priority recommendations from a performance review of the repo (2026-09-11).
+- [ ] Time series forecasting
+- [ ] **Set up OpenRouter Guardrails** for the opt-in Nemotron/MiniMax path —
+      [openrouter.ai/activity/guardrails](https://openrouter.ai/activity/guardrails) offers content
+      filters, spending limits, and usage policies on top of an OpenRouter account/API key.
+      Flagged by the user 2026-08-30 while testing the opt-in path
+      ([docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)). Not yet scoped — need
+      to check at implementation time exactly what "spending limits" means for a *free-tier-only*
+      usage pattern (this app never sends paid requests to OpenRouter today), whether policies are
+      configured per-key or account-wide, and whether enabling anything here changes the existing
+      `llm_quota_usage`-based quota tracking or is purely additive/defense-in-depth on top of it.
+
+<details>
+<summary>Archive (completed)</summary>
+
+**Performance review action items (all resolved 2026-09-12)** — priority recommendations from a
+performance review of the repo (2026-09-11).
 
 - [x] **High: Memoize XIRR calculations or pre-compute in Postgres.** Done on branch `perf/split-xirr-memo`,
       merged via [PR #150](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/150), together with the Medium item below (they turned out to be the same
@@ -162,22 +177,6 @@ Priority recommendations from a performance review of the repo (2026-09-11).
       literally unfindable while stuck, the thrown check's row never updates, Recheck never
       re-enables). Also added an `afterEach(vi.restoreAllMocks)` to that describe block — the new
       tests use persistent `vi.spyOn` mocks that otherwise leak into the following test.
-
-## Portfolio AI / MCP tools
-
-- [ ] Time series forecasting
-- [ ] **Set up OpenRouter Guardrails** for the opt-in Nemotron/MiniMax path —
-      [openrouter.ai/activity/guardrails](https://openrouter.ai/activity/guardrails) offers content
-      filters, spending limits, and usage policies on top of an OpenRouter account/API key.
-      Flagged by the user 2026-08-30 while testing the opt-in path
-      ([docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)). Not yet scoped — need
-      to check at implementation time exactly what "spending limits" means for a *free-tier-only*
-      usage pattern (this app never sends paid requests to OpenRouter today), whether policies are
-      configured per-key or account-wide, and whether enabling anything here changes the existing
-      `llm_quota_usage`-based quota tracking or is purely additive/defense-in-depth on top of it.
-
-<details>
-<summary>Archive (completed)</summary>
 
 **High Priority Action Items (all resolved 2026-09-11)** — flagged 2026-08-28 during a
 Reports-page (`/reports`) calculation audit requested by the user, after confirming and fixing one
