@@ -480,15 +480,20 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
         horizonMonths: {
           type: "number",
           minimum: 1,
-          description: "How many months ahead to project (default: 24)",
+          // 120 (10y) is double the largest horizon the Forecast page itself ever offers
+          // (HORIZON_OPTIONS tops out at 60 in src/pages/Forecast.tsx) — generous for any real
+          // question, while keeping forecastParametricTerminal's simulations×months loop bounded
+          // (1000×120 = 120,000 iterations) instead of caller-controlled and unbounded.
+          maximum: 120,
+          description: "How many months ahead to project (default: 24, max: 120)",
         },
       },
       additionalProperties: false,
     },
     annotations: READ_ONLY_ANNOTATIONS,
     handler: async (args, sb) => {
-      // horizonMonths is already validated (a number >= 1) by the time it reaches here — see
-      // validateArgs in mcp-schema-validate.ts.
+      // horizonMonths is already validated (a number in [1, 120]) by the time it reaches here —
+      // see validateArgs in mcp-schema-validate.ts.
       const horizonMonths = typeof args.horizonMonths === "number" ? args.horizonMonths : 24;
 
       const p = await getCurrentPortfolio(sb);

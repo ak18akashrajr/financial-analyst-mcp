@@ -7,6 +7,12 @@ const TOP_N_SCHEMA = {
   additionalProperties: false,
 };
 
+const HORIZON_SCHEMA = {
+  type: "object",
+  properties: { horizonMonths: { type: "number", minimum: 1, maximum: 120, description: "..." } },
+  additionalProperties: false,
+};
+
 const SHOCK_SCHEMA = {
   type: "object",
   properties: { shockPercent: { type: "number", description: "..." } },
@@ -49,6 +55,20 @@ describe("validateArgs", () => {
   it("rejects a numeric argument below its declared minimum instead of silently clamping", () => {
     const error = validateArgs(TOP_N_SCHEMA, { topN: -3 });
     expect(error).toMatch(/topN.*>= 1/);
+  });
+
+  it("accepts a numeric argument at its declared maximum", () => {
+    expect(validateArgs(HORIZON_SCHEMA, { horizonMonths: 120 })).toBeNull();
+  });
+
+  it("rejects a numeric argument above its declared maximum instead of silently accepting it", () => {
+    // Regression test: forecast_portfolio_value's horizonMonths used to have no upper bound at
+    // all, and this validator had no `maximum` keyword to enforce one even if the schema declared
+    // it — an LLM-supplied horizonMonths in the millions could pin the edge function's CPU in
+    // forecastParametricTerminal's simulations×months loop. See mcp-tools.test.ts for the
+    // tool-level regression test.
+    const error = validateArgs(HORIZON_SCHEMA, { horizonMonths: 100000000 });
+    expect(error).toMatch(/horizonMonths.*<= 120/);
   });
 
   it("rejects a non-numeric value for a number-typed argument", () => {
