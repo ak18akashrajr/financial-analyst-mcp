@@ -3,6 +3,30 @@
 Running list of action items for this repo. Add new items to the bottom of the relevant section;
 check items off (`- [x]`) when merged, and note the PR number.
 
+## Security
+
+- [ ] **Upgrade `vitest` past 5.0.1 once `@testing-library/jest-dom` fixes its Vitest 5 type
+      support.** Flagged 2026-09-17 during a repo-wide security scan requested by the user.
+      `npm audit` reports a moderate `@vitest/mocker` path-traversal/arbitrary-file-read finding
+      ([GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)) fixed only by a
+      major `vitest` bump to 5.0.1. Attempted that bump on `fix/security-scan-followups-sept17`:
+      `vitest@5.0.1` installs cleanly (Node 22.12+/Vite 6.4+/`@types/node` peers all already
+      satisfied) but breaks `npx tsc --noEmit` with ~300 `Property 'toBeInTheDocument' does not
+      exist` errors across every `@testing-library/jest-dom`-using test file. Root cause:
+      `node_modules/@testing-library/jest-dom/types/vitest.d.ts` declares
+      `interface Assertion<T = any>` (one type parameter) to merge into Vitest's module, but
+      Vitest 5 changed `Assertion` to take two (`Assertion<R, T>`) — the interface-merge silently
+      breaks. This is a confirmed, currently open upstream bug —
+      [testing-library/jest-dom#738](https://github.com/testing-library/jest-dom/issues/738),
+      opened 2026-09-06, no fix or workaround published as of this writing (checked the latest
+      `jest-dom` release, 7.0.1 — its only Vitest-related change is declaring `vitest` an optional
+      peer dependency, not fixing the type shim). Decision: revert to `vitest@3.2.7` rather than
+      carry a local type-augmentation patch over someone else's unresolved bug — the vulnerability
+      is dev/test-tooling only (`@vitest/mocker`, never shipped in the production bundle or edge
+      functions), so the accepted-risk window costs nothing at runtime. Re-attempt
+      `npm audit fix --force` (or a direct `vitest@^5` install) once jest-dom#738 closes, and
+      re-run `npx tsc --noEmit` to confirm before merging.
+
 ## Backlog
 
 - [ ] **Scaling & archival plan.** Implement the plan in
@@ -14,7 +38,6 @@ check items off (`- [x]`) when merged, and note the PR number.
 
 ## Portfolio AI / MCP tools
 
-- [ ] Time series forecasting
 - [ ] **Set up OpenRouter Guardrails** for the opt-in Nemotron/MiniMax path —
       [openrouter.ai/activity/guardrails](https://openrouter.ai/activity/guardrails) offers content
       filters, spending limits, and usage policies on top of an OpenRouter account/API key.
@@ -27,6 +50,39 @@ check items off (`- [x]`) when merged, and note the PR number.
 
 <details>
 <summary>Archive (completed)</summary>
+
+- [x] **Time series forecasting.** Genuine fitted forecasting, distinct from the existing
+      assumption-driven Projections/Monte Carlo — drift and volatility are fitted from the
+      portfolio's own historical mark-to-market return series, not a fixed assumed rate. Branch
+      `feat/time-series-forecasting`, merged via
+      [PR #154](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/154),
+      [#155](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/155),
+      [#156](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/156).
+      [`src/lib/portfolioSeries.ts`](src/lib/portfolioSeries.ts) builds a daily equity value series
+      from transactions × `historical_prices` (no new table), with flow-adjusted (modified-Dietz)
+      returns so a SIP contribution isn't misread as a market gain.
+      [`src/lib/forecast.ts`](src/lib/forecast.ts) fits drift/vol (EWMA variant + thin-sample
+      fallback to asset-class assumptions + drift clamping), projects forward via log-normal GBM or
+      block-bootstrap, and walk-forward backtests the fitted band's own calibration. New
+      [`/forecast`](src/pages/Forecast.tsx) page with horizon/method/lookback/EWMA controls, a
+      realized+forecast chart, caveat banners, and a backtest coverage panel. New
+      `forecast_portfolio_value` MCP tool
+      ([`_shared/mcp-tools.ts`](supabase/functions/_shared/mcp-tools.ts)), backed by a
+      hand-mirrored Deno-side [`_shared/forecast.ts`](supabase/functions/_shared/forecast.ts),
+      wired into the router's complexity keywords and the system prompt's guardrail carve-out
+      (portfolio-level forecasts are exempt from the no-price-prediction rule). Design rationale:
+      [docs/forecasting-plan.md](docs/forecasting-plan.md). Two live-reported follow-up fixes on
+      the same branch: a chart tooltip showing "p10-p90 band: NaN" (the range `Area`'s `[p10, p90]`
+      tuple was formatted as a plain number — extracted into a unit-tested
+      `formatChartTooltipValue`), and a missing staleness warning when the forecast's anchor date
+      (the last date with a real `historical_prices` row) was months behind real "today" because
+      prices hadn't been backfilled (added a caveat banner naming the stale date and gap). Also
+      fixed a pre-existing, unrelated bug found while wiring the UI: `Projections.tsx` nested an
+      `InfoHint`'s own `<button>` inside a Radix `TabsTrigger` (already a `<button role="tab">`) —
+      invalid HTML and broken tab keyboard/screen-reader semantics — each hint now sits as a
+      sibling after its trigger instead. Tests: extensive new coverage across
+      `src/test/forecast*.test.ts`, `portfolio-series.test.ts`, `projections-tabs-nesting.test.tsx`,
+      plus `mcp-tools.test.ts`/`forecast.test.ts` on the edge-function side.
 
 **Performance review action items (all resolved 2026-09-12)** — priority recommendations from a
 performance review of the repo (2026-09-11).
@@ -453,5 +509,37 @@ this audit.
       other four ratios. Tests: new cases in `risk-metrics.test.ts`. Branch:
       `feat/risk-metrics-alpha-sharpe`, merged via
       [PR #144](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/144).
+
+- [x] **Cap `forecast_portfolio_value`'s `horizonMonths` — unbounded CPU-exhaustion risk.**
+      Flagged 2026-09-17 during a repo-wide security scan requested by the user (covering
+      everything shipped since the 2026-09-08 review: time-series forecasting, cash inline-edit,
+      the new `llm_requests` log table, the clarifying-question tool, MCP-call timeout). Everything
+      else in that scan checked out clean; this was the one genuine finding.
+      [`mcp-tools.ts`](supabase/functions/_shared/mcp-tools.ts)'s `horizonMonths` schema had only
+      `minimum: 1`, no upper bound, and
+      [`mcp-schema-validate.ts`](supabase/functions/_shared/mcp-schema-validate.ts)'s `validateArgs`
+      had no `maximum` keyword support at all — so even adding one to the schema alone wouldn't
+      have been enforced. An LLM-supplied `horizonMonths` in the millions would reach
+      [`forecastParametricTerminal`](supabase/functions/_shared/forecast.ts)'s
+      `simulations(1000) × months` synchronous loop uncapped, pinning that edge function's CPU;
+      [`timeout.ts`](supabase/functions/_shared/timeout.ts) doesn't cancel the underlying call by
+      design, so the runaway loop would keep burning compute even after `portfolio-ai`'s
+      client-side timeout gave up and showed the user an error. Fixed on branch
+      `fix/security-scan-followups-sept17`: added real `maximum` support to `validateArgs`, and set
+      `maximum: 120` (10 years — double the largest horizon the Forecast page itself ever offers,
+      `HORIZON_OPTIONS` topping out at 60 in `src/pages/Forecast.tsx`) on the tool's own schema.
+      Tests: new cases in
+      [`mcp-schema-validate.test.ts`](supabase/functions/_shared/mcp-schema-validate.test.ts)
+      (`maximum` accepted at the boundary, rejected above it) and
+      [`mcp-tools.test.ts`](supabase/functions/_shared/mcp-tools.test.ts) (the tool's own schema
+      rejects an excessive `horizonMonths`).
+
+- [x] **Patch `js-yaml` (high-severity `npm audit` finding).** Same 2026-09-17 scan. Transitive
+      dev dependency via `eslint` → `@eslint/eslintrc` → `js-yaml`
+      ([GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh), CPU-DoS via
+      `maxTotalMergeKeys` on empty merge sources) — not shipped runtime code either way. Patched
+      4.3.1 → 4.3.2 via plain `npm audit fix` (no `--force`, no major bump). See the Security
+      section above for the one `npm audit` item from this same pass that's still open
+      (`vitest`/`@vitest/mocker`, blocked on an upstream bug, not this fix).
 
 </details>
