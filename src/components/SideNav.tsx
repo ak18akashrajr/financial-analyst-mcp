@@ -1,65 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  BarChart3,
-  FileText,
-  Crosshair,
-  Target,
-  Flag,
-  Activity,
-  Bot,
-  FileSpreadsheet,
-  LogOut,
-  Landmark,
-  ChevronsLeft,
-  ChevronsRight,
-  DollarSign,
-  TrendingUp,
-  Terminal,
-  Gauge,
-  LineChart,
-} from 'lucide-react';
+import { LogOut, Landmark, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { FamilyMemberSwitcher } from '@/components/FamilyMemberSwitcher';
-import { Users2 } from 'lucide-react';
-
-const navGroups = [
-  {
-    label: null, // ungrouped — always visible, no section header
-    items: [{ to: '/overview', label: 'Overview', icon: LayoutDashboard }],
-  },
-  {
-    label: 'Analytics',
-    items: [
-      { to: '/charts', label: 'Charts', icon: BarChart3 },
-      { to: '/reports', label: 'Reports', icon: FileSpreadsheet },
-      { to: '/benchmark', label: 'Benchmark', icon: TrendingUp },
-      { to: '/dollar-adjusted-returns', label: 'USD View', icon: DollarSign },
-      { to: '/rolling-returns', label: 'Rolling', icon: Activity },
-      { to: '/risk-metrics', label: 'Risk Metrics', icon: Gauge },
-    ],
-  },
-  {
-    label: 'Planning',
-    items: [
-      { to: '/taxes', label: 'Taxes', icon: FileText },
-      { to: '/projections', label: 'Projections', icon: Crosshair },
-      { to: '/forecast', label: 'Forecast', icon: LineChart },
-      { to: '/deployment-plan', label: 'Deploy', icon: Target },
-      { to: '/goal-track', label: 'Goals', icon: Flag },
-    ],
-  },
-  {
-    label: 'Tools',
-    items: [
-      { to: '/ai', label: 'AI', icon: Bot },
-      { to: '/family-members', label: 'Family', icon: Users2 },
-      { to: '/dev-zone', label: 'Dev Zone', icon: Terminal },
-    ],
-  },
-];
+import { navGroups } from '@/components/navConfig';
 
 const EXPANDED = '16rem';
 const COLLAPSED = '5rem';
