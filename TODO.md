@@ -3,51 +3,6 @@
 Running list of action items for this repo. Add new items to the bottom of the relevant section;
 check items off (`- [x]`) when merged, and note the PR number.
 
-## Security
-
-- [ ] **Upgrade `vitest` past 5.0.1 once `@testing-library/jest-dom` fixes its Vitest 5 type
-      support.** Flagged 2026-09-17 during a repo-wide security scan requested by the user.
-      `npm audit` reports a moderate `@vitest/mocker` path-traversal/arbitrary-file-read finding
-      ([GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)) fixed only by a
-      major `vitest` bump to 5.0.1. Attempted that bump on `fix/security-scan-followups-sept17`:
-      `vitest@5.0.1` installs cleanly (Node 22.12+/Vite 6.4+/`@types/node` peers all already
-      satisfied) but breaks `npx tsc --noEmit` with ~300 `Property 'toBeInTheDocument' does not
-      exist` errors across every `@testing-library/jest-dom`-using test file. Root cause:
-      `node_modules/@testing-library/jest-dom/types/vitest.d.ts` declares
-      `interface Assertion<T = any>` (one type parameter) to merge into Vitest's module, but
-      Vitest 5 changed `Assertion` to take two (`Assertion<R, T>`) — the interface-merge silently
-      breaks. This is a confirmed, currently open upstream bug —
-      [testing-library/jest-dom#738](https://github.com/testing-library/jest-dom/issues/738),
-      opened 2026-09-06, no fix or workaround published as of this writing (checked the latest
-      `jest-dom` release, 7.0.1 — its only Vitest-related change is declaring `vitest` an optional
-      peer dependency, not fixing the type shim). Decision: revert to `vitest@3.2.7` rather than
-      carry a local type-augmentation patch over someone else's unresolved bug — the vulnerability
-      is dev/test-tooling only (`@vitest/mocker`, never shipped in the production bundle or edge
-      functions), so the accepted-risk window costs nothing at runtime. Re-attempt
-      `npm audit fix --force` (or a direct `vitest@^5` install) once jest-dom#738 closes, and
-      re-run `npx tsc --noEmit` to confirm before merging.
-
-## Backlog
-
-- [ ] **Scaling & archival plan.** Implement the plan in
-      [docs/scaling-and-archival-plan.md](docs/scaling-and-archival-plan.md) — currently
-      planning-only, nothing built yet. Needs the "Open decisions" in that doc answered first:
-      retention window for `audit_logs`, where the archive lives (same-DB `_archive` table vs.
-      Supabase Storage export), whether `pg_cron` is available/acceptable vs. a scheduled edge
-      function, and `ai_rate_limits`' cleanup cadence.
-
-## Portfolio AI / MCP tools
-
-- [ ] **Set up OpenRouter Guardrails** for the opt-in Nemotron/MiniMax path —
-      [openrouter.ai/activity/guardrails](https://openrouter.ai/activity/guardrails) offers content
-      filters, spending limits, and usage policies on top of an OpenRouter account/API key.
-      Flagged by the user 2026-08-30 while testing the opt-in path
-      ([docs/openrouter-nemotron-plan.md](docs/openrouter-nemotron-plan.md)). Not yet scoped — need
-      to check at implementation time exactly what "spending limits" means for a *free-tier-only*
-      usage pattern (this app never sends paid requests to OpenRouter today), whether policies are
-      configured per-key or account-wide, and whether enabling anything here changes the existing
-      `llm_quota_usage`-based quota tracking or is purely additive/defense-in-depth on top of it.
-
 <details>
 <summary>Archive (completed)</summary>
 
