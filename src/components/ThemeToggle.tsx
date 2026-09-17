@@ -30,10 +30,16 @@ export function ThemeToggle() {
   return (
     <button
       onClick={() => setDark(!dark)}
-      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"
+      aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors shrink-0"
     >
-      {dark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-      {dark ? 'Light' : 'Dark'}
+      {dark ? <Sun className="w-3.5 h-3.5 shrink-0" /> : <Moon className="w-3.5 h-3.5 shrink-0" />}
+      {/* Narrower than ~400px (e.g. a 320-375px phone), MobileTopNav has no
+          room for the label alongside the brand, family switcher, and
+          logout button — the icon plus aria-label keep it usable there, and
+          the label returns on wider phones and always on the desktop
+          SideNav (which never renders below 768px anyway). */}
+      <span className="hidden min-[400px]:inline">{dark ? 'Light' : 'Dark'}</span>
     </button>
   );
 }
