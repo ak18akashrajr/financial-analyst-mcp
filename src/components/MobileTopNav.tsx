@@ -4,11 +4,13 @@ import { Menu, LogOut, Landmark } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { FamilyMemberSwitcher } from '@/components/FamilyMemberSwitcher';
-import { navGroups } from '@/components/navConfig';
+import { getVisibleNavGroups } from '@/components/navConfig';
+import { useActiveMemberRelationship } from '@/hooks/useActiveMemberRelationship';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 
 export function MobileTopNav() {
   const { signOut } = useAuth();
+  const navGroups = getVisibleNavGroups(useActiveMemberRelationship());
   const [open, setOpen] = useState(false);
   const logout = () => {
     signOut();

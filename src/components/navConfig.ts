@@ -66,3 +66,16 @@ export const navGroups: NavGroup[] = [
     ],
   },
 ];
+
+// Dev Zone is debug/diagnostic tooling (raw data resets, security incident log, etc.) that has no
+// use to a family member just checking their own numbers, and only confuses them — so it's hidden
+// from the nav for whichever member is tagged "Parent" (relationship on family_members). This is a
+// UX declutter, not an access-control boundary: the /dev-zone route itself stays mounted and
+// reachable by URL (and via SecurityIncidentBanner's link, which must keep working for everyone —
+// see that component's doc comment) regardless of the active member's relationship.
+export function getVisibleNavGroups(activeRelationship: string | null): NavGroup[] {
+  if (activeRelationship !== 'Parent') return navGroups;
+  return navGroups
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.to !== '/dev-zone') }))
+    .filter((group) => group.items.length > 0);
+}

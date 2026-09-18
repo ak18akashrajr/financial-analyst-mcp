@@ -4,13 +4,15 @@ import { LogOut, Landmark, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { FamilyMemberSwitcher } from '@/components/FamilyMemberSwitcher';
-import { navGroups } from '@/components/navConfig';
+import { getVisibleNavGroups } from '@/components/navConfig';
+import { useActiveMemberRelationship } from '@/hooks/useActiveMemberRelationship';
 
 const EXPANDED = '16rem';
 const COLLAPSED = '5rem';
 
 export function SideNav() {
   const { signOut } = useAuth();
+  const navGroups = getVisibleNavGroups(useActiveMemberRelationship());
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('sidenav_collapsed') === '1';
