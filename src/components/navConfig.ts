@@ -67,15 +67,25 @@ export const navGroups: NavGroup[] = [
   },
 ];
 
-// Dev Zone is debug/diagnostic tooling (raw data resets, security incident log, etc.) that has no
-// use to a family member just checking their own numbers, and only confuses them — so it's hidden
-// from the nav for whichever member is tagged "Parent" (relationship on family_members). This is a
-// UX declutter, not an access-control boundary: the /dev-zone route itself stays mounted and
-// reachable by URL (and via SecurityIncidentBanner's link, which must keep working for everyone —
-// see that component's doc comment) regardless of the active member's relationship.
+// A handful of pages are advanced/technical enough (debug tooling, or analytics aimed at someone
+// actively managing the portfolio, not just checking their own numbers) that they only confuse a
+// family member tagged "Parent" — so they're hidden from the nav for whichever member has that
+// relationship (relationship on family_members), keeping their view to the essentials. This is a
+// UX declutter, not an access-control boundary: every one of these routes stays mounted and
+// reachable by URL regardless of the active member (Dev Zone specifically is also linked directly
+// from SecurityIncidentBanner, which must keep working for everyone — see that component's doc
+// comment).
+const HIDDEN_FOR_PARENT = new Set([
+  '/dev-zone',
+  '/benchmark',
+  '/rolling-returns',
+  '/risk-metrics',
+  '/forecast',
+]);
+
 export function getVisibleNavGroups(activeRelationship: string | null): NavGroup[] {
   if (activeRelationship !== 'Parent') return navGroups;
   return navGroups
-    .map((group) => ({ ...group, items: group.items.filter((item) => item.to !== '/dev-zone') }))
+    .map((group) => ({ ...group, items: group.items.filter((item) => !HIDDEN_FOR_PARENT.has(item.to)) }))
     .filter((group) => group.items.length > 0);
 }
