@@ -19,6 +19,9 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (table === 'family_members') {
         return { select: () => ({ order: () => Promise.resolve({ data: memberRows, error: null }) }) };
       }
+      if (table === 'family_member_deletions') {
+        return { select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) };
+      }
       throw new Error(`Unexpected table in test: ${table}`);
     },
   },

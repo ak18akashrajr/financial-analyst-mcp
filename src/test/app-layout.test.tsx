@@ -33,7 +33,7 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (table === 'security_incidents') {
         return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: incidentRows, error: null }) }) }) };
       }
-      if (table === 'family_members') {
+      if (table === 'family_members' || table === 'family_member_deletions') {
         // Nav-mounted FamilyMemberSwitcher — no members means it renders nothing extra here.
         return { select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) };
       }

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import type { FamilyMember } from '@/types/portfolio';
+import type { FamilyMember, FamilyMemberDeletion } from '@/types/portfolio';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 
@@ -8,32 +8,50 @@ import { logClientError } from '@/lib/clientErrorLogging';
 // them, so removing someone never silently drops their transactions/cash/history.
 const MEMBER_DATA_TABLES = ['transactions', 'cash_settings', 'monthly_cashflow', 'net_worth_history'] as const;
 
+function toDeletionLogEntry(row: any): FamilyMemberDeletion {
+  return {
+    id: row.id,
+    memberId: row.member_id,
+    memberName: row.member_name,
+    memberRelationship: row.member_relationship,
+    reason: row.reason,
+    deletedBy: row.deleted_by,
+    deletedAt: row.deleted_at,
+  };
+}
+
 export function useFamilyMembers() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [deletionLog, setDeletionLog] = useState<FamilyMemberDeletion[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('family_members')
-      .select('*')
-      .order('created_at', { ascending: true });
+    const [membersRes, deletionsRes] = await Promise.all([
+      supabase.from('family_members').select('*').order('created_at', { ascending: true }),
+      supabase.from('family_member_deletions').select('*').order('deleted_at', { ascending: false }),
+    ]);
 
-    if (error) {
-      logClientError('useFamilyMembers.loadMembers', 'Failed to load family_members', { error });
+    if (membersRes.error) {
+      logClientError('useFamilyMembers.loadMembers', 'Failed to load family_members', { error: membersRes.error });
       toast.error('Failed to load family members');
-      setLoading(false);
-      return;
+    } else {
+      setMembers(
+        (membersRes.data ?? []).map((m) => ({
+          id: m.id,
+          name: m.name,
+          relationship: m.relationship,
+          createdAt: m.created_at,
+        }))
+      );
     }
 
-    setMembers(
-      (data ?? []).map((m) => ({
-        id: m.id,
-        name: m.name,
-        relationship: m.relationship,
-        createdAt: m.created_at,
-      }))
-    );
+    if (deletionsRes.error) {
+      logClientError('useFamilyMembers.loadMembers', 'Failed to load family_member_deletions', { error: deletionsRes.error });
+    } else {
+      setDeletionLog((deletionsRes.data ?? []).map(toDeletionLogEntry));
+    }
+
     setLoading(false);
   }, []);
 
@@ -75,7 +93,11 @@ export function useFamilyMembers() {
 
   // Blocks deletion if the member has any recorded transactions/cash/cashflow/net-worth rows —
   // there is no soft-delete or cascade here by design, see docs/family-portfolio-view-plan.md.
-  const deleteMember = useCallback(async (id: string) => {
+  // Requires a reason and who's performing the delete (GitHub-style friction — see
+  // src/pages/FamilyMembers.tsx's type-to-confirm dialog) and records both to
+  // family_member_deletions, snapshotting the member's name/relationship since the row itself
+  // won't exist to join against afterwards.
+  const deleteMember = useCallback(async (id: string, reason: string, deletedBy: string) => {
     for (const table of MEMBER_DATA_TABLES) {
       const { count, error } = await supabase
         .from(table)
@@ -93,6 +115,8 @@ export function useFamilyMembers() {
       }
     }
 
+    const member = members.find((m) => m.id === id);
+
     const { error } = await supabase.from('family_members').delete().eq('id', id);
     if (error) {
       logClientError('useFamilyMembers.deleteMember', 'Failed to delete family member', { error, id });
@@ -102,8 +126,32 @@ export function useFamilyMembers() {
 
     setMembers((prev) => prev.filter((m) => m.id !== id));
     toast.success('Family member removed');
-    return true;
-  }, []);
 
-  return { members, loading, addMember, updateMember, deleteMember, reload: loadMembers };
+    // The member is already gone at this point — a failed log write is recorded but never
+    // reverses or blocks the deletion that already succeeded (same fire-and-log tolerance as
+    // usePortfolio's recordNetWorthSnapshot for a secondary, non-critical write).
+    if (member) {
+      const { data, error: logError } = await supabase
+        .from('family_member_deletions')
+        .insert({
+          member_id: member.id,
+          member_name: member.name,
+          member_relationship: member.relationship,
+          reason,
+          deleted_by: deletedBy,
+        } as any)
+        .select()
+        .single();
+
+      if (logError) {
+        logClientError('useFamilyMembers.deleteMember', 'Failed to record deletion log', { error: logError, id });
+      } else if (data) {
+        setDeletionLog((prev) => [toDeletionLogEntry(data), ...prev]);
+      }
+    }
+
+    return true;
+  }, [members]);
+
+  return { members, deletionLog, loading, addMember, updateMember, deleteMember, reload: loadMembers };
 }

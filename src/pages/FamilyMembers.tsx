@@ -5,16 +5,29 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2, Users2 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Plus, Trash2, Users2, History } from 'lucide-react';
+import type { FamilyMember } from '@/types/portfolio';
 
 const RELATIONSHIP_OPTIONS = ['Self', 'Spouse', 'Child', 'Parent', 'Sibling', 'Other'];
 
 export default function FamilyMembers() {
-  const { members, loading, addMember, deleteMember } = useFamilyMembers();
+  const { members, deletionLog, loading, addMember, deleteMember } = useFamilyMembers();
   const { activeMemberId, setActiveMemberId } = useFamilyMemberSelection();
   const [name, setName] = useState('');
   const [relationship, setRelationship] = useState(RELATIONSHIP_OPTIONS[0]);
   const [submitting, setSubmitting] = useState(false);
+  const [deletingMember, setDeletingMember] = useState<FamilyMember | null>(null);
 
   const handleAdd = async () => {
     const trimmed = name.trim();
@@ -28,11 +41,16 @@ export default function FamilyMembers() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const removed = await deleteMember(id);
-    // Deleting the currently-active member falls back to the combined view rather than
-    // leaving the switcher pointed at a member that no longer exists.
-    if (removed && activeMemberId === id) setActiveMemberId('all');
+  const handleConfirmDelete = async (reason: string, deletedBy: string) => {
+    if (!deletingMember) return;
+    const id = deletingMember.id;
+    const removed = await deleteMember(id, reason.trim(), deletedBy.trim());
+    if (removed) {
+      // Deleting the currently-active member falls back to the combined view rather than
+      // leaving the switcher pointed at a member that no longer exists.
+      if (activeMemberId === id) setActiveMemberId('all');
+      setDeletingMember(null);
+    }
   };
 
   return (
@@ -107,7 +125,7 @@ export default function FamilyMembers() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => handleDelete(m.id)}
+                    onClick={() => setDeletingMember(m)}
                     title="Remove"
                     aria-label={`Remove ${m.name}`}
                   >
@@ -119,6 +137,137 @@ export default function FamilyMembers() {
           )}
         </CardContent>
       </Card>
+
+      {deletionLog.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <History className="w-4 h-4" /> Deletion History
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-border">
+              {deletionLog.map((d) => (
+                <li key={d.id} className="py-3 space-y-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">
+                      {d.memberName} <span className="text-xs font-normal text-muted-foreground">({d.memberRelationship})</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground shrink-0">
+                      {new Date(d.deletedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Deleted by <span className="text-foreground font-medium">{d.deletedBy}</span> — {d.reason}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      <DeleteMemberDialog
+        member={deletingMember}
+        onCancel={() => setDeletingMember(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
+  );
+}
+
+function DeleteMemberDialog({
+  member, onCancel, onConfirm,
+}: {
+  member: FamilyMember | null;
+  onCancel: () => void;
+  onConfirm: (reason: string, deletedBy: string) => Promise<void>;
+}) {
+  const [confirmText, setConfirmText] = useState('');
+  const [reason, setReason] = useState('');
+  const [deletedBy, setDeletedBy] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const reset = () => {
+    setConfirmText('');
+    setReason('');
+    setDeletedBy('');
+    setSubmitting(false);
+  };
+
+  const handleCancel = () => {
+    reset();
+    onCancel();
+  };
+
+  const canDelete = !!member && confirmText === member.name && reason.trim().length > 0 && deletedBy.trim().length > 0;
+
+  const handleConfirmClick = async () => {
+    if (!canDelete) return;
+    setSubmitting(true);
+    await onConfirm(reason, deletedBy);
+    reset();
+  };
+
+  return (
+    <AlertDialog open={!!member} onOpenChange={(open) => !open && handleCancel()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {member?.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This permanently removes {member?.name} as a tracked family member. This can't be undone —
+            type their name to confirm and give a reason, both of which are kept in the deletion history below.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="delete-confirm-name">
+              Type <span className="font-semibold text-foreground">{member?.name}</span> to confirm
+            </Label>
+            <Input
+              id="delete-confirm-name"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              autoComplete="off"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="delete-reason">Reason for deletion</Label>
+            <Textarea
+              id="delete-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g. Added by mistake, no longer tracking this member's portfolio…"
+              rows={2}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="delete-by">Your name</Label>
+            <Input
+              id="delete-by"
+              value={deletedBy}
+              onChange={(e) => setDeletedBy(e.target.value)}
+              placeholder="Who's making this change?"
+            />
+          </div>
+        </div>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={handleCancel}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              void handleConfirmClick();
+            }}
+            disabled={!canDelete || submitting}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Delete {member?.name}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
