@@ -20,70 +20,73 @@ vi.mock('@/contexts/FamilyMemberContext', () => ({
   useFamilyMemberSelection: () => ({ activeMemberId: 'member-1', setActiveMemberId: vi.fn() }),
 }));
 
-const { cashState, cashflowState, upsertMock, cashflowDeleteMock, transactionsDeleteMock, pricesDeleteMock } = vi.hoisted(() => ({
+// updateCash and resetAll now run as single atomic RPCs (see
+// supabase/migrations/20260918110000_add_acid_portfolio_mutation_functions.sql) instead of a
+// client-driven upsert/delete sequence, so this mock's `rpc` implements the same income/expense
+// accumulation that update_cash_settings_tracked does server-side (compare previous vault/liquid
+// cash to the new values, classify the delta, accumulate into the month's running total) — that
+// SQL logic itself isn't exercised by this test file; it can only run against a real Postgres.
+const { cashState, cashflowState, rpcMock } = vi.hoisted(() => ({
   cashState: { liquid_cash: 1000, vault_cash: 2000, pf_balance: 0, credit_card_debt: 500 },
-  cashflowState: { row: null as null | { total_income: number; total_expense: number } },
-  upsertMock: vi.fn((row: any) => {
-    cashflowState.row = { total_income: row.total_income, total_expense: row.total_expense };
+  cashflowState: { totalIncome: 0, totalExpense: 0 },
+  rpcMock: vi.fn((fn: string, args: any) => {
+    if (fn === 'update_cash_settings_tracked') {
+      if (!args.p_exclude_from_cashflow) {
+        const deltaLiquid = args.p_liquid_cash - cashState.liquid_cash;
+        const deltaVault = args.p_vault_cash - cashState.vault_cash;
+        for (const delta of [deltaLiquid, deltaVault]) {
+          if (delta > 0) cashflowState.totalIncome += delta;
+          else if (delta < 0) cashflowState.totalExpense += -delta;
+        }
+      }
+      cashState.liquid_cash = args.p_liquid_cash;
+      cashState.vault_cash = args.p_vault_cash;
+      cashState.pf_balance = args.p_pf_balance;
+      cashState.credit_card_debt = args.p_credit_card_debt;
+      return Promise.resolve({ data: [{ total_income: cashflowState.totalIncome, total_expense: cashflowState.totalExpense }], error: null });
+    }
+    if (fn === 'reset_all_data') {
+      cashflowState.totalIncome = 0;
+      cashflowState.totalExpense = 0;
+      return Promise.resolve({ data: null, error: null });
+    }
     return Promise.resolve({ data: null, error: null });
   }),
-  cashflowDeleteMock: vi.fn(() => ({ not: () => Promise.resolve({ data: null, error: null }) })),
-  transactionsDeleteMock: vi.fn(() => ({ not: () => Promise.resolve({ data: null, error: null }) })),
-  pricesDeleteMock: vi.fn(() => ({ not: () => Promise.resolve({ data: null, error: null }) })),
 }));
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'transactions') {
-        return {
-          select: () => ({ order: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }),
-          delete: transactionsDeleteMock,
-        };
+        return { select: () => ({ order: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }) };
       }
       if (table === 'cash_settings') {
-        return {
-          select: () => ({ eq: () => Promise.resolve({ data: [cashState], error: null }) }),
-          // resetAll still does a blanket `.update(...).not('id','is',null)`; updateCash upserts
-          // scoped to family_member_id — both need to coexist here.
-          update: () => ({ not: () => Promise.resolve({ data: null, error: null }) }),
-          upsert: () => Promise.resolve({ data: null, error: null }),
-        };
+        return { select: () => ({ eq: () => Promise.resolve({ data: [cashState], error: null }) }) };
       }
       if (table === 'current_prices') {
-        return {
-          select: () => Promise.resolve({ data: [], error: null }),
-          delete: pricesDeleteMock,
-        };
+        return { select: () => Promise.resolve({ data: [], error: null }) };
       }
       if (table === 'symbol_metadata') {
         return { select: () => Promise.resolve({ data: [], error: null }) };
       }
-      if (table === 'net_worth_history') {
-        return {
-          select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }) }),
-          insert: () => Promise.resolve({ data: null, error: null }),
-        };
-      }
       if (table === 'monthly_cashflow') {
-        return {
-          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: cashflowState.row, error: null }) }) }) }),
-          upsert: upsertMock,
-          delete: cashflowDeleteMock,
-        };
+        return { select: () => ({ eq: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }) };
       }
       return { select: () => Promise.resolve({ data: [], error: null }) };
     },
+    rpc: rpcMock,
   },
 }));
 
 describe('usePortfolio income/expense tracking', () => {
   beforeEach(() => {
-    upsertMock.mockClear();
-    cashflowDeleteMock.mockClear();
-    transactionsDeleteMock.mockClear();
-    pricesDeleteMock.mockClear();
-    cashflowState.row = null;
+    rpcMock.mockClear();
+    cashState.liquid_cash = 1000;
+    cashState.vault_cash = 2000;
+    cashState.pf_balance = 0;
+    cashState.credit_card_debt = 500;
+    cashflowState.totalIncome = 0;
+    cashflowState.totalExpense = 0;
   });
 
   it('tracks a liquidCash increase as income', async () => {
@@ -94,7 +97,6 @@ describe('usePortfolio income/expense tracking', () => {
       await result.current.updateCash({ liquidCash: 1500 }); // +500
     });
 
-    expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(result.current.monthlyCashflow).toEqual({ totalIncome: 500, totalExpense: 0 });
   });
 
@@ -131,7 +133,6 @@ describe('usePortfolio income/expense tracking', () => {
       await result.current.updateCash({ pfBalance: 50000 });
     });
 
-    expect(upsertMock).not.toHaveBeenCalled();
     expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 0 });
   });
 
@@ -143,7 +144,7 @@ describe('usePortfolio income/expense tracking', () => {
       await result.current.updateCash({ creditCardDebt: 300 });
     });
 
-    expect(upsertMock).not.toHaveBeenCalled();
+    expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 0 });
   });
 
   it('honors excludeFromCashflow for a manual correction/transfer', async () => {
@@ -154,7 +155,6 @@ describe('usePortfolio income/expense tracking', () => {
       await result.current.updateCash({ liquidCash: 5000 }, { excludeFromCashflow: true }); // +4000, excluded
     });
 
-    expect(upsertMock).not.toHaveBeenCalled();
     expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 0 });
   });
 
@@ -166,7 +166,6 @@ describe('usePortfolio income/expense tracking', () => {
       await result.current.payCreditCardBill(); // vaultCash 2000 -> 1500, creditCardDebt 500 -> 0
     });
 
-    expect(upsertMock).toHaveBeenCalledTimes(1);
     expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 500 });
   });
 
@@ -183,7 +182,7 @@ describe('usePortfolio income/expense tracking', () => {
       await result.current.resetAll();
     });
 
-    expect(cashflowDeleteMock).toHaveBeenCalledTimes(1);
+    expect(rpcMock).toHaveBeenCalledWith('reset_all_data');
     expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 0 });
   });
 });

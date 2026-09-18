@@ -28,54 +28,47 @@ const { insertError, updateError, deleteErrors } = vi.hoisted(() => ({
   deleteErrors: { value: null as { message: string } | null },
 }));
 
+// addTransaction/updateCash/resetAll each now run as a single atomic RPC (see
+// supabase/migrations/20260918110000_add_acid_portfolio_mutation_functions.sql) instead of a
+// separate insert/upsert/delete call, so the injectable failures below are simulated at the rpc
+// mock level instead of on individual `.from(table)` chains.
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'transactions') {
-        return {
-          select: () => ({ order: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }),
-          insert: () => ({
-            select: () => ({
-              single: () => Promise.resolve(
-                insertError.value
-                  ? { data: null, error: insertError.value }
-                  : { data: { id: 't1', symbol: 'TCS', type: 'BUY', quantity: 1, price: 100, date: '2026-01-01', family_member_id: 'member-1' }, error: null },
-              ),
-            }),
-          }),
-          delete: () => ({ not: () => Promise.resolve({ error: deleteErrors.value }) }),
-        };
+        return { select: () => ({ order: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }) };
       }
       if (table === 'cash_settings') {
         return {
           select: () => ({
             eq: () => Promise.resolve({ data: [{ liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 }], error: null }),
           }),
-          update: () => ({ not: () => Promise.resolve({ error: updateError.value }) }),
-          upsert: () => Promise.resolve({ error: updateError.value }),
         };
       }
-      if (table === 'current_prices') {
-        return {
-          select: () => Promise.resolve({ data: [], error: null }),
-          delete: () => ({ not: () => Promise.resolve({ error: deleteErrors.value }) }),
-        };
-      }
+      if (table === 'current_prices') return { select: () => Promise.resolve({ data: [], error: null }) };
       if (table === 'symbol_metadata') return { select: () => Promise.resolve({ data: [], error: null }) };
-      if (table === 'monthly_cashflow') {
-        return {
-          select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }),
-          upsert: () => Promise.resolve({ error: null }),
-          delete: () => ({ not: () => Promise.resolve({ error: deleteErrors.value }) }),
-        };
-      }
-      if (table === 'net_worth_history') {
-        return {
-          select: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }) }),
-          insert: () => Promise.resolve({ error: null }),
-        };
-      }
+      if (table === 'monthly_cashflow') return { select: () => ({ eq: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }) };
       return { select: () => Promise.resolve({ data: [], error: null }) };
+    },
+    rpc: (fn: string) => {
+      if (fn === 'add_transaction_and_snapshot') {
+        return Promise.resolve(
+          insertError.value
+            ? { data: null, error: insertError.value }
+            : { data: { id: 't1', symbol: 'TCS', type: 'BUY', quantity: 1, price: 100, date: '2026-01-01', family_member_id: 'member-1' }, error: null },
+        );
+      }
+      if (fn === 'update_cash_settings_tracked') {
+        return Promise.resolve(
+          updateError.value
+            ? { data: null, error: updateError.value }
+            : { data: [{ total_income: 0, total_expense: 0 }], error: null },
+        );
+      }
+      if (fn === 'reset_all_data') {
+        return Promise.resolve({ data: null, error: deleteErrors.value });
+      }
+      return Promise.resolve({ data: null, error: null });
     },
   },
 }));
@@ -131,7 +124,11 @@ describe('usePortfolio mutation failures', () => {
     expect(logClientErrorMock).not.toHaveBeenCalled();
   });
 
-  it('calls logClientError with a per-table error breakdown when resetAll partially fails', async () => {
+  it('calls logClientError when resetAll fails', async () => {
+    // resetAll now runs as one atomic reset_all_data RPC (see
+    // supabase/migrations/20260918110000_...) rather than four independent per-table deletes, so
+    // there's no longer a per-table error breakdown to assert on — a failure is just one error
+    // from the single call.
     deleteErrors.value = { message: 'connection reset' };
     const { result } = renderHook(() => usePortfolio());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -142,12 +139,8 @@ describe('usePortfolio mutation failures', () => {
 
     expect(logClientErrorMock).toHaveBeenCalledWith(
       'usePortfolio.resetAll',
-      'Failed to reset one or more tables',
-      expect.objectContaining({
-        transactionsError: deleteErrors.value,
-        currentPricesError: deleteErrors.value,
-        monthlyCashflowError: deleteErrors.value,
-      }),
+      'Failed to reset data',
+      expect.objectContaining({ error: deleteErrors.value }),
     );
   });
 });
