@@ -5,6 +5,10 @@ import type { FamilyMember } from '@/types/portfolio';
 // UI, so it's swapped for the actual owner's name everywhere a member's display name is used.
 export const SELF_DISPLAY_NAME = 'Akash';
 
+// Shown instead of SELF_DISPLAY_NAME when the combined "All Family" view is active, since that
+// view isn't any one person's portfolio.
+export const ALL_FAMILY_DISPLAY_NAME = 'Fam';
+
 export function getMemberDisplayName(member: Pick<FamilyMember, 'name' | 'relationship'> | null | undefined): string {
   if (!member || member.relationship === 'Self') return SELF_DISPLAY_NAME;
   return member.name;

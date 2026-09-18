@@ -9,7 +9,10 @@ import { Plus, Trash2, Target, Home, GraduationCap, Plane, Car, Heart, Briefcase
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import { parseLocalDate } from '@/lib/dateUtils';
-import type { DerivedHolding, Transaction } from '@/types/portfolio';
+import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
+import { useFamilyMembers } from '@/hooks/useFamilyMembers';
+import { getMemberDisplayName } from '@/lib/familyMemberDisplay';
+import type { DerivedHolding, FamilyMember, Transaction } from '@/types/portfolio';
 
 const ICON_OPTIONS = [
   { id: 'Target', icon: Target },
@@ -65,7 +68,7 @@ function GoalIcon({ id, className }: { id: string; className?: string }) {
   return <Icon className={className} />;
 }
 
-// FIFO match SELL against BUY lots; return remaining open BUY lots {qty, price, date}
+// FIFO match SELL against BUY lots; return remaining open BUY lots {qty, price, date, familyMemberId}
 function getOpenLots(transactions: Transaction[]) {
   const buys = transactions
     .filter((t) => t.type === 'BUY')
@@ -74,7 +77,7 @@ function getOpenLots(transactions: Transaction[]) {
     // with `now = Date.now()` in getHoldingLotSplit below. See TODO.md's High Priority Action Items
     // and dateUtils.ts's parseLocalDate doc comment for the LT/ST-threshold misclassification bug
     // this avoids.
-    .map((t) => ({ qty: t.quantity, price: t.price, date: parseLocalDate(t.date) }))
+    .map((t) => ({ qty: t.quantity, price: t.price, date: parseLocalDate(t.date), familyMemberId: t.familyMemberId ?? null }))
     .sort((a, b) => a.date.getTime() - b.date.getTime());
   let sellQty = transactions
     .filter((t) => t.type === 'SELL')
@@ -234,10 +237,67 @@ export function buildScaleMap(
   return map;
 }
 
+// Each currently-held unit of a symbol "belongs" to whichever member's BUY lot it FIFO-traces
+// back to (same FIFO chain getHoldingLotSplit uses for the LT/ST tax split, just grouped by
+// family_member_id instead of lot age). Only meaningful in the combined "All Family" view, where
+// a symbol's holding pools every member's transactions — for a single member's own view every
+// open lot already belongs to them.
+export function getMemberUnitShares(h: DerivedHolding): Record<string, number> {
+  const lots = getOpenLots(h.transactions);
+  const shares: Record<string, number> = {};
+  for (const lot of lots) {
+    const key = lot.familyMemberId ?? 'unknown';
+    shares[key] = (shares[key] || 0) + lot.qty;
+  }
+  return shares;
+}
+
+export interface MemberContribution {
+  familyMemberId: string;
+  marketValue: number;
+  pct: number; // % of this goal's symbol-allocation market value contributed by this member
+}
+
+// Attributes a goal's *symbol* allocations (cash allocations aren't member-attributable — cash
+// balances aren't tracked per member's lot history the way holdings are) to the family members who
+// actually hold the underlying units, weighted by market value. For each symbol allocation, its
+// resolved market value is split across members in proportion to their live share of that symbol's
+// total holding.
+export function computeGoalMemberContributions(
+  goalAllocations: Allocation[],
+  holdings: DerivedHolding[],
+  allAllocations: Allocation[],
+  scaleMap: Record<string, number>,
+): MemberContribution[] {
+  const byMember: Record<string, number> = {};
+  for (const a of goalAllocations) {
+    if (a.source_type !== 'symbol' || !a.symbol) continue;
+    const h = holdings.find((x) => x.symbol === a.symbol);
+    if (!h || h.totalQuantity <= 0) continue;
+    const r = computeAllocTax(a, holdings, scaleMap, allAllocations);
+    if (r.market <= 0) continue;
+    const shares = getMemberUnitShares(h);
+    for (const [familyMemberId, qty] of Object.entries(shares)) {
+      byMember[familyMemberId] = (byMember[familyMemberId] || 0) + r.market * (qty / h.totalQuantity);
+    }
+  }
+  const total = Object.values(byMember).reduce((s, v) => s + v, 0);
+  return Object.entries(byMember)
+    .map(([familyMemberId, marketValue]) => ({
+      familyMemberId,
+      marketValue,
+      pct: total > 0 ? (marketValue / total) * 100 : 0,
+    }))
+    .sort((a, b) => b.marketValue - a.marketValue);
+}
+
 
 function GoalTrackContent() {
   const { hidden } = usePrivacy();
   const { holdings, cash, loading } = usePortfolio();
+  const { activeMemberId } = useFamilyMemberSelection();
+  const { members } = useFamilyMembers();
+  const showMemberContributions = activeMemberId === 'all';
   const [goals, setGoals] = useState<Goal[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -485,6 +545,8 @@ function GoalTrackContent() {
                   scaleMap={scaleMap}
                   holdings={holdings}
                   cash={cash}
+                  members={members}
+                  showMemberContributions={showMemberContributions}
                   onAddAllocation={addAllocation}
                   onRemoveAllocation={removeAllocation}
                   onDelete={() => deleteGoal(goal.id)}
@@ -508,6 +570,8 @@ function GoalTrackContent() {
         scaleMap={scaleMap}
         progress={openGoalId ? goalProgress[openGoalId] : null}
         hidden={hidden}
+        members={members}
+        showMemberContributions={showMemberContributions}
         onClose={() => setOpenGoalId(null)}
       />
 
@@ -519,6 +583,7 @@ function GoalTrackContent() {
 
 function GoalCard({
   goal, current, postTax, tax, target, pct, hidden, allocations, allAllocations, scaleMap, holdings, cash,
+  members, showMemberContributions,
   onAddAllocation, onRemoveAllocation, onDelete, onEdit, onOpenDetails,
 }: {
   goal: Goal; current: number; postTax: number; tax: number; target: number; pct: number; hidden: boolean;
@@ -527,6 +592,8 @@ function GoalCard({
   scaleMap: Record<string, number>;
   holdings: DerivedHolding[];
   cash: { liquidCash: number; vaultCash: number };
+  members: FamilyMember[];
+  showMemberContributions: boolean;
   onAddAllocation: (goalId: string, sourceType: 'symbol' | 'liquid_cash' | 'vault_cash', symbol: string | null, value: number, trackMax?: boolean) => Promise<void>;
   onRemoveAllocation: (id: string) => Promise<void>;
   onDelete: () => void;
@@ -578,6 +645,11 @@ function GoalCard({
 
   const rows = allocations.map((a) => computeAllocTax(a, holdings, scaleMap, allAllocations));
   const anyClamped = rows.some((r) => r.clamped);
+
+  const memberContributions = useMemo(
+    () => (showMemberContributions ? computeGoalMemberContributions(allocations, holdings, allAllocations, scaleMap) : []),
+    [showMemberContributions, allocations, holdings, allAllocations, scaleMap],
+  );
 
   return (
     <div className="rounded-lg border border-border bg-card p-5 transition-colors">
@@ -636,6 +708,20 @@ function GoalCard({
         {!hidden && tax > 0 && (
           <p className="text-[10px] text-muted-foreground mt-1.5">
             Market value {fmt(current)} · est. tax {fmt(tax)} (LTCG 12.5% / STCG 20%) — click card for breakdown
+          </p>
+        )}
+        {showMemberContributions && memberContributions.length > 0 && (
+          <p className="text-[10px] text-muted-foreground mt-1.5">
+            Contributed by{' '}
+            {memberContributions.map((c, i) => (
+              <span key={c.familyMemberId}>
+                {i > 0 && ' · '}
+                <span className="text-foreground font-medium">
+                  {getMemberDisplayName(members.find((m) => m.id === c.familyMemberId))}
+                </span>{' '}
+                {c.pct.toFixed(0)}%
+              </span>
+            ))}
           </p>
         )}
       </div>
@@ -736,7 +822,7 @@ function GoalCard({
 
 
 function GoalDetailDialog({
-  goal, allocations, allAllocations, holdings, scaleMap, progress, hidden, onClose,
+  goal, allocations, allAllocations, holdings, scaleMap, progress, hidden, members, showMemberContributions, onClose,
 }: {
   goal: Goal | null;
   allocations: Allocation[];
@@ -745,11 +831,17 @@ function GoalDetailDialog({
   scaleMap: Record<string, number>;
   progress: { current: number; postTax: number; tax: number; invested: number } | null;
   hidden: boolean;
+  members: FamilyMember[];
+  showMemberContributions: boolean;
   onClose: () => void;
 }) {
   const breakdown = useMemo(
     () => allocations.map((a) => computeAllocTax(a, holdings, scaleMap, allAllocations)),
     [allocations, holdings, scaleMap, allAllocations]
+  );
+  const memberContributions = useMemo(
+    () => (showMemberContributions ? computeGoalMemberContributions(allocations, holdings, allAllocations, scaleMap) : []),
+    [showMemberContributions, allocations, holdings, allAllocations, scaleMap],
   );
 
 
@@ -843,6 +935,36 @@ function GoalDetailDialog({
           <Metric label="Est. Tax" value={hidden ? '•••' : fmt(progress.tax)} tone="destructive" />
           <Metric label="Post-Tax Value" value={hidden ? '•••' : fmt(progress.postTax)} tone="gain" />
         </div>
+
+        {/* Contribution by family member — All Family view only, symbol allocations only (cash
+            balances aren't tracked per member's lot history the way holdings are). Split by each
+            member's live share of the underlying holding(s), weighted by market value. */}
+        {showMemberContributions && memberContributions.length > 0 && (
+          <div className="rounded-md border border-border p-3 space-y-2">
+            <p className="text-xs font-medium text-foreground">Contribution by Family Member</p>
+            <p className="text-[10px] text-muted-foreground -mt-1">
+              Based on each member's live share of the units held, by market value. Cash allocations aren't attributed to a member.
+            </p>
+            <div className="space-y-1.5">
+              {memberContributions.map((c) => {
+                const name = getMemberDisplayName(members.find((m) => m.id === c.familyMemberId));
+                return (
+                  <div key={c.familyMemberId}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-foreground">{name}</span>
+                      <span className="text-muted-foreground">
+                        {hidden ? '•••' : fmt(c.marketValue)} <span className="text-foreground font-medium">({c.pct.toFixed(1)}%)</span>
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${c.pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Tax concept callout */}
         <div className="rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">

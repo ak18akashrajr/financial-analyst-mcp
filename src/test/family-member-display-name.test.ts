@@ -14,7 +14,7 @@ describe('getMemberDisplayName', () => {
     expect(getMemberDisplayName({ name: 'Priya', relationship: 'Spouse' })).toBe('Priya');
   });
 
-  it('falls back to "Akash" when no member is given (e.g. the combined "All Family" view)', () => {
+  it('falls back to "Akash" when no member is given', () => {
     expect(getMemberDisplayName(null)).toBe(SELF_DISPLAY_NAME);
     expect(getMemberDisplayName(undefined)).toBe(SELF_DISPLAY_NAME);
   });
