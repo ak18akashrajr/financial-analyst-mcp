@@ -12,7 +12,8 @@ import { parseLocalDate } from '@/lib/dateUtils';
 import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 import { useFamilyMembers } from '@/hooks/useFamilyMembers';
 import { getMemberDisplayName } from '@/lib/familyMemberDisplay';
-import type { DerivedHolding, FamilyMember, Transaction } from '@/types/portfolio';
+import { getOpenLots, getMemberUnitShares } from '@/lib/lotAttribution';
+import type { DerivedHolding, FamilyMember } from '@/types/portfolio';
 
 const ICON_OPTIONS = [
   { id: 'Target', icon: Target },
@@ -66,29 +67,6 @@ function GoalIcon({ id, className }: { id: string; className?: string }) {
   const found = ICON_OPTIONS.find((o) => o.id === id) ?? ICON_OPTIONS[0];
   const Icon = found.icon;
   return <Icon className={className} />;
-}
-
-// FIFO match SELL against BUY lots; return remaining open BUY lots {qty, price, date, familyMemberId}
-function getOpenLots(transactions: Transaction[]) {
-  const buys = transactions
-    .filter((t) => t.type === 'BUY')
-    // t.date is a bare Postgres DATE string ('YYYY-MM-DD', no time/offset) — parse it as LOCAL
-    // midnight via parseLocalDate, not the bare UTC-midnight `new Date(...)` parse, so it lines up
-    // with `now = Date.now()` in getHoldingLotSplit below. See TODO.md's High Priority Action Items
-    // and dateUtils.ts's parseLocalDate doc comment for the LT/ST-threshold misclassification bug
-    // this avoids.
-    .map((t) => ({ qty: t.quantity, price: t.price, date: parseLocalDate(t.date), familyMemberId: t.familyMemberId ?? null }))
-    .sort((a, b) => a.date.getTime() - b.date.getTime());
-  let sellQty = transactions
-    .filter((t) => t.type === 'SELL')
-    .reduce((s, t) => s + t.quantity, 0);
-  for (const lot of buys) {
-    if (sellQty <= 0) break;
-    const used = Math.min(lot.qty, sellQty);
-    lot.qty -= used;
-    sellQty -= used;
-  }
-  return buys.filter((l) => l.qty > 0);
 }
 
 // Compute long-term vs short-term invested-cost split for a holding (by FIFO open lots)
@@ -235,21 +213,6 @@ export function buildScaleMap(
     map[key] = t > 0 && t > c ? Math.max(0, c / t) : 1;
   }
   return map;
-}
-
-// Each currently-held unit of a symbol "belongs" to whichever member's BUY lot it FIFO-traces
-// back to (same FIFO chain getHoldingLotSplit uses for the LT/ST tax split, just grouped by
-// family_member_id instead of lot age). Only meaningful in the combined "All Family" view, where
-// a symbol's holding pools every member's transactions — for a single member's own view every
-// open lot already belongs to them.
-export function getMemberUnitShares(h: DerivedHolding): Record<string, number> {
-  const lots = getOpenLots(h.transactions);
-  const shares: Record<string, number> = {};
-  for (const lot of lots) {
-    const key = lot.familyMemberId ?? 'unknown';
-    shares[key] = (shares[key] || 0) + lot.qty;
-  }
-  return shares;
 }
 
 export interface MemberContribution {
