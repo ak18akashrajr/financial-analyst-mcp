@@ -674,7 +674,82 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      add_transaction_and_snapshot: {
+        Args: {
+          p_credit_card_debt: number
+          p_family_member_id: string
+          p_liquid_cash: number
+          p_pf_balance: number
+          p_price: number
+          p_quantity: number
+          p_symbol: string
+          p_type: string
+          p_vault_cash: number
+        }
+        Returns: {
+          created_at: string
+          date: string
+          family_member_id: string
+          id: string
+          price: number
+          quantity: number
+          symbol: string
+          type: string
+        }
+      }
+      update_transaction_and_snapshot: {
+        Args: {
+          p_credit_card_debt: number | null
+          p_date: string | null
+          p_family_member_id: string | null
+          p_id: string
+          p_liquid_cash: number | null
+          p_pf_balance: number | null
+          p_price: number | null
+          p_quantity: number | null
+          p_vault_cash: number | null
+        }
+        Returns: undefined
+      }
+      delete_transaction_and_snapshot: {
+        Args: {
+          p_credit_card_debt: number | null
+          p_family_member_id: string | null
+          p_id: string
+          p_liquid_cash: number | null
+          p_pf_balance: number | null
+          p_vault_cash: number | null
+        }
+        Returns: undefined
+      }
+      update_cash_settings_tracked: {
+        Args: {
+          p_credit_card_debt: number
+          p_exclude_from_cashflow: boolean
+          p_family_member_id: string
+          p_liquid_cash: number
+          p_pf_balance: number
+          p_vault_cash: number
+        }
+        Returns: {
+          total_expense: number
+          total_income: number
+        }[]
+      }
+      record_net_worth_snapshot: {
+        Args: {
+          p_credit_card_debt: number
+          p_family_member_id: string
+          p_liquid_cash: number
+          p_pf_balance: number
+          p_vault_cash: number
+        }
+        Returns: undefined
+      }
+      reset_all_data: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

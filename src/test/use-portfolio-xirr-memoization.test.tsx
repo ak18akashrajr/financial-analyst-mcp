@@ -83,6 +83,11 @@ vi.mock('@/integrations/supabase/client', () => ({
       }
       return { select: () => Promise.resolve({ data: [], error: null }) };
     },
+    // updateCash now runs as one atomic RPC (see
+    // supabase/migrations/20260918110000_add_acid_portfolio_mutation_functions.sql) instead of a
+    // client-driven upsert + separate snapshot/cashflow round trips — these tests only care about
+    // the resulting cash/exposure state, not the cashflow totals, so a fixed no-op response is enough.
+    rpc: vi.fn(() => Promise.resolve({ data: [{ total_income: 0, total_expense: 0 }], error: null })),
   },
 }));
 

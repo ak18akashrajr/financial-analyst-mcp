@@ -4,8 +4,7 @@ import type { Transaction, DerivedHolding, PortfolioSummary, CashSettings, Curre
 import { toast } from 'sonner';
 import { calculateXIRR } from '@/lib/xirr';
 import { computeFifoPosition } from '@/lib/costBasis';
-import { isSameIstCalendarDay, shouldSkipNetWorthSnapshot, type NetWorthSnapshotFields } from '@/lib/netWorthSnapshot';
-import { classifyBalanceDelta, getIstYearMonth } from '@/lib/expenseIncomeRatio';
+import { getIstYearMonth } from '@/lib/expenseIncomeRatio';
 import { logClientError } from '@/lib/clientErrorLogging';
 import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 
@@ -152,7 +151,12 @@ export function usePortfolio() {
     loadData();
   }, [activeMemberId]);
 
-  // Compute portfolio value from transactions + prices for snapshot recording
+  // Compute portfolio value from transactions + prices — still used by
+  // other derivations in this hook (not the snapshot path anymore, see
+  // below). Mirrored server-side in the record_net_worth_snapshot SQL
+  // function (supabase/migrations/20260918110000_...), which computes it
+  // straight from the transactions/current_prices tables rather than
+  // trusting this closure's (potentially stale) client state.
   const computePortfolioValue = useCallback(() => {
     const bySymbol: Record<string, number> = {};
     for (const t of transactions) {
@@ -166,79 +170,15 @@ export function usePortfolio() {
     return total;
   }, [transactions, currentPrices]);
 
-  // Record a net worth snapshot to history
-  const recordNetWorthSnapshot = useCallback(async (overrideCash?: Partial<CashSettings>) => {
-    const lc = overrideCash?.liquidCash ?? cash.liquidCash;
-    const vc = overrideCash?.vaultCash ?? cash.vaultCash;
-    const pf = overrideCash?.pfBalance ?? cash.pfBalance;
-    const ccd = overrideCash?.creditCardDebt ?? cash.creditCardDebt;
-    const portfolioVal = computePortfolioValue();
-    const netWorth = portfolioVal + lc + vc + pf - ccd;
-    const candidate: NetWorthSnapshotFields = {
-      netWorth,
-      portfolioValue: portfolioVal,
-      liquidCash: lc,
-      vaultCash: vc,
-      pfBalance: pf,
-      creditCardDebt: ccd,
-    };
-
-    // Only ever called after a mutation scoped to one specific member (addTransaction/
-    // updateCash/etc. all require a real member selected, not 'all') — so this is always a
-    // per-member snapshot, and the same-day dedupe check below must compare against that same
-    // member's own latest row, not the household's.
-    if (activeMemberId === 'all') return;
-
-    // Skip the insert if it'd be a no-op: same figures already recorded
-    // today. A stale snapshot from an earlier day never blocks today's
-    // first write — see docs/perf-findings.md#1.
-    const { data: latest, error: latestError } = await supabase
-      .from('net_worth_history')
-      .select('net_worth, portfolio_value, liquid_cash, vault_cash, pf_balance, credit_card_debt, recorded_at')
-      .eq('family_member_id', activeMemberId)
-      .order('recorded_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (latestError) {
-      // Not fatal to the caller (addTransaction/updateCash/etc. all await
-      // this and would otherwise blow up on every mutation) — but a real DB
-      // error here was previously indistinguishable from "no snapshot
-      // recorded yet", silently defeating the same-day skip-if-no-op check
-      // above with no trace of why.
-      logClientError('usePortfolio.recordNetWorthSnapshot', 'Failed to read latest net worth snapshot', { error: latestError });
-    }
-
-    const mostRecentToday: NetWorthSnapshotFields | null =
-      latest && isSameIstCalendarDay(new Date((latest as any).recorded_at), new Date())
-        ? {
-            netWorth: Number((latest as any).net_worth),
-            portfolioValue: Number((latest as any).portfolio_value),
-            liquidCash: Number((latest as any).liquid_cash),
-            vaultCash: Number((latest as any).vault_cash),
-            pfBalance: Number((latest as any).pf_balance),
-            creditCardDebt: Number((latest as any).credit_card_debt),
-          }
-        : null;
-
-    if (shouldSkipNetWorthSnapshot(candidate, mostRecentToday)) return;
-
-    const { error: insertError } = await supabase.from('net_worth_history').insert({
-      net_worth: netWorth,
-      portfolio_value: portfolioVal,
-      liquid_cash: lc,
-      vault_cash: vc,
-      pf_balance: pf,
-      credit_card_debt: ccd,
-      family_member_id: activeMemberId,
-    } as any);
-    if (insertError) {
-      // Never surfaced to the user at all before this — every caller
-      // (addTransaction, updateCash, ...) just awaits this and moves on, so
-      // a failed snapshot write left the Net Worth History chart silently
-      // missing a data point for the day with nothing recording why.
-      logClientError('usePortfolio.recordNetWorthSnapshot', 'Failed to insert net worth snapshot', { error: insertError, candidate });
-    }
-  }, [cash, computePortfolioValue, activeMemberId]);
+  // addTransaction/updateTransaction/deleteTransaction/updateCash each used to be 2-4 separate
+  // Supabase round trips (the write itself, then a read-then-insert net worth snapshot, then for
+  // updateCash a read-then-upsert cashflow delta too) with no transaction boundary tying them
+  // together — a mid-sequence failure left partial state, and two tabs editing cash concurrently
+  // could silently lose one edit (stale-closure read-modify-write race). All of that now runs
+  // inside single Postgres functions (supabase/migrations/20260918110000_...), invoked via
+  // supabase.rpc(): a PL/pgSQL function body is one implicit transaction, so each of these is
+  // atomic end-to-end, and update_cash_settings_tracked row-locks cash_settings for its duration
+  // instead of trusting a client-side "previous value" read moments earlier.
 
   const addTransaction = useCallback(async (txn: Omit<Transaction, 'id' | 'date' | 'familyMemberId'>) => {
     if (activeMemberId === 'all') {
@@ -246,13 +186,19 @@ export function usePortfolio() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from('transactions')
-      .insert({ symbol: txn.symbol, type: txn.type, quantity: txn.quantity, price: txn.price, family_member_id: activeMemberId })
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc('add_transaction_and_snapshot', {
+      p_family_member_id: activeMemberId,
+      p_symbol: txn.symbol,
+      p_type: txn.type,
+      p_quantity: txn.quantity,
+      p_price: txn.price,
+      p_liquid_cash: cash.liquidCash,
+      p_vault_cash: cash.vaultCash,
+      p_pf_balance: cash.pfBalance,
+      p_credit_card_debt: cash.creditCardDebt,
+    });
 
-    if (error) {
+    if (error || !data) {
       toast.error('Failed to add transaction');
       console.error(error);
       logClientError('usePortfolio.addTransaction', 'Failed to add transaction', { error, txn });
@@ -270,14 +216,24 @@ export function usePortfolio() {
     };
     setTransactions(prev => [newTxn, ...prev]);
     toast.success('Transaction added');
-    await recordNetWorthSnapshot();
-  }, [recordNetWorthSnapshot, activeMemberId]);
+  }, [activeMemberId, cash]);
 
   const updateTransaction = useCallback(async (id: string, updates: Partial<Pick<Transaction, 'quantity' | 'price' | 'date'>>) => {
-    const { error } = await supabase
-      .from('transactions')
-      .update(updates)
-      .eq('id', id);
+    // Unlike addTransaction, this is reachable from the combined "All Family" view (the
+    // transaction list there spans every member) — snapshot params go through as NULL in that
+    // case, same as the original recordNetWorthSnapshot()'s activeMemberId === 'all' early return.
+    const snapshotMember = activeMemberId === 'all' ? null : activeMemberId;
+    const { error } = await supabase.rpc('update_transaction_and_snapshot', {
+      p_id: id,
+      p_quantity: updates.quantity ?? null,
+      p_price: updates.price ?? null,
+      p_date: updates.date ?? null,
+      p_family_member_id: snapshotMember,
+      p_liquid_cash: snapshotMember ? cash.liquidCash : null,
+      p_vault_cash: snapshotMember ? cash.vaultCash : null,
+      p_pf_balance: snapshotMember ? cash.pfBalance : null,
+      p_credit_card_debt: snapshotMember ? cash.creditCardDebt : null,
+    });
 
     if (error) {
       toast.error('Failed to update transaction');
@@ -287,14 +243,18 @@ export function usePortfolio() {
     }
 
     setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
-    await recordNetWorthSnapshot();
-  }, [recordNetWorthSnapshot]);
+  }, [activeMemberId, cash]);
 
   const deleteTransaction = useCallback(async (id: string) => {
-    const { error } = await supabase
-      .from('transactions')
-      .delete()
-      .eq('id', id);
+    const snapshotMember = activeMemberId === 'all' ? null : activeMemberId;
+    const { error } = await supabase.rpc('delete_transaction_and_snapshot', {
+      p_id: id,
+      p_family_member_id: snapshotMember,
+      p_liquid_cash: snapshotMember ? cash.liquidCash : null,
+      p_vault_cash: snapshotMember ? cash.vaultCash : null,
+      p_pf_balance: snapshotMember ? cash.pfBalance : null,
+      p_credit_card_debt: snapshotMember ? cash.creditCardDebt : null,
+    });
 
     if (error) {
       toast.error('Failed to delete transaction');
@@ -304,50 +264,7 @@ export function usePortfolio() {
     }
 
     setTransactions(prev => prev.filter(t => t.id !== id));
-    await recordNetWorthSnapshot();
-  }, [recordNetWorthSnapshot]);
-
-  // Adds a signed income/expense delta to the current IST calendar month's
-  // monthly_cashflow row (creating it if this is the first update this
-  // month — a new month simply has no row yet, so tracking "resets"
-  // automatically with no cron job). No-ops if both deltas are zero, so
-  // callers don't need to guard the call themselves.
-  const recordCashflowDelta = useCallback(async (deltaIncome: number, deltaExpense: number) => {
-    if (deltaIncome === 0 && deltaExpense === 0) return;
-    if (activeMemberId === 'all') return; // only ever called from updateCash, which already guards this
-
-    const yearMonth = getIstYearMonth();
-    const { data: existing, error: readError } = await supabase
-      .from('monthly_cashflow')
-      .select('total_income, total_expense')
-      .eq('year_month', yearMonth)
-      .eq('family_member_id', activeMemberId)
-      .maybeSingle();
-    if (readError) {
-      // Not returned early on — a failed read here previously just fell
-      // through as if there were no existing row (existing?.total_income
-      // ?? 0), silently understating the new totals below by whatever had
-      // already been recorded this month, with no trace of why.
-      logClientError('usePortfolio.recordCashflowDelta', 'Failed to read existing monthly_cashflow row', { error: readError, yearMonth });
-    }
-
-    const newIncome = Number((existing as any)?.total_income ?? 0) + deltaIncome;
-    const newExpense = Number((existing as any)?.total_expense ?? 0) + deltaExpense;
-
-    const { error } = await supabase
-      .from('monthly_cashflow')
-      .upsert(
-        { year_month: yearMonth, total_income: newIncome, total_expense: newExpense, family_member_id: activeMemberId } as any,
-        { onConflict: 'family_member_id,year_month' },
-      );
-
-    if (error) {
-      console.error('Failed to record income/expense delta:', error);
-      logClientError('usePortfolio.recordCashflowDelta', 'Failed to upsert monthly_cashflow', { error, yearMonth, newIncome, newExpense });
-      return;
-    }
-    setMonthlyCashflow({ totalIncome: newIncome, totalExpense: newExpense });
-  }, [activeMemberId]);
+  }, [activeMemberId, cash]);
 
   // `excludeFromCashflow` opts a balance edit out of income/expense tracking
   // — for corrections, transfers between the user's own accounts, or any
@@ -369,35 +286,24 @@ export function usePortfolio() {
     // already exists — unlike the old single-row `.update(...).not('id','is',null)`, which
     // relied on the singleton row seeded by migration always being present.
     const dbRow = {
-      family_member_id: activeMemberId,
       liquid_cash: newCash.liquidCash ?? cash.liquidCash,
       vault_cash: newCash.vaultCash ?? cash.vaultCash,
       pf_balance: newCash.pfBalance ?? cash.pfBalance,
       credit_card_debt: newCash.creditCardDebt ?? cash.creditCardDebt,
     };
 
-    // Only Operating Cash (liquidCash) and Cash Reserve (vaultCash) are real
-    // bank balances for income/expense purposes — PF and credit-card-debt
-    // never feed the ratio. Computed against the pre-update `cash` closure,
-    // before the DB write, so it reflects the actual delta being applied.
-    let deltaIncome = 0;
-    let deltaExpense = 0;
-    if (!options?.excludeFromCashflow) {
-      if (newCash.liquidCash !== undefined) {
-        const d = classifyBalanceDelta(cash.liquidCash, newCash.liquidCash);
-        deltaIncome += d.income;
-        deltaExpense += d.expense;
-      }
-      if (newCash.vaultCash !== undefined) {
-        const d = classifyBalanceDelta(cash.vaultCash, newCash.vaultCash);
-        deltaIncome += d.income;
-        deltaExpense += d.expense;
-      }
-    }
-
-    const { error } = await supabase
-      .from('cash_settings')
-      .upsert(dbRow as any, { onConflict: 'family_member_id' });
+    // update_cash_settings_tracked (supabase/migrations/20260918110000_...) does the
+    // cash_settings upsert, the income/expense delta classification + monthly_cashflow upsert,
+    // and the net worth snapshot as one atomic, row-locked operation — see that migration's
+    // comment for why this used to be a lost-update race across two tabs.
+    const { data, error } = await supabase.rpc('update_cash_settings_tracked', {
+      p_family_member_id: activeMemberId,
+      p_liquid_cash: dbRow.liquid_cash,
+      p_vault_cash: dbRow.vault_cash,
+      p_pf_balance: dbRow.pf_balance,
+      p_credit_card_debt: dbRow.credit_card_debt,
+      p_exclude_from_cashflow: options?.excludeFromCashflow ?? false,
+    });
 
     if (error) {
       toast.error('Failed to update cash');
@@ -409,10 +315,11 @@ export function usePortfolio() {
     const merged = { ...cash, ...newCash };
     setCash(merged);
 
-    // Record net worth snapshot with updated cash
-    await recordNetWorthSnapshot(newCash);
-    await recordCashflowDelta(deltaIncome, deltaExpense);
-  }, [cash, recordNetWorthSnapshot, recordCashflowDelta, activeMemberId]);
+    const totals = data?.[0];
+    if (totals) {
+      setMonthlyCashflow({ totalIncome: Number(totals.total_income), totalExpense: Number(totals.total_expense) });
+    }
+  }, [cash, activeMemberId]);
 
   const payCreditCardBill = useCallback(async () => {
     const debt = cash.creditCardDebt;
@@ -526,29 +433,14 @@ export function usePortfolio() {
   }, [transactions, currentPrices]);
 
   const resetAll = useCallback(async () => {
-    const [txnRes, cashRes, priceRes, cashflowRes] = await Promise.all([
-      supabase.from('transactions').delete().not('id', 'is', null),
-      supabase.from('cash_settings').update({ liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 } as any).not('id', 'is', null),
-      supabase.from('current_prices').delete().not('symbol', 'is', null),
-      // Wipe monthly_cashflow too, same as every other table here — otherwise
-      // a stale total_income/total_expense from before the reset keeps
-      // driving the Expense-to-Income ratio card even though the balances it
-      // was computed from no longer exist.
-      supabase.from('monthly_cashflow').delete().not('id', 'is', null),
-    ]);
+    // reset_all_data (supabase/migrations/20260918110000_...) runs all four wipes in one
+    // Postgres function/transaction — the previous Promise.all fired them concurrently with no
+    // rollback, so a mid-sequence failure (e.g. cash_settings' update rejected after transactions
+    // had already been deleted) could leave a genuinely mixed, irreversible partial reset.
+    const { error } = await supabase.rpc('reset_all_data');
 
-    if (txnRes.error || cashRes.error || priceRes.error || cashflowRes.error) {
-      // resetAll is destructive and irreversible — a partial failure here
-      // (e.g. transactions wiped but cash_settings' update rejected) can
-      // leave the data in a genuinely inconsistent state, previously with
-      // nothing beyond a generic toast recording which table(s) actually
-      // failed.
-      logClientError('usePortfolio.resetAll', 'Failed to reset one or more tables', {
-        transactionsError: txnRes.error,
-        cashSettingsError: cashRes.error,
-        currentPricesError: priceRes.error,
-        monthlyCashflowError: cashflowRes.error,
-      });
+    if (error) {
+      logClientError('usePortfolio.resetAll', 'Failed to reset data', { error });
       toast.error('Failed to reset data');
       return;
     }
