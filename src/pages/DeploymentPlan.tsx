@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider } from '@/contexts/PrivacyContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { ArrowLeft, Search, TrendingUp, TrendingDown, AlertTriangle, Zap, Shield, Flame } from 'lucide-react';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -74,6 +75,7 @@ const DeploymentPlanContent = () => {
   const [marketCape, setMarketCape] = useState<number | null>(null);
   const [marketCapeMedian, setMarketCapeMedian] = useState<number>(24);
   const { holdings } = usePortfolio();
+  const { signOut } = useAuth();
 
   const presetSymbols = Array.from(new Set(holdings.map(h => h.symbol))).sort();
 
@@ -150,7 +152,7 @@ const DeploymentPlanContent = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => { sessionStorage.removeItem('portfolio_auth'); window.location.reload(); }}
+              onClick={() => { signOut(); }}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive transition-colors"
             >
               Logout
