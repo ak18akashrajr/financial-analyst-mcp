@@ -19,6 +19,22 @@ export interface FamilyMember {
   createdAt: string;
 }
 
+// A record of a deleted family member, kept after the member row itself is gone — see
+// supabase/migrations/20260918100000_add_family_member_deletions.sql. memberName/
+// memberRelationship are a point-in-time snapshot, not a live join, since the member no longer
+// exists by the time this is read. deletedBy is free text (the person at the keyboard enters it
+// at delete time) — there's no separate "acting user" identity to attribute this to in this
+// single-login app.
+export interface FamilyMemberDeletion {
+  id: string;
+  memberId: string;
+  memberName: string;
+  memberRelationship: string;
+  reason: string;
+  deletedBy: string;
+  deletedAt: string;
+}
+
 export interface DerivedHolding {
   symbol: string;
   totalQuantity: number;

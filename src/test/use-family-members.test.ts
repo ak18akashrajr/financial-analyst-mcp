@@ -1,15 +1,17 @@
-// Covers useFamilyMembers: loading, add, update, and the delete-blocked-when-has-data guard
+// Covers useFamilyMembers: loading, add, update, the delete-blocked-when-has-data guard
 // (deletion is intentionally NOT soft-delete or cascade — see
-// docs/family-portfolio-view-plan.md). Follows the repo convention (CLAUDE.md) of mocking the
-// Supabase client directly rather than driving a real connection.
+// docs/family-portfolio-view-plan.md), and the deletion-log write that backs the
+// type-to-confirm-with-reason flow in src/pages/FamilyMembers.tsx. Follows the repo convention
+// (CLAUDE.md) of mocking the Supabase client directly rather than driving a real connection.
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useFamilyMembers } from '@/hooks/useFamilyMembers';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-const { memberRows, dataCounts, deleteMock } = vi.hoisted(() => ({
+const { memberRows, deletionRows, dataCounts, deleteMock } = vi.hoisted(() => ({
   memberRows: [] as Array<{ id: string; name: string; relationship: string; created_at: string }>,
+  deletionRows: [] as Array<{ id: string; member_id: string; member_name: string; member_relationship: string; reason: string; deleted_by: string; deleted_at: string }>,
   // Per-table row counts consulted by deleteMember before allowing a delete.
   dataCounts: { transactions: 0, cash_settings: 0, monthly_cashflow: 0, net_worth_history: 0 } as Record<string, number>,
   deleteMock: vi.fn(() => ({ eq: () => Promise.resolve({ error: null }) })),
@@ -40,6 +42,20 @@ vi.mock('@/integrations/supabase/client', () => ({
           delete: deleteMock,
         };
       }
+      if (table === 'family_member_deletions') {
+        return {
+          select: () => ({ order: () => Promise.resolve({ data: deletionRows, error: null }) }),
+          insert: (row: { member_id: string; member_name: string; member_relationship: string; reason: string; deleted_by: string }) => ({
+            select: () => ({
+              single: () => {
+                const created = { id: `d-${deletionRows.length + 1}`, ...row, deleted_at: '2026-09-18T00:00:00.000Z' };
+                deletionRows.push(created);
+                return Promise.resolve({ data: created, error: null });
+              },
+            }),
+          }),
+        };
+      }
       if (table in dataCounts) {
         return { select: () => ({ eq: () => Promise.resolve({ count: dataCounts[table], error: null }) }) };
       }
@@ -52,6 +68,7 @@ describe('useFamilyMembers', () => {
   beforeEach(() => {
     memberRows.length = 0;
     memberRows.push({ id: 'm-1', name: 'Priya', relationship: 'Self', created_at: '2026-09-01T00:00:00.000Z' });
+    deletionRows.length = 0;
     dataCounts.transactions = 0;
     dataCounts.cash_settings = 0;
     dataCounts.monthly_cashflow = 0;
@@ -90,17 +107,28 @@ describe('useFamilyMembers', () => {
     expect(result.current.members[0].relationship).toBe('Parent');
   });
 
-  it('deletes a member with no recorded data', async () => {
+  it('deletes a member with no recorded data and records who/why in the deletion log', async () => {
     const { result } = renderHook(() => useFamilyMembers());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     let deleted: boolean = false;
     await act(async () => {
-      deleted = await result.current.deleteMember('m-1');
+      deleted = await result.current.deleteMember('m-1', 'Added by mistake', 'Akash');
     });
 
     expect(deleted).toBe(true);
     expect(result.current.members).toEqual([]);
+    expect(result.current.deletionLog).toEqual([
+      {
+        id: 'd-1',
+        memberId: 'm-1',
+        memberName: 'Priya',
+        memberRelationship: 'Self',
+        reason: 'Added by mistake',
+        deletedBy: 'Akash',
+        deletedAt: '2026-09-18T00:00:00.000Z',
+      },
+    ]);
   });
 
   it('blocks deleting a member who has transactions recorded', async () => {
@@ -110,13 +138,14 @@ describe('useFamilyMembers', () => {
 
     let deleted: boolean = true;
     await act(async () => {
-      deleted = await result.current.deleteMember('m-1');
+      deleted = await result.current.deleteMember('m-1', 'reason', 'Akash');
     });
 
     expect(deleted).toBe(false);
     expect(deleteMock).not.toHaveBeenCalled();
     // The member is still there — nothing was removed.
     expect(result.current.members).toHaveLength(1);
+    expect(result.current.deletionLog).toEqual([]);
   });
 
   it('blocks deleting a member who has cash_settings data even with zero transactions', async () => {
@@ -126,7 +155,7 @@ describe('useFamilyMembers', () => {
 
     let deleted: boolean = true;
     await act(async () => {
-      deleted = await result.current.deleteMember('m-1');
+      deleted = await result.current.deleteMember('m-1', 'reason', 'Akash');
     });
 
     expect(deleted).toBe(false);

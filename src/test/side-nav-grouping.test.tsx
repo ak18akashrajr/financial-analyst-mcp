@@ -16,7 +16,7 @@ vi.mock('@/contexts/AuthContext', () => ({
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
-      if (table === 'family_members') {
+      if (table === 'family_members' || table === 'family_member_deletions') {
         return { select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) };
       }
       throw new Error(`Unexpected table in test: ${table}`);

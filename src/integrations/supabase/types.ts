@@ -118,6 +118,36 @@ export type Database = {
         }
         Relationships: []
       }
+      family_member_deletions: {
+        Row: {
+          deleted_at: string
+          deleted_by: string
+          id: string
+          member_id: string
+          member_name: string
+          member_relationship: string
+          reason: string
+        }
+        Insert: {
+          deleted_at?: string
+          deleted_by: string
+          id?: string
+          member_id: string
+          member_name: string
+          member_relationship: string
+          reason: string
+        }
+        Update: {
+          deleted_at?: string
+          deleted_by?: string
+          id?: string
+          member_id?: string
+          member_name?: string
+          member_relationship?: string
+          reason?: string
+        }
+        Relationships: []
+      }
       family_members: {
         Row: {
           created_at: string
