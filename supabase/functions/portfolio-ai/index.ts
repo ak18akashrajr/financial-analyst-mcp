@@ -15,7 +15,7 @@ import { requireUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit } from "../_shared/rate-limit.ts";
 import { mapWithConcurrency } from "../_shared/concurrency.ts";
-import { McpClient } from "../_shared/mcp-client.ts";
+import { McpClient, type McpToolDef } from "../_shared/mcp-client.ts";
 import { withTimeout } from "../_shared/timeout.ts";
 import { GROQ_COMPLEX_MODEL, GROQ_SIMPLE_MODEL, explainComplexity, shouldEscalate } from "../_shared/router.ts";
 import { findTool } from "../_shared/mcp-tools.ts";
@@ -244,6 +244,23 @@ function buildProvider(): { provider: LlmProvider; model: string; attribution: s
   return { provider: new GroqProvider(groqKey), model: "", attribution: "" }; // model/attribution set per-request by the router
 }
 
+// portfolio-mcp-server's "initialize" and "tools/list" responses are both
+// static — TOOL_REGISTRY (mcp-tools.ts) never changes within a deployment —
+// yet every chat request was paying two full network round trips to fetch
+// them fresh. Module-scope cache, valid for the lifetime of this warm Deno
+// isolate: filled once, reused by every request after that, reset for free
+// on the next cold start (a redeploy always gets fresh instances, so this
+// can never serve a stale list from a different deployed version).
+let cachedTools: McpToolDef[] | null = null;
+
+async function getToolList(mcpClient: McpClient): Promise<McpToolDef[]> {
+  if (!cachedTools) {
+    await mcpClient.initialize();
+    cachedTools = await mcpClient.listTools();
+  }
+  return cachedTools;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -322,11 +339,10 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const mcpClient = new McpClient(`${supabaseUrl}/functions/v1/portfolio-mcp-server`, `Bearer ${serviceRoleKey}`);
-    await mcpClient.initialize();
     // ASK_CLARIFYING_QUESTION_TOOL is appended client-side, not registered
     // on the real MCP server — see its own doc comment for why (it's a
     // synthetic loop-control signal, not a SQL-backed portfolio tool).
-    const tools = [...(await mcpClient.listTools()), ASK_CLARIFYING_QUESTION_TOOL];
+    const tools = [...(await getToolList(mcpClient)), ASK_CLARIFYING_QUESTION_TOOL];
 
     const { provider: baseProvider, model: fixedModel, attribution: fixedAttribution } = buildProvider();
 
