@@ -106,7 +106,7 @@ function ExposureTreemap({ items, mask, iconFor, emptyMessage }: ExposureTreemap
       <Treemap
         data={data}
         dataKey="value"
-        aspectRatio={4 / 3}
+        aspectRatio={1}
         stroke="transparent"
         isAnimationActive={false}
         content={<ExposureTile />}
