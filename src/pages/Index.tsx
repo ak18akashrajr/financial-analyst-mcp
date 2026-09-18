@@ -12,13 +12,17 @@ import { ExpenseIncomeRatioCard } from '@/components/ExpenseIncomeRatioCard';
 
 import { DebtChart } from '@/components/DebtChart';
 import { PriceRefreshButton } from '@/components/PriceRefreshButton';
+import { FamilyNetWorthSplit } from '@/components/FamilyNetWorthSplit';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useAutoRefreshPricesOnLoad } from '@/hooks/useAutoRefreshPricesOnLoad';
+import { useFamilyNetWorthSplit } from '@/hooks/useFamilyNetWorthSplit';
+import { useFamilyMembers } from '@/hooks/useFamilyMembers';
 import { Eye, EyeOff, CreditCard, AlertTriangle } from 'lucide-react';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { SiteFooter } from '@/components/SiteFooter';
 import { getDynamicGreeting } from '@/lib/greeting';
 import { useActiveMemberName } from '@/hooks/useActiveMemberName';
+import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 
 const IndexContent = () => {
   const { hidden, toggle } = usePrivacy();
@@ -44,6 +48,10 @@ const IndexContent = () => {
     fetchLivePrices,
     payCreditCardBill,
   } = usePortfolio();
+
+  const { activeMemberId } = useFamilyMemberSelection();
+  const { members } = useFamilyMembers();
+  const { splits: familyNetWorthSplits } = useFamilyNetWorthSplit(holdings, activeMemberId === 'all');
 
   // Dashboard shows whatever was last written to current_prices, which can be
   // stale by the time you open the app — refresh live prices once on first
@@ -128,6 +136,10 @@ const IndexContent = () => {
           onUpdateCash={handleUpdateCash}
           onPayCreditCard={payCreditCardBill}
         />
+
+        {/* Family Net Worth Split — only meaningful in the combined "All Family" view; the
+            component itself also no-ops below 2 members with a live split. */}
+        <FamilyNetWorthSplit splits={familyNetWorthSplits} members={members} hidden={hidden} />
 
         {/* Dollar-Adjusted Returns overview */}
         <DollarReturnsCard holdings={holdings} summary={summary} />

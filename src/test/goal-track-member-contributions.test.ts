@@ -1,16 +1,14 @@
 // Covers the "All Family" Goals feature: attributing a goal's symbol allocations to the family
 // members who actually hold the underlying units, by market value. GoalTrack.tsx pools every
-// member's transactions per symbol into one FIFO chain (see getOpenLots) — getMemberUnitShares
-// re-runs that same FIFO chain but groups the surviving open lots by family_member_id instead of
-// lot age, and computeGoalMemberContributions applies that ownership ratio to each symbol
-// allocation's resolved market value. Cash allocations are deliberately excluded (see the doc
-// comment on computeGoalMemberContributions in src/pages/GoalTrack.tsx).
+// member's transactions per symbol into one FIFO chain (see src/lib/lotAttribution.ts's
+// getOpenLots) — getMemberUnitShares re-runs that same FIFO chain but groups the surviving open
+// lots by family_member_id instead of lot age, and computeGoalMemberContributions applies that
+// ownership ratio to each symbol allocation's resolved market value. Cash allocations are
+// deliberately excluded (see the doc comment on computeGoalMemberContributions in
+// src/pages/GoalTrack.tsx). getMemberUnitShares itself is covered in
+// src/test/lot-attribution.test.ts since it's now shared, reusable lib code.
 import { describe, expect, it, vi } from 'vitest';
-import {
-  computeGoalMemberContributions,
-  getMemberUnitShares,
-  type Allocation,
-} from '@/pages/GoalTrack';
+import { computeGoalMemberContributions, type Allocation } from '@/pages/GoalTrack';
 import type { DerivedHolding, Transaction } from '@/types/portfolio';
 
 vi.mock('@/integrations/supabase/client', () => ({ supabase: {} }));
@@ -42,36 +40,6 @@ function alloc(overrides: Partial<Allocation> & { id: string }): Allocation {
     ...overrides,
   };
 }
-
-describe('getMemberUnitShares', () => {
-  it('splits an untouched holding by each buyer\'s own units', () => {
-    const h = holding({
-      symbol: 'NIFTYBEES.NS',
-      totalQuantity: 300,
-      transactions: [
-        txn({ type: 'BUY', quantity: 200, date: '2025-01-01', familyMemberId: 'akash' }),
-        txn({ type: 'BUY', quantity: 100, date: '2025-02-01', familyMemberId: 'priya' }),
-      ],
-    });
-    expect(getMemberUnitShares(h)).toEqual({ akash: 200, priya: 100 });
-  });
-
-  it('consumes the oldest lot first on a SELL, regardless of which member sold', () => {
-    // Akash's 200 (older) + Priya's 100 (newer) = 300. A SELL of 150 eats entirely into Akash's lot
-    // under FIFO, leaving Akash with 50 and Priya untouched at 100 — same FIFO chain
-    // getHoldingLotSplit already uses for the LT/ST tax split, just grouped by member instead of age.
-    const h = holding({
-      symbol: 'NIFTYBEES.NS',
-      totalQuantity: 150,
-      transactions: [
-        txn({ type: 'BUY', quantity: 200, date: '2025-01-01', familyMemberId: 'akash' }),
-        txn({ type: 'BUY', quantity: 100, date: '2025-02-01', familyMemberId: 'priya' }),
-        txn({ type: 'SELL', quantity: 150, date: '2025-03-01', familyMemberId: 'akash' }),
-      ],
-    });
-    expect(getMemberUnitShares(h)).toEqual({ akash: 50, priya: 100 });
-  });
-});
 
 describe('computeGoalMemberContributions', () => {
   it('splits a single symbol allocation\'s market value by each member\'s live unit share', () => {
