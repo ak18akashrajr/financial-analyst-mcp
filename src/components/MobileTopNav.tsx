@@ -4,6 +4,7 @@ import { Menu, LogOut, Landmark } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { FamilyMemberSwitcher } from '@/components/FamilyMemberSwitcher';
+import { ActiveProfileButton } from '@/components/ActiveProfileButton';
 import { getVisibleNavGroups } from '@/components/navConfig';
 import { useActiveMemberRelationship } from '@/hooks/useActiveMemberRelationship';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -97,6 +98,7 @@ export function MobileTopNav() {
           </Link>
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          <ActiveProfileButton />
           <div className="w-20 min-w-0">
             <FamilyMemberSwitcher />
           </div>
