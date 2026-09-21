@@ -4,6 +4,7 @@ import { LogOut, Landmark, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
 import { FamilyMemberSwitcher } from '@/components/FamilyMemberSwitcher';
+import { ActiveProfileButton } from '@/components/ActiveProfileButton';
 import { getVisibleNavGroups } from '@/components/navConfig';
 import { useActiveMemberRelationship } from '@/hooks/useActiveMemberRelationship';
 
@@ -56,8 +57,11 @@ export function SideNav() {
       </div>
 
       {/* Active family member / combined household view */}
-      <div className={collapsed ? 'flex justify-center mb-3' : 'mb-3 px-1'}>
-        <FamilyMemberSwitcher collapsed={collapsed} />
+      <div className={collapsed ? 'flex flex-col items-center gap-2 mb-3' : 'flex items-center gap-2 mb-3 px-1'}>
+        <ActiveProfileButton collapsed={collapsed} />
+        <div className="flex-1 min-w-0">
+          <FamilyMemberSwitcher collapsed={collapsed} />
+        </div>
       </div>
 
       {/* Collapse toggle */}

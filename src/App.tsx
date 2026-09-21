@@ -12,6 +12,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { FamilyMemberProvider } from "@/contexts/FamilyMemberContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RequireProfileSelection } from "@/components/RequireProfileSelection";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Lazy — several of these (Charts, Projections, RollingReturns, Benchmark,
@@ -36,6 +37,7 @@ const RiskMetrics = lazy(() => import("./pages/RiskMetrics.tsx"));
 const Forecast = lazy(() => import("./pages/Forecast.tsx"));
 const DevZone = lazy(() => import("./pages/DevZone.tsx"));
 const FamilyMembers = lazy(() => import("./pages/FamilyMembers.tsx"));
+const WhosWatching = lazy(() => import("./pages/WhosWatching.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -70,23 +72,28 @@ const App = () => (
                     (sidebar + mobile nav) is nested inside the gate so it only ever
                     renders once a session exists. */}
                 <Route element={<ProtectedRoute />}>
-                  <Route element={<AppLayout />}>
-                    <Route path="/overview" element={<Index />} />
-                    <Route path="/taxes" element={<Taxes />} />
-                    <Route path="/charts" element={<Charts />} />
-                    <Route path="/projections" element={<Projections />} />
-                    <Route path="/deployment-plan" element={<DeploymentPlan />} />
-                    <Route path="/ai" element={<PortfolioAI />} />
-                    <Route path="/goal-track" element={<GoalTrack />} />
-                    <Route path="/updates" element={<Updates />} />
-                    <Route path="/rolling-returns" element={<RollingReturns />} />
-                    <Route path="/reports" element={<Reports />} />
-                    <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
-                    <Route path="/benchmark" element={<Benchmark />} />
-                    <Route path="/risk-metrics" element={<RiskMetrics />} />
-                    <Route path="/forecast" element={<Forecast />} />
-                    <Route path="/dev-zone" element={<DevZone />} />
-                    <Route path="/family-members" element={<FamilyMembers />} />
+                  {/* Needs a real session but must sit outside RequireProfileSelection below —
+                      it's the destination that gate redirects to, so gating it too would loop. */}
+                  <Route path="/select-profile" element={<WhosWatching />} />
+                  <Route element={<RequireProfileSelection />}>
+                    <Route element={<AppLayout />}>
+                      <Route path="/overview" element={<Index />} />
+                      <Route path="/taxes" element={<Taxes />} />
+                      <Route path="/charts" element={<Charts />} />
+                      <Route path="/projections" element={<Projections />} />
+                      <Route path="/deployment-plan" element={<DeploymentPlan />} />
+                      <Route path="/ai" element={<PortfolioAI />} />
+                      <Route path="/goal-track" element={<GoalTrack />} />
+                      <Route path="/updates" element={<Updates />} />
+                      <Route path="/rolling-returns" element={<RollingReturns />} />
+                      <Route path="/reports" element={<Reports />} />
+                      <Route path="/dollar-adjusted-returns" element={<DollarAdjustedReturns />} />
+                      <Route path="/benchmark" element={<Benchmark />} />
+                      <Route path="/risk-metrics" element={<RiskMetrics />} />
+                      <Route path="/forecast" element={<Forecast />} />
+                      <Route path="/dev-zone" element={<DevZone />} />
+                      <Route path="/family-members" element={<FamilyMembers />} />
+                    </Route>
                   </Route>
                 </Route>
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
