@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Play, TrendingDown, Shuffle, ArrowDownUp, Percent, Target, Flame, AlertTriangle } from 'lucide-react';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -281,7 +282,13 @@ const ProjectionsContent = () => {
   };
 
   if (loading) {
-    return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>;
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <PageSkeleton showHeader />
+        </div>
+      </div>
+    );
   }
 
   return (

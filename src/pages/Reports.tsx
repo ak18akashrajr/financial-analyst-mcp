@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, FileSpreadsheet, Save, Printer, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Sparkles, AlertTriangle, Compass, Activity, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
@@ -279,7 +280,13 @@ const ReportsContent = () => {
       : null;
 
   if (!active || loading) {
-    return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading reports…</div>;
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-4xl mx-auto px-4 py-6">
+          <PageSkeleton showHeader />
+        </div>
+      </div>
+    );
   }
 
   // Editable narrative

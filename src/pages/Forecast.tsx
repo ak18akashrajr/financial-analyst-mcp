@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, TrendingUp, Activity } from 'lucide-react';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -342,7 +343,7 @@ const ForecastContent = () => {
         </div>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <PageSkeleton />
         ) : !hasEnoughHistory ? (
           <Card className="rounded-2xl p-6 text-center space-y-2">
             <p className="text-sm text-muted-foreground">

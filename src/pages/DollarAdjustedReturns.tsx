@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { SiteFooter } from '@/components/SiteFooter';
@@ -93,8 +94,10 @@ function Content() {
 
   if (loading || loadingFx) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">Loading dollar-adjusted view…</p>
+      <div className="min-h-screen bg-background">
+        <div className="max-w-6xl mx-auto px-4 py-5">
+          <PageSkeleton showHeader />
+        </div>
       </div>
     );
   }

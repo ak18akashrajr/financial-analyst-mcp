@@ -8,6 +8,7 @@ import { calculateXIRR } from '@/lib/xirr';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Loader2, RefreshCw, Info } from 'lucide-react';
 import { toast } from 'sonner';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import type { Transaction } from '@/types/portfolio';
 import { parseLocalDate } from '@/lib/dateUtils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -310,7 +311,7 @@ const RollingContent = () => {
         </div>
 
         {loading ? (
-          <p className="text-muted-foreground">Loading…</p>
+          <PageSkeleton statCount={0} />
         ) : (
           <>
             {/* Summary table */}

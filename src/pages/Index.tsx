@@ -8,6 +8,7 @@ import { AddTransactionForm } from '@/components/AddTransactionForm';
 import { ExposureSection } from '@/components/ExposureSection';
 import { DollarReturnsCard } from '@/components/DollarReturnsCard';
 import { ExpenseIncomeRatioCard } from '@/components/ExpenseIncomeRatioCard';
+import { PageSkeleton } from '@/components/PageSkeleton';
 
 
 import { DebtChart } from '@/components/DebtChart';
@@ -78,8 +79,10 @@ const IndexContent = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">Loading portfolio...</p>
+      <div className="min-h-screen bg-background">
+        <div className="max-w-6xl mx-auto px-4 py-5">
+          <PageSkeleton showHeader />
+        </div>
       </div>
     );
   }

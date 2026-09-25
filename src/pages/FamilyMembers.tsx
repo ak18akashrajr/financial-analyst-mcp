@@ -19,6 +19,7 @@ import {
 import { Plus, Trash2, Users2, History } from 'lucide-react';
 import type { FamilyMember } from '@/types/portfolio';
 import { EmptyState } from '@/components/EmptyState';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const RELATIONSHIP_OPTIONS = ['Self', 'Spouse', 'Child', 'Parent', 'Sibling', 'Other'];
 
@@ -112,7 +113,16 @@ export default function FamilyMembers() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <div className="divide-y divide-border">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-center justify-between py-3">
+                  <div className="space-y-1.5">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : members.length === 0 ? (
             <EmptyState text="No family members yet — add one above." />
           ) : (

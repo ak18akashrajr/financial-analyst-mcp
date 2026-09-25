@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 import { EmptyState } from '@/components/EmptyState';
 import { Card } from '@/components/ui/card';
+import { PageSkeleton } from '@/components/PageSkeleton';
 
 import {
   computeRiskMetrics,
@@ -190,7 +191,7 @@ const RiskMetricsContent = () => {
         </div>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <PageSkeleton statCount={6} />
         ) : riskHoldings.length === 0 ? (
           <EmptyState text="No holdings with a live price yet — nothing to compute risk metrics from." />
         ) : (

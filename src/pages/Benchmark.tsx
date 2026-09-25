@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { toast } from 'sonner';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
@@ -243,7 +244,7 @@ const BenchmarkContent = () => {
         </div>
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <PageSkeleton />
         ) : note ? (
           <Card className="rounded-2xl p-6 text-center">
             <p className="text-sm text-muted-foreground">{note}</p>

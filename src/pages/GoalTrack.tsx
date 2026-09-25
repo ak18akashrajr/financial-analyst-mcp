@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Plus, Trash2, Target, Home, GraduationCap, Plane, Car, Heart, Briefcase, PiggyBank, CalendarDays, TrendingUp, Info, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import { parseLocalDate } from '@/lib/dateUtils';
 import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 import { useFamilyMembers } from '@/hooks/useFamilyMembers';
@@ -410,8 +411,10 @@ function GoalTrackContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">Loading…</p>
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="flex-1 max-w-6xl w-full mx-auto px-4 py-6">
+          <PageSkeleton showHeader />
+        </div>
       </div>
     );
   }
