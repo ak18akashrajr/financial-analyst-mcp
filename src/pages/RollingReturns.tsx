@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AppNav } from '@/components/AppNav';
 import { SiteFooter } from '@/components/SiteFooter';
 import { PrivacyProvider } from '@/contexts/PrivacyContext';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -281,8 +280,6 @@ const RollingContent = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto px-4 py-6">
-        <AppNav />
-
         <div className="flex items-center justify-between mb-4">
           <div>
             <h1 className="text-xl font-bold text-foreground flex items-center gap-1.5">

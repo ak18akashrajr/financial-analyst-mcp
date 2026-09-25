@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
-import { AppNav } from '@/components/AppNav';
 import { SiteFooter } from '@/components/SiteFooter';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -422,8 +421,6 @@ function GoalTrackContent() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <div className="flex-1 max-w-6xl w-full mx-auto px-4 py-6">
-        <AppNav />
-
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-xl font-bold text-foreground">Goal-Based Investing</h1>
