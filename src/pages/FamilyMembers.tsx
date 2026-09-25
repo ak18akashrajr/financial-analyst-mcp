@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Plus, Trash2, Users2, History } from 'lucide-react';
 import type { FamilyMember } from '@/types/portfolio';
+import { EmptyState } from '@/components/EmptyState';
 
 const RELATIONSHIP_OPTIONS = ['Self', 'Spouse', 'Child', 'Parent', 'Sibling', 'Other'];
 
@@ -113,7 +114,7 @@ export default function FamilyMembers() {
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : members.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No family members yet — add one above.</p>
+            <EmptyState text="No family members yet — add one above." />
           ) : (
             <ul className="divide-y divide-border">
               {members.map((m) => (

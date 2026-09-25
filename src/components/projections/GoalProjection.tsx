@@ -6,6 +6,7 @@ import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
+import { EmptyState } from '@/components/EmptyState';
 
 
 interface Goal {
@@ -81,12 +82,7 @@ export function GoalProjection({
   }
 
   if (goals.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-border p-8 text-center">
-        <Target className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-        <p className="text-sm text-muted-foreground">No goals yet. Create one on the Goals page to run goal-linked projections.</p>
-      </div>
-    );
+    return <EmptyState icon={<Target className="w-6 h-6" />} text="No goals yet. Create one on the Goals page to run goal-linked projections." />;
   }
 
   const chartData = result?.timelines.p50.map((v, i) => ({

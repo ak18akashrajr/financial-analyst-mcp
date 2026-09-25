@@ -5,6 +5,7 @@ import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { Eye, EyeOff, ArrowLeft, TrendingDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Category } from '@/types/portfolio';
+import { EmptyState } from '@/components/EmptyState';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -39,8 +40,8 @@ const TaxesContent = () => {
 
   if (!report || report.holdings.length === 0) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">No holdings to assess.</p>
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <EmptyState text="No holdings to assess." className="max-w-md" />
       </div>
     );
   }
@@ -257,7 +258,7 @@ const TaxesContent = () => {
             </p>
           </summary>
           {harvestableLots.length === 0 ? (
-            <p className="p-4 text-xs text-muted-foreground">No lots are currently sitting at a loss. 🎯</p>
+            <EmptyState compact text="No lots are currently sitting at a loss. 🎯" className="m-4" />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">

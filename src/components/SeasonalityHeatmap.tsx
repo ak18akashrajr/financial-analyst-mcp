@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
+import { EmptyState } from '@/components/EmptyState';
 
 type Snap = { recorded_at: string; net_worth: number };
 
@@ -69,7 +70,7 @@ export function SeasonalityHeatmap() {
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading snapshots…</p>
       ) : fys.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No net-worth history yet.</p>
+        <EmptyState compact text="No net-worth history yet." />
       ) : (
         <div className="overflow-x-auto">
           <table className="text-[10px] font-mono border-separate border-spacing-1">

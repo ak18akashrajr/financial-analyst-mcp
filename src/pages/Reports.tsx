@@ -12,6 +12,7 @@ import {
   type PeriodDef, type PeriodType, type HistoricalPriceMap,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
+import { EmptyState } from '@/components/EmptyState';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts';
@@ -700,7 +701,7 @@ One concise paragraph (3-4 sentences) summarising the period.
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-gain mb-2 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Gainers</p>
                 <div className="space-y-1.5">
-                  {activity.gainers.length === 0 && <p className="text-xs text-muted-foreground">No data</p>}
+                  {activity.gainers.length === 0 && <EmptyState compact text="No data" />}
                   {activity.gainers.map(h => (
                     <AuditPopover key={h.symbol} title={`${h.symbol} · Return`} trigger={
                       <div className="flex items-center justify-between text-xs cursor-help hover:bg-secondary/40 -mx-1 px-1 rounded transition-colors">
@@ -714,7 +715,7 @@ One concise paragraph (3-4 sentences) summarising the period.
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-loss mb-2 flex items-center gap-1"><TrendingDown className="w-3 h-3" /> Losers</p>
                 <div className="space-y-1.5">
-                  {activity.losers.length === 0 && <p className="text-xs text-muted-foreground">No losers — clean period 🎯</p>}
+                  {activity.losers.length === 0 && <EmptyState compact text="No losers — clean period 🎯" />}
                   {activity.losers.map(h => (
                     <AuditPopover key={h.symbol} title={`${h.symbol} · Return`} trigger={
                       <div className="flex items-center justify-between text-xs cursor-help hover:bg-secondary/40 -mx-1 px-1 rounded transition-colors">
@@ -801,7 +802,7 @@ const Row = ({ label, value, accent, audit }: { label: string; value: string; ac
 const ExposurePie = ({ title, data, hidden }: { title: string; data: { label: string; value: number; percent: number }[]; hidden: boolean }) => (
   <div className="rounded-2xl border border-border bg-card p-5">
     <h3 className="text-sm font-semibold mb-3">{title}</h3>
-    {data.length === 0 ? <p className="text-xs text-muted-foreground">No data</p> : (
+    {data.length === 0 ? <EmptyState compact text="No data" /> : (
       <div className="h-56">
         <ResponsiveContainer>
           <PieChart>

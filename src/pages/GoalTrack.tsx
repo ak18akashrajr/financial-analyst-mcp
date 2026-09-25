@@ -13,6 +13,7 @@ import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 import { useFamilyMembers } from '@/hooks/useFamilyMembers';
 import { getMemberDisplayName } from '@/lib/familyMemberDisplay';
 import { getOpenLots, getMemberUnitShares } from '@/lib/lotAttribution';
+import { EmptyState } from '@/components/EmptyState';
 import type { DerivedHolding, FamilyMember } from '@/types/portfolio';
 
 const ICON_OPTIONS = [
@@ -482,10 +483,7 @@ function GoalTrackContent() {
         )}
 
         {goals.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-12 text-center">
-            <Target className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">No goals yet. Create your first one to start tracking.</p>
-          </div>
+          <EmptyState icon={<Target className="w-8 h-8" />} text="No goals yet. Create your first one to start tracking." />
         ) : (
           <div className="space-y-4">
             {goals.map((goal) => {

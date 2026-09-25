@@ -7,6 +7,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { logClientError } from '@/lib/clientErrorLogging';
 import { useSecurityIncidents, type SecurityIncident } from '@/contexts/SecurityIncidentsContext';
+import { EmptyState } from '@/components/EmptyState';
 
 // One-stop view over everything this app currently persists as a "log":
 //   - app_logs     — logger.ts warn/error entries from every edge function
@@ -1288,14 +1289,6 @@ function ErrorBanner({ message }: { message: string }) {
   return (
     <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-500">
       Failed to load: {message}
-    </div>
-  );
-}
-
-function EmptyState({ text }: { text: string }) {
-  return (
-    <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-      {text}
     </div>
   );
 }

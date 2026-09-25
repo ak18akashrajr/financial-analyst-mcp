@@ -6,6 +6,7 @@ import { usePortfolio } from '@/hooks/usePortfolio';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { toast } from 'sonner';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
+import { EmptyState } from '@/components/EmptyState';
 import {
   computeRiskMetrics,
   dailyReturnsFromCloses,
@@ -189,9 +190,7 @@ const RiskMetricsContent = () => {
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : riskHoldings.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-card p-6 text-center">
-            <p className="text-sm text-muted-foreground">No holdings with a live price yet — nothing to compute risk metrics from.</p>
-          </div>
+          <EmptyState text="No holdings with a live price yet — nothing to compute risk metrics from." />
         ) : (
           <>
             {missingPriceSymbols.length > 0 && (
