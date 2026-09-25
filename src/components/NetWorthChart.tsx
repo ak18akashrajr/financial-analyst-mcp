@@ -14,6 +14,8 @@ import { computeRangeReturn, computeRangeXIRR } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import type { Transaction } from '@/types/portfolio';
 
+import { Card } from '@/components/ui/card';
+
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 }
@@ -70,12 +72,12 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
     return (
-      <div className="rounded-lg border border-border bg-card p-3 shadow-lg text-xs">
+      <Card className="p-3 shadow-lg text-xs">
         <p className="font-medium text-foreground mb-1">{label}</p>
         <p style={{ color: 'hsl(213, 75%, 55%)' }}>
           AUM: {hidden ? '••••••' : fmt(payload[0].value)}
         </p>
-      </div>
+      </Card>
     );
   };
 

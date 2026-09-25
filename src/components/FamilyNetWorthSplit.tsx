@@ -3,6 +3,8 @@ import type { MemberPortfolioSplit } from '@/lib/familyPortfolioSplit';
 import type { FamilyMember } from '@/types/portfolio';
 import { getMemberDisplayName } from '@/lib/familyMemberDisplay';
 
+import { Card } from '@/components/ui/card';
+
 function fmt(n: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 }
@@ -23,7 +25,7 @@ export function FamilyNetWorthSplit({ splits, members, hidden }: Props) {
   const total = splits.reduce((s, m) => s + m.netWorth, 0);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card className="rounded-2xl p-5">
       <div className="flex items-center gap-2.5 mb-4">
         <div className="w-9 h-9 rounded-lg bg-foreground/5 text-foreground flex items-center justify-center">
           <Users2 className="w-4 h-4" />
@@ -55,6 +57,6 @@ export function FamilyNetWorthSplit({ splits, members, hidden }: Props) {
           );
         })}
       </div>
-    </div>
+    </Card>
   );
 }

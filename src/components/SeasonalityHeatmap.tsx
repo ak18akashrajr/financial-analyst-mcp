@@ -4,6 +4,8 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { EmptyState } from '@/components/EmptyState';
 
+import { Card } from '@/components/ui/card';
+
 type Snap = { recorded_at: string; net_worth: number };
 
 const MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
@@ -58,7 +60,7 @@ export function SeasonalityHeatmap() {
   }, [snaps]);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card className="rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-1">
         <CalendarDays className="w-4 h-4 text-foreground" />
         <h3 className="text-sm font-semibold text-foreground">Seasonality · Monthly Net-Worth Returns</h3>
@@ -102,6 +104,6 @@ export function SeasonalityHeatmap() {
           </table>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

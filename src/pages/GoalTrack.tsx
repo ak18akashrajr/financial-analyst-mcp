@@ -16,6 +16,8 @@ import { getOpenLots, getMemberUnitShares } from '@/lib/lotAttribution';
 import { EmptyState } from '@/components/EmptyState';
 import type { DerivedHolding, FamilyMember } from '@/types/portfolio';
 
+import { Card } from '@/components/ui/card';
+
 const ICON_OPTIONS = [
   { id: 'Target', icon: Target },
   { id: 'Home', icon: Home },
@@ -435,7 +437,7 @@ function GoalTrackContent() {
         </div>
 
         {showForm && (
-          <div className="rounded-lg border border-border bg-card p-4 mb-6 space-y-3">
+          <Card className="p-4 mb-6 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-muted-foreground">Name</label>
@@ -479,7 +481,7 @@ function GoalTrackContent() {
               <button onClick={createGoal} className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90">Create Goal</button>
               <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm rounded-md border border-border hover:bg-accent">Cancel</button>
             </div>
-          </div>
+          </Card>
         )}
 
         {goals.length === 0 ? (
@@ -613,7 +615,7 @@ function GoalCard({
   );
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5 transition-colors">
+    <Card className="p-5 transition-colors">
       <div className="flex items-start justify-between gap-4">
         <button
           type="button"
@@ -777,7 +779,7 @@ function GoalCard({
           </button>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 

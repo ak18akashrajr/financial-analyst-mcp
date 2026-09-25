@@ -9,6 +9,8 @@ import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/Ch
 import { EmptyState } from '@/components/EmptyState';
 
 
+import { Card } from '@/components/ui/card';
+
 interface Goal {
   id: string;
   name: string;
@@ -101,7 +103,7 @@ export function GoalProjection({
   return (
     <div className="space-y-4">
       {/* Goal Selector */}
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
             <label className="text-[10px] uppercase tracking-wider text-muted-foreground"><LabelWithHint label="Goal" title="Goal selector" side="top">Picks a goal saved on the Goals page. Its target amount, target date and the live market value of the assets allocated to it are pulled in automatically.</LabelWithHint></label>
@@ -137,7 +139,7 @@ export function GoalProjection({
             Target: <span className="text-foreground font-medium">{fmt(Number(selected.target_amount))}</span> · Currently allocated: <span className="text-foreground font-medium">{hidden ? '••••' : fmt(goalCurrentValues[selected.id] ?? 0)}</span> · Horizon: <span className="text-foreground font-medium">{yearsToTarget} yrs</span> · Assumed: <span className="text-foreground font-medium">{(expectedReturn * 100).toFixed(1)}% return / {(volatility * 100).toFixed(0)}% vol</span>
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Probability + Stats */}
       {result && selected && (
@@ -151,7 +153,7 @@ export function GoalProjection({
 
       {/* Fan Chart */}
       {result && (
-        <div className="rounded-lg border border-border bg-card p-4">
+        <Card className="p-4">
           <h3 className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
             Fan chart (p10 / p50 / p90) vs target line
             <InfoHint title="Fan chart" side="right">Each line is a percentile of the 800 simulations over time: p90 optimistic, p50 median, p10 pessimistic. Where the target line sits inside the fan tells you how comfortably the goal is funded.</InfoHint>
@@ -187,11 +189,11 @@ export function GoalProjection({
               valueLabel="Median (p50)"
             />
           </div>
-        </div>
+        </Card>
       )}
 
       {/* SIP Optimizer */}
-      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+      <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" /> SIP Optimizer</h3>
@@ -213,15 +215,15 @@ export function GoalProjection({
 
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
 
 const StatBox = ({ label, value, color }: { label: React.ReactNode; value: string; color?: string }) => (
-  <div className="rounded-lg border border-border bg-card p-3">
+  <Card className="p-3">
     <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</div>
     <p className={`text-lg font-bold ${color || 'text-foreground'}`}>{value}</p>
-  </div>
+  </Card>
 );
 

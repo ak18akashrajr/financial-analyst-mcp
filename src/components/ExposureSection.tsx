@@ -5,6 +5,8 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import { getCategoryIcon } from '@/lib/categoryIcons';
 import { Globe } from 'lucide-react';
 
+import { Card } from '@/components/ui/card';
+
 function fmtRaw(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 }
@@ -125,7 +127,7 @@ export function ExposureSection({ geography, category }: Props) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-      <div className="rounded-2xl border border-border bg-card p-4 lg:col-span-2">
+      <Card className="rounded-2xl p-4 lg:col-span-2">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-medium text-muted-foreground">Geography Exposure</h3>
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">Treemap</span>
@@ -136,8 +138,8 @@ export function ExposureSection({ geography, category }: Props) {
           iconFor={() => Globe}
           emptyMessage="No data — tag your holdings with geography."
         />
-      </div>
-      <div className="rounded-2xl border border-border bg-card p-4 lg:col-span-3">
+      </Card>
+      <Card className="rounded-2xl p-4 lg:col-span-3">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-medium text-muted-foreground">Category Exposure</h3>
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-mono">Treemap</span>
@@ -148,7 +150,7 @@ export function ExposureSection({ geography, category }: Props) {
           iconFor={getCategoryIcon}
           emptyMessage="No data — tag your holdings with a category."
         />
-      </div>
+      </Card>
     </div>
   );
 }

@@ -23,6 +23,8 @@ import { StressReplay } from '@/components/projections/StressReplay';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 
 
+import { Card } from '@/components/ui/card';
+
 function fmt(n: number): string {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
   if (n >= 100000) return `₹${(n / 100000).toFixed(2)}L`;
@@ -35,11 +37,11 @@ function fmtFull(n: number): string {
 }
 
 const StatCard = ({ label, value, sub, color }: { label: React.ReactNode; value: string; sub?: string; color?: string }) => (
-  <div className="rounded-lg border border-border bg-card p-3">
+  <Card className="p-3">
     <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</div>
     <p className={`text-lg font-bold ${color || 'text-foreground'}`}>{value}</p>
     {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
-  </div>
+  </Card>
 );
 
 
@@ -67,7 +69,7 @@ const XIRRTab = ({ result, hidden, inputs }: { result: XIRRProjectionResult; hid
         <StatCard label={<LabelWithHint label="Conservative Final" title="Conservative final corpus" side="top">The same projection run at the haircut return — plan against this number, not the base one.</LabelWithHint>} value={hidden ? '••••' : fmt(result.conservativeFinalValue)} />
 
       </div>
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={data}>
             <defs>
@@ -83,7 +85,7 @@ const XIRRTab = ({ result, hidden, inputs }: { result: XIRRProjectionResult; hid
             <Area type="monotone" dataKey="conservative" name="Conservative (−20%)" stroke="hsl(45,93%,47%)" fill="url(#gCons)" strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
+      </Card>
     </div>
   );
 };
@@ -91,7 +93,7 @@ const XIRRTab = ({ result, hidden, inputs }: { result: XIRRProjectionResult; hid
 const CrashTab = ({ result, hidden }: { result: CrashScenarioResult; hidden: boolean }) => (
   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
     {result.scenarios.map(s => (
-      <div key={s.dropPct} className="rounded-lg border border-border bg-card p-4 space-y-2">
+      <Card key={s.dropPct} className="p-4 space-y-2">
         <div className="flex items-center gap-2"><TrendingDown className="w-4 h-4 text-loss" /><span className="font-bold text-foreground">−{s.dropPct}% Crash</span>
           <InfoHint title={`−${s.dropPct}% crash scenario`} side="top" formula={`corpus × (1 − ${s.dropPct / 100}) today, then compounded at the expected return + SIPs`}>An instant market fall of {s.dropPct}% applied to your starting corpus, after which contributions continue and the portfolio compounds at the expected return.</InfoHint>
         </div>
@@ -102,7 +104,7 @@ const CrashTab = ({ result, hidden }: { result: CrashScenarioResult; hidden: boo
           <p className="text-muted-foreground inline-flex items-center gap-1">Final: <span className="text-foreground font-medium">{hidden ? '••••' : fmtFull(s.finalValue)}</span><InfoHint title="End-of-horizon value" side="right">Corpus at the end of your chosen horizon despite the crash — useful next to the XIRR tab's no-crash number.</InfoHint></p>
         </div>
 
-      </div>
+      </Card>
     ))}
   </div>
 );
@@ -121,7 +123,7 @@ const MonteCarloTab = ({ result, hidden }: { result: MonteCarloResult; hidden: b
         <StatCard label={<LabelWithHint label="P(2x)" title="Probability of doubling" side="top" formula="share of the 1,000 paths ending ≥ 2 × initial corpus">How often the simulation at least doubles your starting corpus over the horizon.</LabelWithHint>} value={`${result.goalProbability}%`} color="text-blue-500" />
 
       </div>
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <ResponsiveContainer width="100%" height={260}>
           <AreaChart data={tl}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
@@ -134,7 +136,7 @@ const MonteCarloTab = ({ result, hidden }: { result: MonteCarloResult; hidden: b
             <Area type="monotone" dataKey="p10" name="p10" stroke="hsl(0,72%,51%)" fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
+      </Card>
     </div>
   );
 };
@@ -151,7 +153,7 @@ const SequenceTab = ({ result, hidden }: { result: SequenceRiskResult; hidden: b
         <StatCard label={<LabelWithHint label="Late Bad" title="Bad years last" side="top">Same returns with the bad years at the end, hitting the largest corpus. Usually the worst outcome for an accumulator.</LabelWithHint>} value={hidden ? '••••' : fmt(result.lateBadFinal)} color="text-loss" />
 
       </div>
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
@@ -164,7 +166,7 @@ const SequenceTab = ({ result, hidden }: { result: SequenceRiskResult; hidden: b
             <Line type="monotone" dataKey="lateBad" name="Late Bad" stroke="hsl(0,72%,51%)" strokeWidth={2} dot={false} strokeDasharray="5 5" />
           </LineChart>
         </ResponsiveContainer>
-      </div>
+      </Card>
     </div>
   );
 };
@@ -172,7 +174,7 @@ const SequenceTab = ({ result, hidden }: { result: SequenceRiskResult; hidden: b
 const InflationTab = ({ result, hidden }: { result: InflationResult; hidden: boolean }) => (
   <div className="space-y-4">
     {result.scenarios.map(s => (
-      <div key={s.inflationPct} className="rounded-lg border border-border bg-card p-4 space-y-3">
+      <Card key={s.inflationPct} className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-foreground">{s.inflationPct}% Inflation</h3>
           <span className="text-xs text-loss font-medium">−{s.purchasingPowerLoss}% purchasing power</span>
@@ -182,7 +184,7 @@ const InflationTab = ({ result, hidden }: { result: InflationResult; hidden: boo
           <StatCard label={<LabelWithHint label="Real (today's ₹)" title="Real value" side="top" formula="real = nominal ÷ (1 + inflation)^years">The same corpus expressed in today's purchasing power. The gap versus nominal is what inflation quietly takes away.</LabelWithHint>} value={hidden ? '••••' : fmt(s.realFinal)} color="text-yellow-500" />
 
         </div>
-      </div>
+      </Card>
     ))}
   </div>
 );
@@ -345,7 +347,7 @@ const ProjectionsContent = () => {
 
           <TabsContent value="overview" className="space-y-4">
             {/* Input Panel */}
-            <div className="rounded-lg border border-border bg-card p-4">
+            <Card className="p-4">
               <h2 className="text-sm font-medium text-foreground mb-3 flex items-center gap-1.5">
                 Simulation Inputs
                 <InfoHint title="Simulation inputs" side="right" caveat="Nothing here is saved — changing inputs only affects this page.">
@@ -363,7 +365,7 @@ const ProjectionsContent = () => {
               <button onClick={runAll} className="mt-4 flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
                 <Play className="w-4 h-4" /> Run All Simulations
               </button>
-            </div>
+            </Card>
 
             {hasRun && (
               <Tabs defaultValue="xirr" className="space-y-4">

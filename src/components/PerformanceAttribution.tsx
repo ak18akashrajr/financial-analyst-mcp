@@ -3,6 +3,8 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import { computePerformanceAttribution, type PerformanceContribution } from '@/lib/performanceAttribution';
 import type { DerivedHolding } from '@/types/portfolio';
 
+import { Card } from '@/components/ui/card';
+
 function fmtCurrency(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 }
@@ -41,7 +43,7 @@ export function PerformanceAttribution({ holdings }: Props) {
   const contributions = computePerformanceAttribution(holdings);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card className="rounded-2xl p-5">
       <h3 className="text-sm font-semibold text-foreground">Performance Attribution</h3>
       <p className="text-xs text-muted-foreground mt-0.5 mb-3">
         Which holdings drove your overall return, not just which did best on their own
@@ -94,6 +96,6 @@ export function PerformanceAttribution({ holdings }: Props) {
           ))}
         </div>
       )}
-    </div>
+    </Card>
   );
 }

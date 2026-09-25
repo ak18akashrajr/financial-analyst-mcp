@@ -13,6 +13,8 @@ import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 
+import { Card } from '@/components/ui/card';
+
 // Mirrors BENCHMARK_TICKERS in supabase/functions/fetch-benchmark-prices/index.ts — the friendly
 // symbols benchmark_history is keyed by (not the underlying Yahoo tickers).
 const BENCHMARK_OPTIONS = [
@@ -243,12 +245,12 @@ const BenchmarkContent = () => {
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : note ? (
-          <div className="rounded-2xl border border-border bg-card p-6 text-center">
+          <Card className="rounded-2xl p-6 text-center">
             <p className="text-sm text-muted-foreground">{note}</p>
             {benchmarkHistory.length === 0 && (
               <p className="text-xs text-muted-foreground mt-2">Click "Backfill {benchmarkLabel} data" above, then come back.</p>
             )}
-          </div>
+          </Card>
         ) : (
           <>
             {/* Stats */}
@@ -294,7 +296,7 @@ const BenchmarkContent = () => {
             )}
 
             {/* Chart */}
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <Card className="rounded-2xl p-5">
               <div className="text-sm font-semibold text-foreground mb-3 inline-flex items-center gap-1">
                 <h3>Rebased Performance (start = 100)</h3>
                 <InfoHint title="Rebased Performance" side="right" formula="value ÷ first overlapping value × 100" caveat="Date-aligned for a readable chart, so its rebased return can differ very slightly from the headline Portfolio/Benchmark Return stats above.">
@@ -326,7 +328,7 @@ const BenchmarkContent = () => {
                   valueLabel="Portfolio index"
                 />
               </div>
-            </div>
+            </Card>
 
             <p className="text-[11px] text-muted-foreground text-center">
               The chart's lines are rebased to 100 at the first date where portfolio history and {benchmarkLabel} data overlap, so they're
@@ -341,13 +343,13 @@ const BenchmarkContent = () => {
 };
 
 const Stat = ({ label, value, sub, positive }: { label: ReactNode; value: string; sub?: string; positive?: boolean }) => (
-  <div className="rounded-xl border border-border bg-card p-4">
+  <Card className="rounded-xl p-4">
     {/* div, not <p> — label can carry a LabelWithHint, whose tooltip content itself contains
         block elements (p, div), which is invalid nested inside a <p>. */}
     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
     <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-foreground'}`}>{value}</p>
     {sub && <p className="text-[11px] text-muted-foreground mt-1">{sub}</p>}
-  </div>
+  </Card>
 );
 
 const Benchmark = () => (

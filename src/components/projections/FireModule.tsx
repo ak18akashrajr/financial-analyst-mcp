@@ -8,6 +8,8 @@ import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 
+import { Card } from '@/components/ui/card';
+
 function fmt(n: number) {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
   if (n >= 100000) return `₹${(n / 100000).toFixed(2)}L`;
@@ -65,7 +67,7 @@ export function FireModule({
       </div>
 
       {/* Inputs */}
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <NumInput label="Current age" value={currentAge} onChange={setCurrentAge} hint={{ title: 'Current age', body: 'Start of the accumulation phase — the left edge of the chart below.' }} />
           <NumInput label="Retirement age" value={retirementAge} onChange={setRetirementAge} hint={{ title: 'Retirement age', body: 'Age at which SIPs stop and withdrawals begin. Marked by the dashed "Retire" line on the chart.' }} />
@@ -76,7 +78,7 @@ export function FireModule({
           <NumInput label="Monthly SIP (₹)" value={monthlySIP} onChange={setMonthlySIP} hint={{ title: 'Monthly SIP', body: 'Amount invested every month until retirement. Raise it to close the gap shown in the stats below.' }} />
           <NumInput label="SWR %" value={swrPct} onChange={setSwrPct} step={0.25} hint={{ title: 'Safe Withdrawal Rate', body: 'Percentage of the corpus you plan to withdraw in year one. It sets the required corpus: annual expense ÷ SWR. The classic 4% rule is a US study; 3–3.5% is often suggested for India.' }} />
         </div>
-      </div>
+      </Card>
 
       {/* Headline stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -88,7 +90,7 @@ export function FireModule({
 
 
       {/* Chart */}
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <h3 className="text-xs font-medium text-muted-foreground mb-2">Corpus by age — accumulation → drawdown (p10/p50/p90)</h3>
         <div className="relative">
           <ResponsiveContainer width="100%" height={320}>
@@ -115,7 +117,7 @@ export function FireModule({
             valueLabel="Median corpus (p50)"
           />
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -137,10 +139,10 @@ const NumInput = ({ label, value, onChange, step = 1, hint }: { label: string; v
 );
 
 const Stat = ({ label, value, color, sub }: { label: React.ReactNode; value: string; color?: string; sub?: string }) => (
-  <div className="rounded-lg border border-border bg-card p-3">
+  <Card className="p-3">
     <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</div>
     <p className={`text-base font-bold ${color || 'text-foreground'}`}>{value}</p>
     {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
-  </div>
+  </Card>
 );
 

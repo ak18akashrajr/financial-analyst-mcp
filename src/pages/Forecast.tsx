@@ -35,6 +35,8 @@ import {
 } from '@/lib/forecast';
 import { weightedAssumptions } from '@/lib/assetClassAssumptions';
 
+import { Card } from '@/components/ui/card';
+
 const HORIZON_OPTIONS = [6, 12, 24, 36, 60] as const;
 
 /** `years: null` means "use all available history" — the default, matching pre-lookback-control behavior. */
@@ -342,7 +344,7 @@ const ForecastContent = () => {
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : !hasEnoughHistory ? (
-          <div className="rounded-2xl border border-border bg-card p-6 text-center space-y-2">
+          <Card className="rounded-2xl p-6 text-center space-y-2">
             <p className="text-sm text-muted-foreground">
               Not enough priced history to build a value series yet — need at least two dates where every held
               symbol has a price.
@@ -350,7 +352,7 @@ const ForecastContent = () => {
             <p className="text-xs text-muted-foreground">
               Click "Backfill 2y daily prices" above, then come back.
             </p>
-          </div>
+          </Card>
         ) : (
           <>
             {staleDays > STALE_THRESHOLD_DAYS && (
@@ -375,7 +377,7 @@ const ForecastContent = () => {
             </p>
 
             {/* Controls */}
-            <div className="rounded-lg border border-border bg-card p-4 flex flex-wrap items-end gap-4">
+            <Card className="p-4 flex flex-wrap items-end gap-4">
               <div>
                 <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Horizon</Label>
                 <div className="flex gap-1 mt-1">
@@ -454,7 +456,7 @@ const ForecastContent = () => {
                   Use EWMA volatility (weights recent regime more)
                 </label>
               )}
-            </div>
+            </Card>
 
             {/* Fit stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -483,7 +485,7 @@ const ForecastContent = () => {
             </div>
 
             {/* Chart */}
-            <div className="rounded-lg border border-border bg-card p-4 relative">
+            <Card className="p-4 relative">
               <ResponsiveContainer width="100%" height={340}>
                 <ComposedChart
                   data={displayData}
@@ -523,7 +525,7 @@ const ForecastContent = () => {
                 unit="currency"
                 valueLabel="Value"
               />
-            </div>
+            </Card>
 
             <p className="text-[11px] text-muted-foreground text-center">
               The shaded band is the p10–p90 range across {fan?.simulations ?? 0} simulated paths, fitted from{' '}
@@ -533,7 +535,7 @@ const ForecastContent = () => {
             </p>
 
             {/* Backtest */}
-            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+            <Card className="p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-semibold text-foreground">Backtest</h2>
                 <InfoHint
@@ -609,7 +611,7 @@ const ForecastContent = () => {
                   </div>
                 </>
               )}
-            </div>
+            </Card>
           </>
         )}
       </div>
@@ -618,12 +620,12 @@ const ForecastContent = () => {
 };
 
 const Stat = ({ label, value, positive }: { label: React.ReactNode; value: string; positive?: boolean }) => (
-  <div className="rounded-xl border border-border bg-card p-4">
+  <Card className="rounded-xl p-4">
     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
     <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-foreground'}`}>
       {value}
     </p>
-  </div>
+  </Card>
 );
 
 const Forecast = () => (

@@ -7,6 +7,8 @@ import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { toast } from 'sonner';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 import { EmptyState } from '@/components/EmptyState';
+import { Card } from '@/components/ui/card';
+
 import {
   computeRiskMetrics,
   dailyReturnsFromCloses,
@@ -285,7 +287,7 @@ const RiskMetricsContent = () => {
             </div>
 
             {/* Per-holding table */}
-            <div className="rounded-lg border border-border bg-card overflow-x-auto">
+            <Card className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-muted-foreground border-b border-border">
                   <tr className="text-left">
@@ -332,7 +334,7 @@ const RiskMetricsContent = () => {
                   })}
                 </tbody>
               </table>
-            </div>
+            </Card>
 
             <p className="text-[11px] text-muted-foreground text-center">
               All figures are estimated from the last {LOOKBACK_DAYS} trading days of{' '}
@@ -350,13 +352,13 @@ const RiskMetricsContent = () => {
 };
 
 const Stat = ({ label, value, positive, note }: { label: ReactNode; value: string; positive?: boolean; note?: string }) => (
-  <div className="rounded-xl border border-border bg-card p-4">
+  <Card className="rounded-xl p-4">
     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
     <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-foreground'}`}>{value}</p>
     {/* Explains a null/"—" value in place (e.g. "return isn't positive this window") instead of
         leaving a bare dash with no clue why — a lone "—" otherwise reads as a broken/blank tile. */}
     {note && <p className="text-[10px] text-muted-foreground mt-1 leading-snug">{note}</p>}
-  </div>
+  </Card>
 );
 
 const RiskMetrics = () => (

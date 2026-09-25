@@ -3,6 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Activity } from 'lucide-react';
 import type { Transaction } from '@/types/portfolio';
 
+import { Card } from '@/components/ui/card';
+
 type PriceRow = { symbol: string; date: string; close: number };
 
 function pearson(a: number[], b: number[]): number {
@@ -114,7 +116,7 @@ export function CorrelationHeatmap({ transactions }: { transactions: Transaction
   }, [rows, symbols]);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card className="rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-1">
         <Activity className="w-4 h-4 text-foreground" />
         <h3 className="text-sm font-semibold text-foreground">Correlation Heatmap</h3>
@@ -166,6 +168,6 @@ export function CorrelationHeatmap({ transactions }: { transactions: Transaction
           </table>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

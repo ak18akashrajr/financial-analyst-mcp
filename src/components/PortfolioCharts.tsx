@@ -17,6 +17,8 @@ import { computeRangeReturn, computeRangeXIRR } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import { todayLocalDateString } from '@/lib/dateUtils';
 
+import { Card } from '@/components/ui/card';
+
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
@@ -162,14 +164,14 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
     return (
-      <div className="rounded-lg border border-border bg-card p-3 shadow-lg text-xs">
+      <Card className="p-3 shadow-lg text-xs">
         <p className="font-medium text-foreground mb-1">{label}</p>
         {payload.map((p: any) => (
           <p key={p.dataKey} style={{ color: p.color }}>
             {p.name}: {hidden ? '••••••' : fmt(p.value)}
           </p>
         ))}
-      </div>
+      </Card>
     );
   };
 

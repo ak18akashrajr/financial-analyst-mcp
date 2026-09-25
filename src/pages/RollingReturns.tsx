@@ -16,6 +16,8 @@ import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import { InfoHint } from '@/components/InfoHint';
 
+import { Card } from '@/components/ui/card';
+
 interface PricePoint { date: string; close: number; }
 
 // Compute window XIRR for a single symbol given transactions and price history within [start,end]
@@ -312,7 +314,7 @@ const RollingContent = () => {
         ) : (
           <>
             {/* Summary table */}
-            <div className="rounded-lg border border-border bg-card overflow-x-auto mb-6">
+            <Card className="overflow-x-auto mb-6">
               <table className="w-full text-sm">
                 <thead className="text-muted-foreground border-b border-border">
                   <tr className="text-left">
@@ -350,7 +352,7 @@ const RollingContent = () => {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </Card>
 
             {/* Chart controls */}
             <div className="flex flex-wrap items-center gap-3 mb-3">
@@ -377,7 +379,7 @@ const RollingContent = () => {
               </div>
             </div>
 
-            <div className="rounded-lg border border-border bg-card p-4">
+            <Card className="p-4">
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
                 <Info className="w-3.5 h-3.5" />
                 Rolling {windowYears}Y XIRR — each point is the XIRR computed over the prior {windowYears} year(s) ending that month.
@@ -399,7 +401,7 @@ const RollingContent = () => {
                 </ResponsiveContainer>
                 <ChartRangeBadge selection={rangeSelection} result={rangeResult} onClear={clearRange} unit="rate" valueLabel={`${windowYears}Y XIRR`} />
               </div>
-            </div>
+            </Card>
 
             {symbols.length > 0 && Object.keys(pricesBySymbol).length === 0 && (
               <p className="text-xs text-muted-foreground mt-3">

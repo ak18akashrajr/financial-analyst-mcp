@@ -22,6 +22,7 @@ import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import type { ReactNode } from 'react';
 import type { PeriodSnapshot, PeriodActivity } from '@/lib/periodReports';
+import { Card } from '@/components/ui/card';
 
 const COLORS = ['#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#ec4899', '#64748b'];
 
@@ -503,7 +504,7 @@ One concise paragraph (3-4 sentences) summarising the period.
         </div>
 
         {/* Report Cover */}
-        <div className="rounded-2xl border border-border bg-card p-6 print:p-4">
+        <Card className="rounded-2xl p-6 print:p-4">
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Earnings Report · {active.fy}</p>
@@ -552,7 +553,7 @@ One concise paragraph (3-4 sentences) summarising the period.
             <AuditChip label="Holdings marked" value={`${endSnap.holdings.length}`} />
             <AuditChip label="Txns ≤ period end" value={`${endSnap.holdings.reduce((s, h) => s + h.transactions.length, 0)}`} />
           </div>
-        </div>
+        </Card>
 
         {/* Data-staleness warning — surfaced prominently, not just the small chip above,
             because a holding marked at cost silently shows 0% return everywhere below
@@ -597,7 +598,7 @@ One concise paragraph (3-4 sentences) summarising the period.
 
         {/* Projection panel (upcoming or in-progress) */}
         {projection && (
-          <div className="rounded-2xl border border-border bg-card p-5">
+          <Card className="rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-3">
               <Compass className="w-4 h-4 text-foreground" />
               <h3 className="text-sm font-semibold text-foreground">
@@ -621,11 +622,11 @@ One concise paragraph (3-4 sentences) summarising the period.
                 </div>
               }>{audits.projectionConservative}</AuditPopover>
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Performance trend across FY */}
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-foreground mb-3">Performance Trend · {active.fy}</h3>
           <div className="h-72 relative">
             <ResponsiveContainer>
@@ -650,10 +651,10 @@ One concise paragraph (3-4 sentences) summarising the period.
               valueLabel="AUM"
             />
           </div>
-        </div>
+        </Card>
 
         {/* P&L per period bar */}
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-foreground mb-3">Unrealized P&L by Period</h3>
           <p className="text-[11px] text-muted-foreground -mt-2 mb-3">
             Change in unrealized P&amp;L within each period only (resets to 0 at the start of every bar) — not the all-time cumulative total.
@@ -671,7 +672,7 @@ One concise paragraph (3-4 sentences) summarising the period.
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
 
         {/* Exposure breakdown */}
         <div className="grid md:grid-cols-2 gap-3">
@@ -681,7 +682,7 @@ One concise paragraph (3-4 sentences) summarising the period.
 
         {/* Activity + Top movers */}
         <div className="grid md:grid-cols-3 gap-3">
-          <div className="rounded-2xl border border-border bg-card p-5 md:col-span-1">
+          <Card className="rounded-2xl p-5 md:col-span-1">
             <div className="flex items-center gap-2 mb-3"><Activity className="w-4 h-4" /><h3 className="text-sm font-semibold">Activity in Period</h3></div>
             <div className="space-y-2 text-sm">
               <Row label="Buy transactions" value={`${activity.buyCount}`} audit={audits.buyCount} />
@@ -694,8 +695,8 @@ One concise paragraph (3-4 sentences) summarising the period.
                 <Row label="SIP adherence" value={`${Math.min(999, Math.round((activity.sipInvested / (monthlySIPTarget * calendarMonths(active.start, status === 'in-progress' ? new Date() : active.end))) * 100))}%`} audit={audits.sipAdherence} />
               )}
             </div>
-          </div>
-          <div className="rounded-2xl border border-border bg-card p-5 md:col-span-2">
+          </Card>
+          <Card className="rounded-2xl p-5 md:col-span-2">
             <h3 className="text-sm font-semibold mb-3">Top Movers (period-end)</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -727,11 +728,11 @@ One concise paragraph (3-4 sentences) summarising the period.
                 </div>
               </div>
             </div>
-          </div>
+          </Card>
         </div>
 
         {/* Cash composition */}
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="rounded-2xl p-5">
           <h3 className="text-sm font-semibold mb-3">Liquidity & Reserves (period-end)</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KPI label="Operating Cash" value={fmt(endSnap.liquidCash, hidden)} audit={audits.operatingCash} />
@@ -739,10 +740,10 @@ One concise paragraph (3-4 sentences) summarising the period.
             <KPI label="PF (PPF/EPF)" value={fmt(endSnap.pfBalance, hidden)} audit={audits.pfBalance} />
             <KPI label="Outstanding Liabilities" value={fmt(endSnap.creditCardDebt, hidden)} positive={endSnap.creditCardDebt === 0} audit={audits.liabilities} />
           </div>
-        </div>
+        </Card>
 
         {/* Narrative editor */}
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold flex items-center gap-2"><Sparkles className="w-4 h-4" /> Board Commentary</h3>
             <button onClick={saveNarrative} disabled={saving} className="text-xs px-3 py-1.5 rounded-md bg-foreground text-background hover:opacity-90 flex items-center gap-1.5 disabled:opacity-50">
@@ -755,7 +756,7 @@ One concise paragraph (3-4 sentences) summarising the period.
             <NarrativeBlock label="Risks & Watchlist" icon={<AlertTriangle className="w-3.5 h-3.5 text-amber-600" />} placeholder="Concentration, drawdowns, macro risk, debt creep…" value={merged.risks || ''} onChange={v => setField('risks', v)} />
             <NarrativeBlock label="Outlook · Next Period" icon={<Compass className="w-3.5 h-3.5 text-blue-600" />} placeholder="Allocation plan, SIP changes, deployment targets…" value={merged.outlook || ''} onChange={v => setField('outlook', v)} />
           </div>
-        </div>
+        </Card>
 
         <p className="text-[11px] text-muted-foreground text-center pt-2 print:hidden">
           Actuals computed from transactions + net-worth history. Projections use XIRR {summary.xirr ? `(${(summary.xirr * 100).toFixed(2)}%)` : '(12% fallback)'} compounded monthly with your SIP target.
@@ -800,7 +801,7 @@ const Row = ({ label, value, accent, audit }: { label: string; value: string; ac
 };
 
 const ExposurePie = ({ title, data, hidden }: { title: string; data: { label: string; value: number; percent: number }[]; hidden: boolean }) => (
-  <div className="rounded-2xl border border-border bg-card p-5">
+  <Card className="rounded-2xl p-5">
     <h3 className="text-sm font-semibold mb-3">{title}</h3>
     {data.length === 0 ? <EmptyState compact text="No data" /> : (
       <div className="h-56">
@@ -815,7 +816,7 @@ const ExposurePie = ({ title, data, hidden }: { title: string; data: { label: st
         </ResponsiveContainer>
       </div>
     )}
-  </div>
+  </Card>
 );
 
 const NarrativeBlock = ({ label, value, onChange, placeholder, icon }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; icon?: React.ReactNode }) => (

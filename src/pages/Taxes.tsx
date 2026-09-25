@@ -7,6 +7,8 @@ import { Link } from 'react-router-dom';
 import type { Category } from '@/types/portfolio';
 import { EmptyState } from '@/components/EmptyState';
 
+import { Card } from '@/components/ui/card';
+
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 
@@ -74,7 +76,7 @@ const TaxesContent = () => {
         </div>
 
         {/* Tax Summary */}
-        <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+        <Card className="p-4 space-y-4">
           <h2 className="text-sm font-semibold text-foreground">Tax Liability Summary</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
@@ -91,10 +93,10 @@ const TaxesContent = () => {
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
         {/* Tax Rules Reference */}
-        <div className="rounded-lg border border-border bg-card p-4">
+        <Card className="p-4">
           <h2 className="text-sm font-semibold text-foreground mb-3">Applicable Tax Rates (FY 2026–27)</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <div className="p-3 rounded-md bg-muted/20 border border-border space-y-1">
@@ -110,10 +112,10 @@ const TaxesContent = () => {
               <p className="text-muted-foreground">No LTCG exemption threshold</p>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Per-Symbol Breakdown */}
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="p-4 border-b border-border">
             <h2 className="text-sm font-semibold text-foreground">Holdings Tax Breakdown (FIFO)</h2>
           </div>
@@ -151,7 +153,7 @@ const TaxesContent = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
 
         {/* Precise Tax Payable Summary */}
         <div className="rounded-lg border-2 border-loss/30 bg-card p-5 space-y-4">

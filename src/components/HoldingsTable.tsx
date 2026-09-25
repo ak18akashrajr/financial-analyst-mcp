@@ -5,6 +5,8 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import { EmptyState } from '@/components/EmptyState';
 
 
+import { Card } from '@/components/ui/card';
+
 function fmtRaw(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 }
@@ -42,7 +44,7 @@ export function HoldingsTable({ holdings, onUpdatePrice, onUpdateTransaction, on
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -134,6 +136,6 @@ export function HoldingsTable({ holdings, onUpdatePrice, onUpdateTransaction, on
           </tbody>
         </table>
       </div>
-    </div>
+    </Card>
   );
 }

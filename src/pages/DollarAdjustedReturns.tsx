@@ -21,6 +21,8 @@ import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
+import { Card } from '@/components/ui/card';
+
 const RANGES = [
   { key: '1y', years: 1 },
   { key: '3y', years: 3 },
@@ -135,14 +137,14 @@ function Content() {
         </div>
 
         {!metrics ? (
-          <div className="rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
+          <Card className="rounded-xl px-4 py-6 text-sm text-muted-foreground">
             No USD-INR rates stored yet. Click <span className="text-foreground font-medium">Backfill 10Y history</span> to
             populate rates from the free sources.
-          </div>
+          </Card>
         ) : (
           <>
             {/* Spot strip */}
-            <div className="rounded-xl border border-border bg-card px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+            <Card className="rounded-xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-baseline gap-3">
                 <span className="text-[11px] uppercase tracking-wider text-muted-foreground">USD / INR</span>
                 <span className="text-xl font-semibold font-mono text-foreground">{spot.toFixed(4)}</span>
@@ -150,7 +152,7 @@ function Content() {
               <span className="text-[11px] font-mono text-muted-foreground">
                 {spotRow?.source} · as of {spotRow?.date} · {rates.length} daily rates stored
               </span>
-            </div>
+            </Card>
 
             {metrics.approximatedCount > 0 && (
               <div className="rounded-xl border border-loss/30 bg-loss/5 px-4 py-3 flex items-start gap-3">
@@ -270,7 +272,7 @@ function Content() {
             </div>
 
             {/* Attribution */}
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <Card className="rounded-2xl p-5">
               <h2 className="text-sm font-semibold text-foreground mb-1">Return Attribution</h2>
               <p className="text-xs text-muted-foreground mb-4">
                 (1 + USD return) = (1 + INR return) × (avg entry rate ÷ spot rate)
@@ -283,10 +285,10 @@ function Content() {
               <p className="text-[11px] text-muted-foreground mt-3 font-mono">
                 Avg entry rate {metrics.attr.avgEntryRate.toFixed(4)} → spot {spot.toFixed(4)}
               </p>
-            </div>
+            </Card>
 
             {/* Dual axis chart */}
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <Card className="rounded-2xl p-5">
               <h2 className="text-sm font-semibold text-foreground mb-3">AUM — INR vs USD</h2>
               {dualSeries.length < 2 ? (
                 <p className="text-xs text-muted-foreground">Not enough net worth snapshots yet.</p>
@@ -321,10 +323,10 @@ function Content() {
                   />
                 </div>
               )}
-            </div>
+            </Card>
 
             {/* Rate history */}
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <Card className="rounded-2xl p-5">
               <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                 <h2 className="text-sm font-semibold text-foreground">USD-INR History</h2>
                 <div className="flex items-center gap-1">
@@ -374,10 +376,10 @@ function Content() {
                   />
                 </div>
               )}
-            </div>
+            </Card>
 
             {/* Per-holding */}
-            <div className="rounded-2xl border border-border bg-card p-5 overflow-x-auto">
+            <Card className="rounded-2xl p-5 overflow-x-auto">
               <h2 className="text-sm font-semibold text-foreground mb-3">Holding-Level Currency Impact</h2>
               <table className="w-full text-xs">
                 <thead>
@@ -418,12 +420,12 @@ function Content() {
                 </tbody>
               </table>
               <p className="text-[10px] text-muted-foreground mt-2">* nearest prior rate used for at least one trade date.</p>
-            </div>
+            </Card>
           </>
         )}
 
         {/* Provenance */}
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="rounded-2xl p-5">
           <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
             <Database className="w-4 h-4" /> Data Provenance
           </h2>
@@ -465,7 +467,7 @@ function Content() {
               )}
             </div>
           </div>
-        </div>
+        </Card>
       </div>
       <SiteFooter />
     </div>
@@ -486,7 +488,7 @@ function Kpi({
   audit: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
+    <Card className="rounded-2xl p-4">
       <AuditPopover
         title={title}
         trigger={
@@ -505,7 +507,7 @@ function Kpi({
       >
         {audit}
       </AuditPopover>
-    </div>
+    </Card>
   );
 }
 
