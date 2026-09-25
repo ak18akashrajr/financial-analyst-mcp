@@ -2,6 +2,9 @@ import { useMemo } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
+import { EmptyState } from '@/components/EmptyState';
+
+import { Card } from '@/components/ui/card';
 
 type Snap = { recorded_at: string; net_worth: number };
 
@@ -21,8 +24,8 @@ function fyMonthIdx(d: Date) {
 function colorFor(pct: number): string {
   if (!Number.isFinite(pct)) return 'hsl(var(--muted) / 0.3)';
   const t = Math.max(-10, Math.min(10, pct)) / 10;
-  if (t >= 0) return `hsla(152, 60%, 42%, ${0.15 + t * 0.7})`;
-  return `hsla(0, 72%, 55%, ${0.15 + -t * 0.7})`;
+  if (t >= 0) return `hsl(var(--gain) / ${0.15 + t * 0.7})`;
+  return `hsl(var(--loss) / ${0.15 + -t * 0.7})`;
 }
 
 export function SeasonalityHeatmap() {
@@ -57,7 +60,7 @@ export function SeasonalityHeatmap() {
   }, [snaps]);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card className="rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-1">
         <CalendarDays className="w-4 h-4 text-foreground" />
         <h3 className="text-sm font-semibold text-foreground">Seasonality · Monthly Net-Worth Returns</h3>
@@ -69,7 +72,7 @@ export function SeasonalityHeatmap() {
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading snapshots…</p>
       ) : fys.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No net-worth history yet.</p>
+        <EmptyState compact text="No net-worth history yet." />
       ) : (
         <div className="overflow-x-auto">
           <table className="text-[10px] font-mono border-separate border-spacing-1">
@@ -101,6 +104,6 @@ export function SeasonalityHeatmap() {
           </table>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

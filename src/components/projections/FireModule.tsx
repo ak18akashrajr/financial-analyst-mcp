@@ -8,6 +8,8 @@ import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 
+import { Card } from '@/components/ui/card';
+
 function fmt(n: number) {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
   if (n >= 100000) return `₹${(n / 100000).toFixed(2)}L`;
@@ -65,7 +67,7 @@ export function FireModule({
       </div>
 
       {/* Inputs */}
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <NumInput label="Current age" value={currentAge} onChange={setCurrentAge} hint={{ title: 'Current age', body: 'Start of the accumulation phase — the left edge of the chart below.' }} />
           <NumInput label="Retirement age" value={retirementAge} onChange={setRetirementAge} hint={{ title: 'Retirement age', body: 'Age at which SIPs stop and withdrawals begin. Marked by the dashed "Retire" line on the chart.' }} />
@@ -76,19 +78,19 @@ export function FireModule({
           <NumInput label="Monthly SIP (₹)" value={monthlySIP} onChange={setMonthlySIP} hint={{ title: 'Monthly SIP', body: 'Amount invested every month until retirement. Raise it to close the gap shown in the stats below.' }} />
           <NumInput label="SWR %" value={swrPct} onChange={setSwrPct} step={0.25} hint={{ title: 'Safe Withdrawal Rate', body: 'Percentage of the corpus you plan to withdraw in year one. It sets the required corpus: annual expense ÷ SWR. The classic 4% rule is a US study; 3–3.5% is often suggested for India.' }} />
         </div>
-      </div>
+      </Card>
 
       {/* Headline stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label={<LabelWithHint label="Required corpus @ retirement" title="Required corpus" side="top" formula="inflated annual expense at retirement ÷ SWR">The nest egg needed on day one of retirement to fund your inflated living costs at the chosen safe withdrawal rate.</LabelWithHint>} value={hidden ? '••••' : fmt(result.requiredCorpusAtRetirement)} />
-        <Stat label={<LabelWithHint label="Projected p50 corpus" title="Projected median corpus" side="top">The median result of 500 simulated accumulation paths at your retirement age. Green means it clears the required corpus.</LabelWithHint>} value={hidden ? '••••' : fmt(result.projectedCorpusAtRetirement.p50)} color={result.projectedCorpusAtRetirement.p50 >= result.requiredCorpusAtRetirement ? 'text-green-500' : 'text-red-500'} />
-        <Stat label={<LabelWithHint label="Gap (add'l SIP needed)" title="Funding gap" side="top">Extra monthly investment required, on top of your current SIP, for the median path to reach the required corpus. "On track" means no additional SIP is needed.</LabelWithHint>} value={hidden ? '••••' : (result.requiredAdditionalSIP > 0 ? `${fmt(result.requiredAdditionalSIP)}/mo` : 'On track ✓')} color={result.requiredAdditionalSIP > 0 ? 'text-yellow-500' : 'text-green-500'} />
-        <Stat label={<LabelWithHint label="Portfolio survival prob" title="Survival probability" side="top" formula="share of 500 paths with corpus > 0 at life expectancy">How often the corpus outlives you across the simulated drawdown paths. Below ~85% means the plan is fragile. FIRE age is the earliest age the median path can sustain withdrawals.</LabelWithHint>} value={`${(result.survivalProbability * 100).toFixed(0)}%`} color={result.survivalProbability >= 0.85 ? 'text-green-500' : result.survivalProbability >= 0.6 ? 'text-yellow-500' : 'text-red-500'} sub={result.fireAge ? `FIRE age: ~${Math.round(result.fireAge)}` : 'No FIRE age reached'} />
+        <Stat label={<LabelWithHint label="Projected p50 corpus" title="Projected median corpus" side="top">The median result of 500 simulated accumulation paths at your retirement age. Green means it clears the required corpus.</LabelWithHint>} value={hidden ? '••••' : fmt(result.projectedCorpusAtRetirement.p50)} color={result.projectedCorpusAtRetirement.p50 >= result.requiredCorpusAtRetirement ? 'text-gain' : 'text-loss'} />
+        <Stat label={<LabelWithHint label="Gap (add'l SIP needed)" title="Funding gap" side="top">Extra monthly investment required, on top of your current SIP, for the median path to reach the required corpus. "On track" means no additional SIP is needed.</LabelWithHint>} value={hidden ? '••••' : (result.requiredAdditionalSIP > 0 ? `${fmt(result.requiredAdditionalSIP)}/mo` : 'On track ✓')} color={result.requiredAdditionalSIP > 0 ? 'text-yellow-500' : 'text-gain'} />
+        <Stat label={<LabelWithHint label="Portfolio survival prob" title="Survival probability" side="top" formula="share of 500 paths with corpus > 0 at life expectancy">How often the corpus outlives you across the simulated drawdown paths. Below ~85% means the plan is fragile. FIRE age is the earliest age the median path can sustain withdrawals.</LabelWithHint>} value={`${(result.survivalProbability * 100).toFixed(0)}%`} color={result.survivalProbability >= 0.85 ? 'text-gain' : result.survivalProbability >= 0.6 ? 'text-yellow-500' : 'text-loss'} sub={result.fireAge ? `FIRE age: ~${Math.round(result.fireAge)}` : 'No FIRE age reached'} />
       </div>
 
 
       {/* Chart */}
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <h3 className="text-xs font-medium text-muted-foreground mb-2">Corpus by age — accumulation → drawdown (p10/p50/p90)</h3>
         <div className="relative">
           <ResponsiveContainer width="100%" height={320}>
@@ -115,7 +117,7 @@ export function FireModule({
             valueLabel="Median corpus (p50)"
           />
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -137,10 +139,10 @@ const NumInput = ({ label, value, onChange, step = 1, hint }: { label: string; v
 );
 
 const Stat = ({ label, value, color, sub }: { label: React.ReactNode; value: string; color?: string; sub?: string }) => (
-  <div className="rounded-lg border border-border bg-card p-3">
+  <Card className="p-3">
     <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</div>
     <p className={`text-base font-bold ${color || 'text-foreground'}`}>{value}</p>
     {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
-  </div>
+  </Card>
 );
 

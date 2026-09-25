@@ -14,6 +14,8 @@ import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
+import { Card } from '@/components/ui/card';
+
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 }
@@ -55,12 +57,12 @@ export function DebtChart({ refreshKey }: { refreshKey: number }) {
     if (!active || !payload?.length) return null;
     const p = payload[0].payload as Point;
     return (
-      <div className="rounded-lg border border-border bg-card p-3 shadow-lg text-xs space-y-0.5">
+      <Card className="p-3 shadow-lg text-xs space-y-0.5">
         <p className="font-medium text-foreground mb-1">{label}</p>
         <p style={{ color: 'hsl(213, 75%, 55%)' }}>AUM: {hidden ? '••••••' : fmt(p.net_worth)}</p>
         <p style={{ color: 'hsl(var(--loss))' }}>Debt: {hidden ? '••••••' : fmt(p.debt)}</p>
         <p className="text-muted-foreground">Debt %: {p.debt_pct.toFixed(2)}%</p>
-      </div>
+      </Card>
     );
   };
 

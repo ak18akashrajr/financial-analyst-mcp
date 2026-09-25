@@ -2,7 +2,10 @@ import { useState } from 'react';
 import type { DerivedHolding, Geography, Category } from '@/types/portfolio';
 import { TransactionHistory } from './TransactionHistory';
 import { usePrivacy } from '@/contexts/PrivacyContext';
+import { EmptyState } from '@/components/EmptyState';
 
+
+import { Card } from '@/components/ui/card';
 
 function fmtRaw(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -37,15 +40,11 @@ export function HoldingsTable({ holdings, onUpdatePrice, onUpdateTransaction, on
   };
 
   if (holdings.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground">
-        No holdings yet. Add transactions to get started.
-      </div>
-    );
+    return <EmptyState text="No holdings yet. Add transactions to get started." />;
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -137,6 +136,6 @@ export function HoldingsTable({ holdings, onUpdatePrice, onUpdateTransaction, on
           </tbody>
         </table>
       </div>
-    </div>
+    </Card>
   );
 }

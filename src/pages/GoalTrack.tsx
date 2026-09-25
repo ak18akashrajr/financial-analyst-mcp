@@ -8,12 +8,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Plus, Trash2, Target, Home, GraduationCap, Plane, Car, Heart, Briefcase, PiggyBank, CalendarDays, TrendingUp, Info, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import { parseLocalDate } from '@/lib/dateUtils';
 import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 import { useFamilyMembers } from '@/hooks/useFamilyMembers';
 import { getMemberDisplayName } from '@/lib/familyMemberDisplay';
 import { getOpenLots, getMemberUnitShares } from '@/lib/lotAttribution';
+import { EmptyState } from '@/components/EmptyState';
 import type { DerivedHolding, FamilyMember } from '@/types/portfolio';
+
+import { Card } from '@/components/ui/card';
 
 const ICON_OPTIONS = [
   { id: 'Target', icon: Target },
@@ -407,8 +411,10 @@ function GoalTrackContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">Loading…</p>
+      <div className="min-h-screen bg-background flex flex-col">
+        <div className="flex-1 max-w-6xl w-full mx-auto px-4 py-6">
+          <PageSkeleton showHeader />
+        </div>
       </div>
     );
   }
@@ -420,7 +426,7 @@ function GoalTrackContent() {
 
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground">Goal-Based Investing</h1>
+            <h1 className="text-xl font-bold text-foreground">Goal-Based Investing</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Tag investments to goals and track your progress. Click any goal card for details.
             </p>
@@ -434,7 +440,7 @@ function GoalTrackContent() {
         </div>
 
         {showForm && (
-          <div className="rounded-lg border border-border bg-card p-4 mb-6 space-y-3">
+          <Card className="p-4 mb-6 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-muted-foreground">Name</label>
@@ -478,14 +484,11 @@ function GoalTrackContent() {
               <button onClick={createGoal} className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:opacity-90">Create Goal</button>
               <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm rounded-md border border-border hover:bg-accent">Cancel</button>
             </div>
-          </div>
+          </Card>
         )}
 
         {goals.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-12 text-center">
-            <Target className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">No goals yet. Create your first one to start tracking.</p>
-          </div>
+          <EmptyState icon={<Target className="w-8 h-8" />} text="No goals yet. Create your first one to start tracking." />
         ) : (
           <div className="space-y-4">
             {goals.map((goal) => {
@@ -615,7 +618,7 @@ function GoalCard({
   );
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5 transition-colors">
+    <Card className="p-5 transition-colors">
       <div className="flex items-start justify-between gap-4">
         <button
           type="button"
@@ -779,7 +782,7 @@ function GoalCard({
           </button>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 

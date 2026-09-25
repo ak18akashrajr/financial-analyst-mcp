@@ -4,10 +4,12 @@ import {
   ArrowLeft, Terminal, RefreshCw, AlertTriangle, OctagonAlert, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Search, Loader2, Activity, ShieldAlert, LogOut, Receipt, Siren,
 } from 'lucide-react';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { supabase } from '@/integrations/supabase/client';
 import { logClientError } from '@/lib/clientErrorLogging';
 import { useSecurityIncidents, type SecurityIncident } from '@/contexts/SecurityIncidentsContext';
+import { EmptyState } from '@/components/EmptyState';
+
+import { Card } from '@/components/ui/card';
 
 // One-stop view over everything this app currently persists as a "log":
 //   - app_logs     — logger.ts warn/error entries from every edge function
@@ -697,7 +699,7 @@ function AppLogsTab() {
 
       <div className="flex flex-col gap-1.5">
         {filtered.map((row) => (
-          <div key={row.id} className="rounded-lg border border-border bg-card">
+          <Card key={row.id}>
             <button
               onClick={() => toggle(row.id)}
               className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent/40 transition-colors"
@@ -714,7 +716,7 @@ function AppLogsTab() {
                 {expanded.has(row.id) && <JsonBlock value={row.context} />}
               </div>
             </button>
-          </div>
+          </Card>
         ))}
       </div>
     </div>
@@ -773,7 +775,7 @@ function AuditTrailTab() {
 
       <div className="flex flex-col gap-1.5">
         {filtered.map((row) => (
-          <div key={row.id} className="rounded-lg border border-border bg-card">
+          <Card key={row.id}>
             <button
               onClick={() => toggle(row.id)}
               className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent/40 transition-colors"
@@ -798,7 +800,7 @@ function AuditTrailTab() {
                 {expanded.has(row.id) && <JsonBlock value={row.arguments} />}
               </div>
             </button>
-          </div>
+          </Card>
         ))}
       </div>
     </div>
@@ -925,7 +927,7 @@ function RequestsTab() {
 
       <div className="flex flex-col gap-1.5">
         {filtered.map((row) => (
-          <div key={row.id} className="rounded-lg border border-border bg-card">
+          <Card key={row.id}>
             <button
               onClick={() => toggle(row.id)}
               className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent/40 transition-colors"
@@ -960,7 +962,7 @@ function RequestsTab() {
                 {expanded.has(row.id) && <RequestSubTrace requestId={row.id} />}
               </div>
             </button>
-          </div>
+          </Card>
         ))}
       </div>
     </div>
@@ -1042,7 +1044,7 @@ function AiSafetyTab() {
 
       <div className="flex flex-col gap-1.5">
         {filtered.map((row) => (
-          <div key={row.id} className="rounded-lg border border-border bg-card">
+          <Card key={row.id}>
             <button
               onClick={() => toggle(row.id)}
               className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-accent/40 transition-colors"
@@ -1057,7 +1059,7 @@ function AiSafetyTab() {
                 {expanded.has(row.id) && <JsonBlock value={row.context} />}
               </div>
             </button>
-          </div>
+          </Card>
         ))}
       </div>
     </div>
@@ -1212,7 +1214,7 @@ function SecurityTab() {
 
       <div className="flex flex-col gap-1.5">
         {filtered.map((row) => (
-          <div key={row.id} className="rounded-lg border border-border bg-card">
+          <Card key={row.id}>
             <div className="flex items-start gap-2.5 px-3 py-2.5">
               <button
                 onClick={() => toggle(row.id)}
@@ -1248,7 +1250,7 @@ function SecurityTab() {
                 <span className="shrink-0 text-[10px] font-medium text-muted-foreground">Acknowledged</span>
               )}
             </div>
-          </div>
+          </Card>
         ))}
       </div>
     </div>
@@ -1293,14 +1295,6 @@ function ErrorBanner({ message }: { message: string }) {
   );
 }
 
-function EmptyState({ text }: { text: string }) {
-  return (
-    <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-      {text}
-    </div>
-  );
-}
-
 const VALID_TABS: Tab[] = ['status', 'requests', 'app-logs', 'audit-trail', 'safety', 'security'];
 
 const DevZone = () => {
@@ -1333,7 +1327,6 @@ const DevZone = () => {
               </div>
             </div>
           </div>
-          <ThemeToggle />
         </div>
       </div>
 

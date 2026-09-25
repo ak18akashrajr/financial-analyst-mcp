@@ -6,7 +6,10 @@ import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
+import { EmptyState } from '@/components/EmptyState';
 
+
+import { Card } from '@/components/ui/card';
 
 interface Goal {
   id: string;
@@ -81,12 +84,7 @@ export function GoalProjection({
   }
 
   if (goals.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-border p-8 text-center">
-        <Target className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-        <p className="text-sm text-muted-foreground">No goals yet. Create one on the Goals page to run goal-linked projections.</p>
-      </div>
-    );
+    return <EmptyState icon={<Target className="w-6 h-6" />} text="No goals yet. Create one on the Goals page to run goal-linked projections." />;
   }
 
   const chartData = result?.timelines.p50.map((v, i) => ({
@@ -105,7 +103,7 @@ export function GoalProjection({
   return (
     <div className="space-y-4">
       {/* Goal Selector */}
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
             <label className="text-[10px] uppercase tracking-wider text-muted-foreground"><LabelWithHint label="Goal" title="Goal selector" side="top">Picks a goal saved on the Goals page. Its target amount, target date and the live market value of the assets allocated to it are pulled in automatically.</LabelWithHint></label>
@@ -141,21 +139,21 @@ export function GoalProjection({
             Target: <span className="text-foreground font-medium">{fmt(Number(selected.target_amount))}</span> · Currently allocated: <span className="text-foreground font-medium">{hidden ? '••••' : fmt(goalCurrentValues[selected.id] ?? 0)}</span> · Horizon: <span className="text-foreground font-medium">{yearsToTarget} yrs</span> · Assumed: <span className="text-foreground font-medium">{(expectedReturn * 100).toFixed(1)}% return / {(volatility * 100).toFixed(0)}% vol</span>
           </p>
         )}
-      </div>
+      </Card>
 
       {/* Probability + Stats */}
       {result && selected && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatBox label={<LabelWithHint label="P(goal met)" title="Probability of hitting the goal" side="top" formula="share of 800 simulated paths ending ≥ target amount">Runs 800 random return paths on the money already allocated to this goal plus your SIP, and counts how many reach the target by its date.</LabelWithHint>} value={`${(result.probability * 100).toFixed(0)}%`} color={result.probability >= 0.7 ? 'text-green-500' : result.probability >= 0.4 ? 'text-yellow-500' : 'text-red-500'} />
+          <StatBox label={<LabelWithHint label="P(goal met)" title="Probability of hitting the goal" side="top" formula="share of 800 simulated paths ending ≥ target amount">Runs 800 random return paths on the money already allocated to this goal plus your SIP, and counts how many reach the target by its date.</LabelWithHint>} value={`${(result.probability * 100).toFixed(0)}%`} color={result.probability >= 0.7 ? 'text-gain' : result.probability >= 0.4 ? 'text-yellow-500' : 'text-loss'} />
           <StatBox label={<LabelWithHint label="Median outcome" title="Median outcome" side="top">The middle simulated corpus at the target date — half the paths finish above this, half below.</LabelWithHint>} value={hidden ? '••••' : fmt(result.p50)} />
-          <StatBox label={<LabelWithHint label="Expected surplus" title="Expected surplus" side="top">Average amount by which the successful paths overshoot the target — your cushion when things go well.</LabelWithHint>} value={hidden ? '••••' : fmt(result.expectedSurplus)} color="text-green-500" />
-          <StatBox label={<LabelWithHint label="Expected shortfall" title="Expected shortfall" side="top">Average gap on the paths that miss the target. This is the number to fund with a higher SIP or a longer horizon.</LabelWithHint>} value={hidden ? '••••' : fmt(result.expectedShortfall)} color="text-red-500" />
+          <StatBox label={<LabelWithHint label="Expected surplus" title="Expected surplus" side="top">Average amount by which the successful paths overshoot the target — your cushion when things go well.</LabelWithHint>} value={hidden ? '••••' : fmt(result.expectedSurplus)} color="text-gain" />
+          <StatBox label={<LabelWithHint label="Expected shortfall" title="Expected shortfall" side="top">Average gap on the paths that miss the target. This is the number to fund with a higher SIP or a longer horizon.</LabelWithHint>} value={hidden ? '••••' : fmt(result.expectedShortfall)} color="text-loss" />
         </div>
       )}
 
       {/* Fan Chart */}
       {result && (
-        <div className="rounded-lg border border-border bg-card p-4">
+        <Card className="p-4">
           <h3 className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
             Fan chart (p10 / p50 / p90) vs target line
             <InfoHint title="Fan chart" side="right">Each line is a percentile of the 800 simulations over time: p90 optimistic, p50 median, p10 pessimistic. Where the target line sits inside the fan tells you how comfortably the goal is funded.</InfoHint>
@@ -191,11 +189,11 @@ export function GoalProjection({
               valueLabel="Median (p50)"
             />
           </div>
-        </div>
+        </Card>
       )}
 
       {/* SIP Optimizer */}
-      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+      <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Sparkles className="w-4 h-4 text-primary" /> SIP Optimizer</h3>
@@ -211,21 +209,21 @@ export function GoalProjection({
         </div>
         {solverResult && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <StatBox label={<LabelWithHint label="Flat monthly SIP" title="Flat SIP required" side="top" formula="bisection search on SIP until P(target met) ≥ confidence">The smallest constant monthly contribution that gets the goal to your chosen confidence level.</LabelWithHint>} value={hidden ? '••••' : fmt(solverResult.flatSIP)} color="text-green-500" />
+            <StatBox label={<LabelWithHint label="Flat monthly SIP" title="Flat SIP required" side="top" formula="bisection search on SIP until P(target met) ≥ confidence">The smallest constant monthly contribution that gets the goal to your chosen confidence level.</LabelWithHint>} value={hidden ? '••••' : fmt(solverResult.flatSIP)} color="text-gain" />
             <StatBox label={<LabelWithHint label="Step-up SIP (yr 1, +10%/yr)" title="Step-up SIP" side="top">Starting amount if you increase the SIP 10% every year — usually a much lower year-1 outflow than the flat plan.</LabelWithHint>} value={hidden ? '••••' : fmt(solverResult.stepUpSIP)} color="text-blue-500" />
             <StatBox label={<LabelWithHint label="Achieved probability" title="Achieved probability" side="top">The success rate the solved SIP actually delivers — it can slightly exceed your target confidence because the search steps in discrete amounts.</LabelWithHint>} value={`${(solverResult.achievedProb * 100).toFixed(0)}%`} />
 
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
 
 const StatBox = ({ label, value, color }: { label: React.ReactNode; value: string; color?: string }) => (
-  <div className="rounded-lg border border-border bg-card p-3">
+  <Card className="p-3">
     <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</div>
     <p className={`text-lg font-bold ${color || 'text-foreground'}`}>{value}</p>
-  </div>
+  </Card>
 );
 

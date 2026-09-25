@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, FileSpreadsheet, Save, Printer, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Sparkles, AlertTriangle, Compass, Activity, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
@@ -13,6 +13,7 @@ import {
   type PeriodDef, type PeriodType, type HistoricalPriceMap,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
+import { EmptyState } from '@/components/EmptyState';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts';
@@ -22,6 +23,7 @@ import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import type { ReactNode } from 'react';
 import type { PeriodSnapshot, PeriodActivity } from '@/lib/periodReports';
+import { Card } from '@/components/ui/card';
 
 const COLORS = ['#0ea5e9', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#ec4899', '#64748b'];
 
@@ -278,7 +280,13 @@ const ReportsContent = () => {
       : null;
 
   if (!active || loading) {
-    return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading reports…</div>;
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-4xl mx-auto px-4 py-6">
+          <PageSkeleton showHeader />
+        </div>
+      </div>
+    );
   }
 
   // Editable narrative
@@ -445,7 +453,6 @@ One concise paragraph (3-4 sentences) summarising the period.
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button onClick={toggle} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground">
               {hidden ? 'Show' : 'Hide'} numbers
             </button>
@@ -504,7 +511,7 @@ One concise paragraph (3-4 sentences) summarising the period.
         </div>
 
         {/* Report Cover */}
-        <div className="rounded-2xl border border-border bg-card p-6 print:p-4">
+        <Card className="rounded-2xl p-6 print:p-4">
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
               <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Earnings Report · {active.fy}</p>
@@ -520,14 +527,14 @@ One concise paragraph (3-4 sentences) summarising the period.
                 }>{audits.aum}</AuditPopover>
                 {periodOverPeriod && (
                   <AuditPopover title="Period-over-period (QoQ)" trigger={
-                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${periodOverPeriod.pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${periodOverPeriod.pct >= 0 ? 'text-gain' : 'text-loss'}`}>
                       {fmtPct(periodOverPeriod.pct)} QoQ
                     </span>
                   }>{audits.aum}</AuditPopover>
                 )}
                 {yoy && (
                   <AuditPopover title="Year-over-year (YoY)" trigger={
-                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${yoy.pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${yoy.pct >= 0 ? 'text-gain' : 'text-loss'}`}>
                       {fmtPct(yoy.pct)} YoY
                     </span>
                   }>{audits.yoy}</AuditPopover>
@@ -553,7 +560,7 @@ One concise paragraph (3-4 sentences) summarising the period.
             <AuditChip label="Holdings marked" value={`${endSnap.holdings.length}`} />
             <AuditChip label="Txns ≤ period end" value={`${endSnap.holdings.reduce((s, h) => s + h.transactions.length, 0)}`} />
           </div>
-        </div>
+        </Card>
 
         {/* Data-staleness warning — surfaced prominently, not just the small chip above,
             because a holding marked at cost silently shows 0% return everywhere below
@@ -598,7 +605,7 @@ One concise paragraph (3-4 sentences) summarising the period.
 
         {/* Projection panel (upcoming or in-progress) */}
         {projection && (
-          <div className="rounded-2xl border border-border bg-card p-5">
+          <Card className="rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-3">
               <Compass className="w-4 h-4 text-foreground" />
               <h3 className="text-sm font-semibold text-foreground">
@@ -611,7 +618,7 @@ One concise paragraph (3-4 sentences) summarising the period.
                 <div className="rounded-xl border border-border p-4 bg-secondary/30 text-left cursor-help hover:border-foreground/40 transition-colors w-full">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Base Case (current XIRR) · click to audit</p>
                   <p className="text-2xl font-bold text-foreground mt-1">{fmt(projection.baseEndValue, hidden)}</p>
-                  <p className="text-xs text-green-600 mt-1">Projected AUM at period end</p>
+                  <p className="text-xs text-gain mt-1">Projected AUM at period end</p>
                 </div>
               }>{audits.projectionBase}</AuditPopover>
               <AuditPopover title="Conservative Projection" trigger={
@@ -622,11 +629,11 @@ One concise paragraph (3-4 sentences) summarising the period.
                 </div>
               }>{audits.projectionConservative}</AuditPopover>
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Performance trend across FY */}
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-foreground mb-3">Performance Trend · {active.fy}</h3>
           <div className="h-72 relative">
             <ResponsiveContainer>
@@ -651,10 +658,10 @@ One concise paragraph (3-4 sentences) summarising the period.
               valueLabel="AUM"
             />
           </div>
-        </div>
+        </Card>
 
         {/* P&L per period bar */}
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-foreground mb-3">Unrealized P&L by Period</h3>
           <p className="text-[11px] text-muted-foreground -mt-2 mb-3">
             Change in unrealized P&amp;L within each period only (resets to 0 at the start of every bar) — not the all-time cumulative total.
@@ -667,12 +674,12 @@ One concise paragraph (3-4 sentences) summarising the period.
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v: any) => fmt(Number(v), hidden)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', fontSize: 12 }} />
                 <Bar dataKey="periodPnl" name="P&L (this period)">
-                  {trend.map((d, i) => <Cell key={i} fill={d.periodPnl >= 0 ? '#22c55e' : '#ef4444'} />)}
+                  {trend.map((d, i) => <Cell key={i} fill={d.periodPnl >= 0 ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
 
         {/* Exposure breakdown */}
         <div className="grid md:grid-cols-2 gap-3">
@@ -682,7 +689,7 @@ One concise paragraph (3-4 sentences) summarising the period.
 
         {/* Activity + Top movers */}
         <div className="grid md:grid-cols-3 gap-3">
-          <div className="rounded-2xl border border-border bg-card p-5 md:col-span-1">
+          <Card className="rounded-2xl p-5 md:col-span-1">
             <div className="flex items-center gap-2 mb-3"><Activity className="w-4 h-4" /><h3 className="text-sm font-semibold">Activity in Period</h3></div>
             <div className="space-y-2 text-sm">
               <Row label="Buy transactions" value={`${activity.buyCount}`} audit={audits.buyCount} />
@@ -695,44 +702,44 @@ One concise paragraph (3-4 sentences) summarising the period.
                 <Row label="SIP adherence" value={`${Math.min(999, Math.round((activity.sipInvested / (monthlySIPTarget * calendarMonths(active.start, status === 'in-progress' ? new Date() : active.end))) * 100))}%`} audit={audits.sipAdherence} />
               )}
             </div>
-          </div>
-          <div className="rounded-2xl border border-border bg-card p-5 md:col-span-2">
+          </Card>
+          <Card className="rounded-2xl p-5 md:col-span-2">
             <h3 className="text-sm font-semibold mb-3">Top Movers (period-end)</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-green-600 mb-2 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Gainers</p>
+                <p className="text-[10px] uppercase tracking-wider text-gain mb-2 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Gainers</p>
                 <div className="space-y-1.5">
-                  {activity.gainers.length === 0 && <p className="text-xs text-muted-foreground">No data</p>}
+                  {activity.gainers.length === 0 && <EmptyState compact text="No data" />}
                   {activity.gainers.map(h => (
                     <AuditPopover key={h.symbol} title={`${h.symbol} · Return`} trigger={
                       <div className="flex items-center justify-between text-xs cursor-help hover:bg-secondary/40 -mx-1 px-1 rounded transition-colors">
                         <span className="font-medium">{h.symbol}</span>
-                        <span className="text-green-600 flex items-center gap-1"><ArrowUpRight className="w-3 h-3" />{fmtPct(h.pnlPercent)}</span>
+                        <span className="text-gain flex items-center gap-1"><ArrowUpRight className="w-3 h-3" />{fmtPct(h.pnlPercent)}</span>
                       </div>
                     }>{holdingAudit(h, endSnap, hidden)}</AuditPopover>
                   ))}
                 </div>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-red-600 mb-2 flex items-center gap-1"><TrendingDown className="w-3 h-3" /> Losers</p>
+                <p className="text-[10px] uppercase tracking-wider text-loss mb-2 flex items-center gap-1"><TrendingDown className="w-3 h-3" /> Losers</p>
                 <div className="space-y-1.5">
-                  {activity.losers.length === 0 && <p className="text-xs text-muted-foreground">No losers — clean period 🎯</p>}
+                  {activity.losers.length === 0 && <EmptyState compact text="No losers — clean period 🎯" />}
                   {activity.losers.map(h => (
                     <AuditPopover key={h.symbol} title={`${h.symbol} · Return`} trigger={
                       <div className="flex items-center justify-between text-xs cursor-help hover:bg-secondary/40 -mx-1 px-1 rounded transition-colors">
                         <span className="font-medium">{h.symbol}</span>
-                        <span className="text-red-600 flex items-center gap-1"><ArrowDownRight className="w-3 h-3" />{fmtPct(h.pnlPercent)}</span>
+                        <span className="text-loss flex items-center gap-1"><ArrowDownRight className="w-3 h-3" />{fmtPct(h.pnlPercent)}</span>
                       </div>
                     }>{holdingAudit(h, endSnap, hidden)}</AuditPopover>
                   ))}
                 </div>
               </div>
             </div>
-          </div>
+          </Card>
         </div>
 
         {/* Cash composition */}
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="rounded-2xl p-5">
           <h3 className="text-sm font-semibold mb-3">Liquidity & Reserves (period-end)</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KPI label="Operating Cash" value={fmt(endSnap.liquidCash, hidden)} audit={audits.operatingCash} />
@@ -740,10 +747,10 @@ One concise paragraph (3-4 sentences) summarising the period.
             <KPI label="PF (PPF/EPF)" value={fmt(endSnap.pfBalance, hidden)} audit={audits.pfBalance} />
             <KPI label="Outstanding Liabilities" value={fmt(endSnap.creditCardDebt, hidden)} positive={endSnap.creditCardDebt === 0} audit={audits.liabilities} />
           </div>
-        </div>
+        </Card>
 
         {/* Narrative editor */}
-        <div className="rounded-2xl border border-border bg-card p-5">
+        <Card className="rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold flex items-center gap-2"><Sparkles className="w-4 h-4" /> Board Commentary</h3>
             <button onClick={saveNarrative} disabled={saving} className="text-xs px-3 py-1.5 rounded-md bg-foreground text-background hover:opacity-90 flex items-center gap-1.5 disabled:opacity-50">
@@ -752,11 +759,11 @@ One concise paragraph (3-4 sentences) summarising the period.
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             <NarrativeBlock label="Executive Summary" placeholder="Open the report with a one-paragraph summary…" value={merged.commentary || ''} onChange={v => setField('commentary', v)} />
-            <NarrativeBlock label="Highlights" icon={<Sparkles className="w-3.5 h-3.5 text-green-600" />} placeholder="Wins this period — biggest gainers, milestones, decisions…" value={merged.highlights || ''} onChange={v => setField('highlights', v)} />
+            <NarrativeBlock label="Highlights" icon={<Sparkles className="w-3.5 h-3.5 text-gain" />} placeholder="Wins this period — biggest gainers, milestones, decisions…" value={merged.highlights || ''} onChange={v => setField('highlights', v)} />
             <NarrativeBlock label="Risks & Watchlist" icon={<AlertTriangle className="w-3.5 h-3.5 text-amber-600" />} placeholder="Concentration, drawdowns, macro risk, debt creep…" value={merged.risks || ''} onChange={v => setField('risks', v)} />
             <NarrativeBlock label="Outlook · Next Period" icon={<Compass className="w-3.5 h-3.5 text-blue-600" />} placeholder="Allocation plan, SIP changes, deployment targets…" value={merged.outlook || ''} onChange={v => setField('outlook', v)} />
           </div>
-        </div>
+        </Card>
 
         <p className="text-[11px] text-muted-foreground text-center pt-2 print:hidden">
           Actuals computed from transactions + net-worth history. Projections use XIRR {summary.xirr ? `(${(summary.xirr * 100).toFixed(2)}%)` : '(12% fallback)'} compounded monthly with your SIP target.
@@ -782,7 +789,7 @@ const KPI = ({ label, value, sub, positive, audit }: { label: string; value: str
         {audit && <span className="text-[9px] text-muted-foreground/60 font-normal normal-case tracking-normal">click to audit</span>}
       </p>
       <p className="text-lg font-bold text-foreground mt-1 font-mono">{value}</p>
-      {sub && <p className={`text-[11px] mt-1 ${positive === true ? 'text-green-600' : positive === false ? 'text-red-600' : 'text-muted-foreground'}`}>{sub}</p>}
+      {sub && <p className={`text-[11px] mt-1 ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-muted-foreground'}`}>{sub}</p>}
     </div>
   );
   if (!audit) return body;
@@ -793,7 +800,7 @@ const Row = ({ label, value, accent, audit }: { label: string; value: string; ac
   const body = (
     <div className={`flex items-center justify-between text-xs ${audit ? 'hover:bg-secondary/40 -mx-1 px-1 rounded transition-colors' : ''}`}>
       <span className="text-muted-foreground">{label}</span>
-      <span className={`font-mono font-medium ${accent === true ? 'text-green-600' : accent === false ? 'text-red-600' : 'text-foreground'}`}>{value}</span>
+      <span className={`font-mono font-medium ${accent === true ? 'text-gain' : accent === false ? 'text-loss' : 'text-foreground'}`}>{value}</span>
     </div>
   );
   if (!audit) return body;
@@ -801,9 +808,9 @@ const Row = ({ label, value, accent, audit }: { label: string; value: string; ac
 };
 
 const ExposurePie = ({ title, data, hidden }: { title: string; data: { label: string; value: number; percent: number }[]; hidden: boolean }) => (
-  <div className="rounded-2xl border border-border bg-card p-5">
+  <Card className="rounded-2xl p-5">
     <h3 className="text-sm font-semibold mb-3">{title}</h3>
-    {data.length === 0 ? <p className="text-xs text-muted-foreground">No data</p> : (
+    {data.length === 0 ? <EmptyState compact text="No data" /> : (
       <div className="h-56">
         <ResponsiveContainer>
           <PieChart>
@@ -816,7 +823,7 @@ const ExposurePie = ({ title, data, hidden }: { title: string; data: { label: st
         </ResponsiveContainer>
       </div>
     )}
-  </div>
+  </Card>
 );
 
 const NarrativeBlock = ({ label, value, onChange, placeholder, icon }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; icon?: React.ReactNode }) => (

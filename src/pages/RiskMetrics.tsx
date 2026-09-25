@@ -4,9 +4,12 @@ import { ArrowLeft, Gauge, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
+import { EmptyState } from '@/components/EmptyState';
+import { Card } from '@/components/ui/card';
+import { PageSkeleton } from '@/components/PageSkeleton';
+
 import {
   computeRiskMetrics,
   dailyReturnsFromCloses,
@@ -153,8 +156,8 @@ const RiskMetricsContent = () => {
           <div className="flex items-center gap-3">
             <Link to="/overview" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /></Link>
             <div>
-              <div className="text-xl font-bold text-foreground flex items-center gap-2">
-                <h1 className="flex items-center gap-2"><Gauge className="w-5 h-5" /> Risk Metrics</h1>
+              <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <Gauge className="w-5 h-5" /> Risk Metrics
                 <InfoHint
                   title="Risk Metrics"
                   side="right"
@@ -166,7 +169,7 @@ const RiskMetricsContent = () => {
                   read on the same numbers. Matches what the portfolio AI's get_risk_metrics tool reports for the same
                   question (except Risk per ₹1 Return, which is shown here only).
                 </InfoHint>
-              </div>
+              </h1>
               <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>Trailing {LOOKBACK_DAYS} trading days · vs. NIFTY 50 · risk-free rate {RISK_FREE_RATE * 100}% (10Y India G-Sec)</span>
                 <InfoHint title="Risk-free rate" side="bottom">
@@ -178,7 +181,6 @@ const RiskMetricsContent = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button onClick={toggle} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground">
               {hidden ? 'Show' : 'Hide'} numbers
             </button>
@@ -189,11 +191,9 @@ const RiskMetricsContent = () => {
         </div>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <PageSkeleton statCount={6} />
         ) : riskHoldings.length === 0 ? (
-          <div className="rounded-2xl border border-border bg-card p-6 text-center">
-            <p className="text-sm text-muted-foreground">No holdings with a live price yet — nothing to compute risk metrics from.</p>
-          </div>
+          <EmptyState text="No holdings with a live price yet — nothing to compute risk metrics from." />
         ) : (
           <>
             {missingPriceSymbols.length > 0 && (
@@ -288,7 +288,7 @@ const RiskMetricsContent = () => {
             </div>
 
             {/* Per-holding table */}
-            <div className="rounded-lg border border-border bg-card overflow-x-auto">
+            <Card className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-muted-foreground border-b border-border">
                   <tr className="text-left">
@@ -335,7 +335,7 @@ const RiskMetricsContent = () => {
                   })}
                 </tbody>
               </table>
-            </div>
+            </Card>
 
             <p className="text-[11px] text-muted-foreground text-center">
               All figures are estimated from the last {LOOKBACK_DAYS} trading days of{' '}
@@ -353,13 +353,13 @@ const RiskMetricsContent = () => {
 };
 
 const Stat = ({ label, value, positive, note }: { label: ReactNode; value: string; positive?: boolean; note?: string }) => (
-  <div className="rounded-xl border border-border bg-card p-4">
+  <Card className="rounded-xl p-4">
     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-green-600' : positive === false ? 'text-red-600' : 'text-foreground'}`}>{value}</p>
+    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-foreground'}`}>{value}</p>
     {/* Explains a null/"—" value in place (e.g. "return isn't positive this window") instead of
         leaving a bare dash with no clue why — a lone "—" otherwise reads as a broken/blank tile. */}
     {note && <p className="text-[10px] text-muted-foreground mt-1 leading-snug">{note}</p>}
-  </div>
+  </Card>
 );
 
 const RiskMetrics = () => (

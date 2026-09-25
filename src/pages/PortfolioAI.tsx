@@ -19,7 +19,6 @@ import {
   AlertOctagon,
   LineChart,
 } from 'lucide-react';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { AssistantMarkdown } from '@/components/portfolio-ai/AssistantMarkdown';
 import { useAIChat, type ModelPreference } from '@/contexts/PortfolioAIChatContext';
 
@@ -136,7 +135,6 @@ const PortfolioAI = () => {
               MCP Connected
             </span>
           </div>
-          <ThemeToggle />
         </div>
       </div>
 

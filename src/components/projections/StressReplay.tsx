@@ -7,6 +7,8 @@ import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
+import { Card } from '@/components/ui/card';
+
 type CrisisResult = ReturnType<typeof replayCrisis>;
 
 
@@ -40,7 +42,7 @@ export function StressReplay({
         <p className="mt-2 flex items-start gap-1.5"><Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" /><span><strong>Approximation notice:</strong> Monthly returns are compressed from published NIFTY history. A future upgrade will replay day-level series from your `historical_prices` table.</span></p>
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-4">
+      <Card className="p-4">
         <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
           <LabelWithHint label="Equity Weight for Simulation (%)" title="Equity weight" side="top" caveat="Non-equity holdings are held flat — in real crises bonds and gold often rose, so this is deliberately conservative.">
             Portion of your AUM the crisis returns are applied to. Defaults to your live equity exposure; drag it to test a more or less aggressive book.
@@ -55,7 +57,7 @@ export function StressReplay({
           className="w-full mt-2 accent-primary"
         />
         <p className="text-[11px] text-muted-foreground mt-1">Currently: <span className="text-foreground font-medium">{weight}%</span></p>
-      </div>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {results.map(r => (
@@ -74,7 +76,7 @@ function StressCrisisCard({ r, hidden }: { r: CrisisResult; hidden: boolean }) {
       : null;
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+    <Card className="p-4 space-y-3">
       <div>
         <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
           {r.label}
@@ -83,7 +85,7 @@ function StressCrisisCard({ r, hidden }: { r: CrisisResult; hidden: boolean }) {
         <p className="text-[11px] text-muted-foreground">{r.window}</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <MiniStat label={<LabelWithHint label="Max drawdown" title="Max drawdown" side="top" formula="(trough − peak) ÷ peak">Deepest peak-to-trough fall in portfolio value during the replay.</LabelWithHint>} value={`${(r.maxDrawdown * 100).toFixed(1)}%`} color="text-red-500" />
+        <MiniStat label={<LabelWithHint label="Max drawdown" title="Max drawdown" side="top" formula="(trough − peak) ÷ peak">Deepest peak-to-trough fall in portfolio value during the replay.</LabelWithHint>} value={`${(r.maxDrawdown * 100).toFixed(1)}%`} color="text-loss" />
         <MiniStat label={<LabelWithHint label="Trough value" title="Trough value" side="top">The lowest rupee value your portfolio touches during the window — the number you would actually have to sit through.</LabelWithHint>} value={hidden ? '••••' : fmt(r.troughValue)} color="text-orange-500" />
         <MiniStat label={<LabelWithHint label="End value" title="End value" side="top">Portfolio value at the end of the crisis window, after any rebound inside that period.</LabelWithHint>} value={hidden ? '••••' : fmt(r.endValue)} />
         <MiniStat label={<LabelWithHint label="Recovery @ 12%" title="Recovery time" side="top" formula="months of 12% p.a. compounding to regain the starting AUM">How long it would take to get back to where you started, assuming a 12% annual recovery and no fresh contributions.</LabelWithHint>} value={r.recoveryMonths === null ? 'N/A' : r.recoveryMonths === 0 ? 'Already recovered' : `${r.recoveryMonths} mo`} color="text-yellow-500" />
@@ -107,7 +109,7 @@ function StressCrisisCard({ r, hidden }: { r: CrisisResult; hidden: boolean }) {
         </ResponsiveContainer>
         <ChartRangeBadge selection={selection} result={rangeResult} onClear={clear} unit="currency" formatValue={fmt} valueLabel="Value" />
       </div>
-    </div>
+    </Card>
   );
 }
 

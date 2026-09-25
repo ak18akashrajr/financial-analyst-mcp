@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { generateTaxReport, getHarvestableLots, hasSameDayReentry, TaxReport } from '@/lib/taxCalculator';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { Eye, EyeOff, ArrowLeft, TrendingDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Category } from '@/types/portfolio';
+import { EmptyState } from '@/components/EmptyState';
+
+import { Card } from '@/components/ui/card';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -40,8 +42,8 @@ const TaxesContent = () => {
 
   if (!report || report.holdings.length === 0) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">No holdings to assess.</p>
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <EmptyState text="No holdings to assess." className="max-w-md" />
       </div>
     );
   }
@@ -63,7 +65,6 @@ const TaxesContent = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button
               onClick={toggle}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"
@@ -75,16 +76,16 @@ const TaxesContent = () => {
         </div>
 
         {/* Tax Summary */}
-        <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+        <Card className="p-4 space-y-4">
           <h2 className="text-sm font-semibold text-foreground">Tax Liability Summary</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
               { label: 'Total STCG', value: fmtV(report.totalSTCG), color: '' },
               { label: 'Total LTCG', value: fmtV(report.totalLTCG), color: '' },
-              { label: 'LTCG Exemption (§112A)', value: fmtV(report.ltcgExemption), color: 'text-green-500' },
+              { label: 'LTCG Exemption (§112A)', value: fmtV(report.ltcgExemption), color: 'text-gain' },
               { label: 'STCG Tax', value: fmtV(report.stcgTax), color: 'text-orange-500' },
               { label: 'LTCG Tax', value: fmtV(report.ltcgTax), color: 'text-orange-500' },
-              { label: 'Total Tax + 4% Cess', value: fmtV(report.totalTaxWithCess), color: 'text-red-500' },
+              { label: 'Total Tax + 4% Cess', value: fmtV(report.totalTaxWithCess), color: 'text-loss' },
             ].map(item => (
               <div key={item.label} className="p-3 rounded-md bg-muted/30 border border-border">
                 <p className="text-[10px] text-muted-foreground leading-tight">{item.label}</p>
@@ -92,10 +93,10 @@ const TaxesContent = () => {
               </div>
             ))}
           </div>
-        </div>
+        </Card>
 
         {/* Tax Rules Reference */}
-        <div className="rounded-lg border border-border bg-card p-4">
+        <Card className="p-4">
           <h2 className="text-sm font-semibold text-foreground mb-3">Applicable Tax Rates (FY 2026–27)</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <div className="p-3 rounded-md bg-muted/20 border border-border space-y-1">
@@ -111,10 +112,10 @@ const TaxesContent = () => {
               <p className="text-muted-foreground">No LTCG exemption threshold</p>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Per-Symbol Breakdown */}
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="p-4 border-b border-border">
             <h2 className="text-sm font-semibold text-foreground">Holdings Tax Breakdown (FIFO)</h2>
           </div>
@@ -141,21 +142,21 @@ const TaxesContent = () => {
                     <td className="p-3 text-right text-foreground">{h.totalQuantity.toFixed(2)}</td>
                     <td className="p-3 text-right text-foreground">{fmtV(h.totalInvested)}</td>
                     <td className="p-3 text-right text-foreground">{fmtV(h.totalCurrentValue)}</td>
-                    <td className={`p-3 text-right font-medium ${h.totalGain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    <td className={`p-3 text-right font-medium ${h.totalGain >= 0 ? 'text-gain' : 'text-loss'}`}>
                       {fmtV(h.totalGain)}
                     </td>
                     <td className="p-3 text-right text-orange-500">{fmtV(h.stcgAmount)}</td>
                     <td className="p-3 text-right text-orange-500">{fmtV(h.ltcgAmount)}</td>
-                    <td className="p-3 text-right font-medium text-red-500">{fmtV(h.stcgTax + h.ltcgTax)}</td>
+                    <td className="p-3 text-right font-medium text-loss">{fmtV(h.stcgTax + h.ltcgTax)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
 
         {/* Precise Tax Payable Summary */}
-        <div className="rounded-lg border-2 border-red-500/30 bg-card p-5 space-y-4">
+        <div className="rounded-lg border-2 border-loss/30 bg-card p-5 space-y-4">
           <h2 className="text-sm font-semibold text-foreground">💰 Exact Tax Payable — If You Sell Everything Today</h2>
           <div className="space-y-2 text-xs">
             <div className="flex justify-between py-1.5 border-b border-border">
@@ -168,7 +169,7 @@ const TaxesContent = () => {
             </div>
             <div className="flex justify-between py-1.5 border-b border-border">
               <span className="text-muted-foreground">C. LTCG Exemption under §112A (max ₹1,25,000)</span>
-              <span className="text-green-500 font-medium">− {fmtV(report.ltcgExemption)}</span>
+              <span className="text-gain font-medium">− {fmtV(report.ltcgExemption)}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-border">
               <span className="text-muted-foreground">D. Taxable STCG (A)</span>
@@ -188,15 +189,15 @@ const TaxesContent = () => {
             </div>
             <div className="flex justify-between py-1.5 border-b border-border">
               <span className="text-muted-foreground">H. Total Tax (F + G)</span>
-              <span className="text-red-500 font-medium">{fmtV(report.totalTax)}</span>
+              <span className="text-loss font-medium">{fmtV(report.totalTax)}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-border">
               <span className="text-muted-foreground">I. Health & Education Cess @4%</span>
-              <span className="text-red-500 font-medium">{fmtV(report.cess)}</span>
+              <span className="text-loss font-medium">{fmtV(report.cess)}</span>
             </div>
-            <div className="flex justify-between py-2 bg-red-500/10 rounded-md px-3 mt-2">
+            <div className="flex justify-between py-2 bg-loss/10 rounded-md px-3 mt-2">
               <span className="text-foreground font-bold text-sm">J. Total Tax Payable (H + I)</span>
-              <span className="text-red-500 font-bold text-sm">{fmtV(report.totalTaxWithCess)}</span>
+              <span className="text-loss font-bold text-sm">{fmtV(report.totalTaxWithCess)}</span>
             </div>
 
             {/* Post-tax returns */}
@@ -219,15 +220,15 @@ const TaxesContent = () => {
                     </div>
                     <div className="flex justify-between py-1.5 border-b border-border">
                       <span className="text-muted-foreground">M. Total Gains (A + B)</span>
-                      <span className={`font-medium ${totalGains >= 0 ? 'text-green-500' : 'text-red-500'}`}>{fmtV(totalGains)}</span>
+                      <span className={`font-medium ${totalGains >= 0 ? 'text-gain' : 'text-loss'}`}>{fmtV(totalGains)}</span>
                     </div>
                     <div className="flex justify-between py-1.5 border-b border-border">
                       <span className="text-muted-foreground">N. Post-Tax Profit (M − J)</span>
-                      <span className={`font-medium ${postTaxGains >= 0 ? 'text-green-500' : 'text-red-500'}`}>{fmtV(postTaxGains)}</span>
+                      <span className={`font-medium ${postTaxGains >= 0 ? 'text-gain' : 'text-loss'}`}>{fmtV(postTaxGains)}</span>
                     </div>
-                    <div className="flex justify-between py-2 bg-green-500/10 rounded-md px-3 mt-2">
+                    <div className="flex justify-between py-2 bg-gain/10 rounded-md px-3 mt-2">
                       <span className="text-foreground font-bold text-sm">Amount You Receive Post Tax (K − J)</span>
-                      <span className="text-green-500 font-bold text-sm">{fmtV(postTaxValue)}</span>
+                      <span className="text-gain font-bold text-sm">{fmtV(postTaxValue)}</span>
                     </div>
                   </div>
                 </>
@@ -244,9 +245,9 @@ const TaxesContent = () => {
         <details className="rounded-lg border border-border bg-card overflow-hidden">
           <summary className="p-4 cursor-pointer list-none hover:bg-muted/20 transition-colors">
             <h2 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-              <TrendingDown className="w-4 h-4 text-red-500" /> Harvestable Losses
+              <TrendingDown className="w-4 h-4 text-loss" /> Harvestable Losses
               {harvestableLots.length > 0 && (
-                <span className="text-[10px] font-medium text-red-500">
+                <span className="text-[10px] font-medium text-loss">
                   ({harvestableLots.length} lot{harvestableLots.length > 1 ? 's' : ''})
                 </span>
               )}
@@ -259,7 +260,7 @@ const TaxesContent = () => {
             </p>
           </summary>
           {harvestableLots.length === 0 ? (
-            <p className="p-4 text-xs text-muted-foreground">No lots are currently sitting at a loss. 🎯</p>
+            <EmptyState compact text="No lots are currently sitting at a loss. 🎯" className="m-4" />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -298,14 +299,14 @@ const TaxesContent = () => {
                           {lot.isLongTerm ? 'LTCG' : 'STCG'}
                         </span>
                       </td>
-                      <td className="p-3 text-right font-medium text-red-500">{fmtV(lot.gain)}</td>
+                      <td className="p-3 text-right font-medium text-loss">{fmtV(lot.gain)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-red-500/5">
+                  <tr className="bg-loss/5">
                     <td colSpan={7} className="p-3 text-right font-semibold text-foreground">Total Harvestable Loss</td>
-                    <td className="p-3 text-right font-bold text-red-500">{fmtV(totalHarvestableLoss)}</td>
+                    <td className="p-3 text-right font-bold text-loss">{fmtV(totalHarvestableLoss)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -353,11 +354,11 @@ const TaxesContent = () => {
                             {lot.isLongTerm ? 'LTCG' : 'STCG'}
                           </span>
                         </td>
-                        <td className={`p-2 text-right font-medium ${lot.gain >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        <td className={`p-2 text-right font-medium ${lot.gain >= 0 ? 'text-gain' : 'text-loss'}`}>
                           {fmtV(lot.gain)}
                         </td>
                         <td className="p-2 text-right text-muted-foreground">{(lot.taxRate * 100).toFixed(1)}%</td>
-                        <td className="p-2 pr-3 text-right text-red-500">{fmtV(lot.taxAmount)}</td>
+                        <td className="p-2 pr-3 text-right text-loss">{fmtV(lot.taxAmount)}</td>
                       </tr>
                     ))}
                   </tbody>

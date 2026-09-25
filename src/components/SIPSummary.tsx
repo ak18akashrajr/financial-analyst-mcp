@@ -5,6 +5,7 @@ import { TrendingUp, TrendingDown, Calendar, Target, Pencil, Check, X } from 'lu
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { EmptyState } from '@/components/EmptyState';
 
 const TARGET_HIT_MESSAGES = [
   'Mapla! Target smashed this month 🎯 Compounding loves consistency — keep it rolling!',
@@ -184,7 +185,7 @@ export function SIPSummary({ transactions }: Props) {
             <TrendingUp className="w-3.5 h-3.5" /> Average Monthly SIP per FY
           </div>
           {fyAverages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No buy transactions yet.</p>
+            <EmptyState compact text="No buy transactions yet." />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">

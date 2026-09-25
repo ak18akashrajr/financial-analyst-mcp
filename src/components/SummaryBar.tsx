@@ -4,6 +4,8 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import { TrendingUp, TrendingDown, ArrowUpRight, Wallet, Vault, CreditCard, Landmark, Pencil, Check } from 'lucide-react';
 import { XirrDetailsCard } from '@/components/XirrDetailsCard';
 
+import { Card } from '@/components/ui/card';
+
 function fmtRaw(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 }
@@ -241,7 +243,7 @@ function MiniStat({
   tone?: 'default' | 'loss';
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3.5 flex items-center gap-3">
+    <Card className="rounded-xl p-3.5 flex items-center gap-3">
       <div className="w-8 h-8 rounded-lg bg-secondary text-foreground flex items-center justify-center">
         {icon}
       </div>
@@ -255,7 +257,7 @@ function MiniStat({
           {value}
         </p>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -296,7 +298,7 @@ function EditableMiniStat({
   settleDisabled?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3.5">
+    <Card className="rounded-xl p-3.5">
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-secondary text-foreground flex items-center justify-center shrink-0">
           {icon}
@@ -361,6 +363,6 @@ function EditableMiniStat({
           <CreditCard className="w-3 h-3" /> Settle Now
         </button>
       )}
-    </div>
+    </Card>
   );
 }

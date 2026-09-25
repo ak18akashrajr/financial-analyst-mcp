@@ -3,6 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Activity } from 'lucide-react';
 import type { Transaction } from '@/types/portfolio';
 
+import { Card } from '@/components/ui/card';
+
 type PriceRow = { symbol: string; date: string; close: number };
 
 function pearson(a: number[], b: number[]): number {
@@ -25,14 +27,14 @@ function pearson(a: number[], b: number[]): number {
 
 function colorFor(c: number): string {
   if (!Number.isFinite(c)) return 'hsl(var(--muted))';
-  // -1 red, 0 neutral, +1 green
+  // -1 loss-colored, 0 neutral, +1 gain-colored
   const t = Math.max(-1, Math.min(1, c));
   if (t >= 0) {
     const alpha = 0.15 + t * 0.65;
-    return `hsla(152, 60%, 42%, ${alpha})`;
+    return `hsl(var(--gain) / ${alpha})`;
   } else {
     const alpha = 0.15 + (-t) * 0.65;
-    return `hsla(0, 72%, 55%, ${alpha})`;
+    return `hsl(var(--loss) / ${alpha})`;
   }
 }
 
@@ -114,14 +116,14 @@ export function CorrelationHeatmap({ transactions }: { transactions: Transaction
   }, [rows, symbols]);
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <Card className="rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-1">
         <Activity className="w-4 h-4 text-foreground" />
         <h3 className="text-sm font-semibold text-foreground">Correlation Heatmap</h3>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
-        Pairwise Pearson correlation of daily returns. <span className="text-green-600">Green</span> = move together,{' '}
-        <span className="text-red-600">Red</span> = diversifying.
+        Pairwise Pearson correlation of daily returns. <span className="text-gain">Green</span> = move together,{' '}
+        <span className="text-loss">Red</span> = diversifying.
       </p>
 
       {loading ? (
@@ -166,6 +168,6 @@ export function CorrelationHeatmap({ transactions }: { transactions: Transaction
           </table>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

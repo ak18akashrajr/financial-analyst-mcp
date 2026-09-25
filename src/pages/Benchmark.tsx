@@ -4,8 +4,8 @@ import { ArrowLeft, TrendingUp, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
@@ -13,6 +13,8 @@ import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
+
+import { Card } from '@/components/ui/card';
 
 // Mirrors BENCHMARK_TICKERS in supabase/functions/fetch-benchmark-prices/index.ts — the friendly
 // symbols benchmark_history is keyed by (not the underlying Yahoo tickers).
@@ -189,12 +191,12 @@ const BenchmarkContent = () => {
           <div className="flex items-center gap-3">
             <Link to="/overview" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /></Link>
             <div>
-              <div className="text-xl font-bold text-foreground flex items-center gap-2">
-                <h1 className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Benchmark Comparison</h1>
+              <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" /> Benchmark Comparison
                 <InfoHint title="Benchmark Comparison" side="right" caveat="Uses holdings value only — excludes cash, PF and liabilities, unlike the AUM figure shown elsewhere in the app. Also a different question from the dashboard's XIRR breakdown: this page compares windowed (30–365d) simple returns, not a whole-history, cash-flow-timed XIRR — the two numbers aren't meant to match.">
                   Tracks how your portfolio's holdings have grown compared to a market index, so you can tell whether being invested the way you are has actually beaten just holding the index. Matches what the portfolio AI reports for the same question.
                 </InfoHint>
-              </div>
+              </h1>
               <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>Holdings vs {benchmarkLabel} · last {windowDays}d, rebased to 100 at the start of the shared history</span>
                 <InfoHint title="Rebased to 100" side="bottom" formula="value ÷ first overlapping value × 100">
@@ -204,7 +206,6 @@ const BenchmarkContent = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button onClick={toggle} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground">
               {hidden ? 'Show' : 'Hide'} numbers
             </button>
@@ -243,14 +244,14 @@ const BenchmarkContent = () => {
         </div>
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <PageSkeleton />
         ) : note ? (
-          <div className="rounded-2xl border border-border bg-card p-6 text-center">
+          <Card className="rounded-2xl p-6 text-center">
             <p className="text-sm text-muted-foreground">{note}</p>
             {benchmarkHistory.length === 0 && (
               <p className="text-xs text-muted-foreground mt-2">Click "Backfill {benchmarkLabel} data" above, then come back.</p>
             )}
-          </div>
+          </Card>
         ) : (
           <>
             {/* Stats */}
@@ -296,7 +297,7 @@ const BenchmarkContent = () => {
             )}
 
             {/* Chart */}
-            <div className="rounded-2xl border border-border bg-card p-5">
+            <Card className="rounded-2xl p-5">
               <div className="text-sm font-semibold text-foreground mb-3 inline-flex items-center gap-1">
                 <h3>Rebased Performance (start = 100)</h3>
                 <InfoHint title="Rebased Performance" side="right" formula="value ÷ first overlapping value × 100" caveat="Date-aligned for a readable chart, so its rebased return can differ very slightly from the headline Portfolio/Benchmark Return stats above.">
@@ -328,7 +329,7 @@ const BenchmarkContent = () => {
                   valueLabel="Portfolio index"
                 />
               </div>
-            </div>
+            </Card>
 
             <p className="text-[11px] text-muted-foreground text-center">
               The chart's lines are rebased to 100 at the first date where portfolio history and {benchmarkLabel} data overlap, so they're
@@ -343,13 +344,13 @@ const BenchmarkContent = () => {
 };
 
 const Stat = ({ label, value, sub, positive }: { label: ReactNode; value: string; sub?: string; positive?: boolean }) => (
-  <div className="rounded-xl border border-border bg-card p-4">
+  <Card className="rounded-xl p-4">
     {/* div, not <p> — label can carry a LabelWithHint, whose tooltip content itself contains
         block elements (p, div), which is invalid nested inside a <p>. */}
     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-green-600' : positive === false ? 'text-red-600' : 'text-foreground'}`}>{value}</p>
+    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-foreground'}`}>{value}</p>
     {sub && <p className="text-[11px] text-muted-foreground mt-1">{sub}</p>}
-  </div>
+  </Card>
 );
 
 const Benchmark = () => (
