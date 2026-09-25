@@ -518,14 +518,14 @@ One concise paragraph (3-4 sentences) summarising the period.
                 }>{audits.aum}</AuditPopover>
                 {periodOverPeriod && (
                   <AuditPopover title="Period-over-period (QoQ)" trigger={
-                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${periodOverPeriod.pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${periodOverPeriod.pct >= 0 ? 'text-gain' : 'text-loss'}`}>
                       {fmtPct(periodOverPeriod.pct)} QoQ
                     </span>
                   }>{audits.aum}</AuditPopover>
                 )}
                 {yoy && (
                   <AuditPopover title="Year-over-year (YoY)" trigger={
-                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${yoy.pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${yoy.pct >= 0 ? 'text-gain' : 'text-loss'}`}>
                       {fmtPct(yoy.pct)} YoY
                     </span>
                   }>{audits.yoy}</AuditPopover>
@@ -609,7 +609,7 @@ One concise paragraph (3-4 sentences) summarising the period.
                 <div className="rounded-xl border border-border p-4 bg-secondary/30 text-left cursor-help hover:border-foreground/40 transition-colors w-full">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Base Case (current XIRR) · click to audit</p>
                   <p className="text-2xl font-bold text-foreground mt-1">{fmt(projection.baseEndValue, hidden)}</p>
-                  <p className="text-xs text-green-600 mt-1">Projected AUM at period end</p>
+                  <p className="text-xs text-gain mt-1">Projected AUM at period end</p>
                 </div>
               }>{audits.projectionBase}</AuditPopover>
               <AuditPopover title="Conservative Projection" trigger={
@@ -665,7 +665,7 @@ One concise paragraph (3-4 sentences) summarising the period.
                 <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v: any) => fmt(Number(v), hidden)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', fontSize: 12 }} />
                 <Bar dataKey="periodPnl" name="P&L (this period)">
-                  {trend.map((d, i) => <Cell key={i} fill={d.periodPnl >= 0 ? '#22c55e' : '#ef4444'} />)}
+                  {trend.map((d, i) => <Cell key={i} fill={d.periodPnl >= 0 ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -698,28 +698,28 @@ One concise paragraph (3-4 sentences) summarising the period.
             <h3 className="text-sm font-semibold mb-3">Top Movers (period-end)</h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-green-600 mb-2 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Gainers</p>
+                <p className="text-[10px] uppercase tracking-wider text-gain mb-2 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Gainers</p>
                 <div className="space-y-1.5">
                   {activity.gainers.length === 0 && <p className="text-xs text-muted-foreground">No data</p>}
                   {activity.gainers.map(h => (
                     <AuditPopover key={h.symbol} title={`${h.symbol} · Return`} trigger={
                       <div className="flex items-center justify-between text-xs cursor-help hover:bg-secondary/40 -mx-1 px-1 rounded transition-colors">
                         <span className="font-medium">{h.symbol}</span>
-                        <span className="text-green-600 flex items-center gap-1"><ArrowUpRight className="w-3 h-3" />{fmtPct(h.pnlPercent)}</span>
+                        <span className="text-gain flex items-center gap-1"><ArrowUpRight className="w-3 h-3" />{fmtPct(h.pnlPercent)}</span>
                       </div>
                     }>{holdingAudit(h, endSnap, hidden)}</AuditPopover>
                   ))}
                 </div>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-red-600 mb-2 flex items-center gap-1"><TrendingDown className="w-3 h-3" /> Losers</p>
+                <p className="text-[10px] uppercase tracking-wider text-loss mb-2 flex items-center gap-1"><TrendingDown className="w-3 h-3" /> Losers</p>
                 <div className="space-y-1.5">
                   {activity.losers.length === 0 && <p className="text-xs text-muted-foreground">No losers — clean period 🎯</p>}
                   {activity.losers.map(h => (
                     <AuditPopover key={h.symbol} title={`${h.symbol} · Return`} trigger={
                       <div className="flex items-center justify-between text-xs cursor-help hover:bg-secondary/40 -mx-1 px-1 rounded transition-colors">
                         <span className="font-medium">{h.symbol}</span>
-                        <span className="text-red-600 flex items-center gap-1"><ArrowDownRight className="w-3 h-3" />{fmtPct(h.pnlPercent)}</span>
+                        <span className="text-loss flex items-center gap-1"><ArrowDownRight className="w-3 h-3" />{fmtPct(h.pnlPercent)}</span>
                       </div>
                     }>{holdingAudit(h, endSnap, hidden)}</AuditPopover>
                   ))}
@@ -750,7 +750,7 @@ One concise paragraph (3-4 sentences) summarising the period.
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             <NarrativeBlock label="Executive Summary" placeholder="Open the report with a one-paragraph summary…" value={merged.commentary || ''} onChange={v => setField('commentary', v)} />
-            <NarrativeBlock label="Highlights" icon={<Sparkles className="w-3.5 h-3.5 text-green-600" />} placeholder="Wins this period — biggest gainers, milestones, decisions…" value={merged.highlights || ''} onChange={v => setField('highlights', v)} />
+            <NarrativeBlock label="Highlights" icon={<Sparkles className="w-3.5 h-3.5 text-gain" />} placeholder="Wins this period — biggest gainers, milestones, decisions…" value={merged.highlights || ''} onChange={v => setField('highlights', v)} />
             <NarrativeBlock label="Risks & Watchlist" icon={<AlertTriangle className="w-3.5 h-3.5 text-amber-600" />} placeholder="Concentration, drawdowns, macro risk, debt creep…" value={merged.risks || ''} onChange={v => setField('risks', v)} />
             <NarrativeBlock label="Outlook · Next Period" icon={<Compass className="w-3.5 h-3.5 text-blue-600" />} placeholder="Allocation plan, SIP changes, deployment targets…" value={merged.outlook || ''} onChange={v => setField('outlook', v)} />
           </div>
@@ -780,7 +780,7 @@ const KPI = ({ label, value, sub, positive, audit }: { label: string; value: str
         {audit && <span className="text-[9px] text-muted-foreground/60 font-normal normal-case tracking-normal">click to audit</span>}
       </p>
       <p className="text-lg font-bold text-foreground mt-1 font-mono">{value}</p>
-      {sub && <p className={`text-[11px] mt-1 ${positive === true ? 'text-green-600' : positive === false ? 'text-red-600' : 'text-muted-foreground'}`}>{sub}</p>}
+      {sub && <p className={`text-[11px] mt-1 ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-muted-foreground'}`}>{sub}</p>}
     </div>
   );
   if (!audit) return body;
@@ -791,7 +791,7 @@ const Row = ({ label, value, accent, audit }: { label: string; value: string; ac
   const body = (
     <div className={`flex items-center justify-between text-xs ${audit ? 'hover:bg-secondary/40 -mx-1 px-1 rounded transition-colors' : ''}`}>
       <span className="text-muted-foreground">{label}</span>
-      <span className={`font-mono font-medium ${accent === true ? 'text-green-600' : accent === false ? 'text-red-600' : 'text-foreground'}`}>{value}</span>
+      <span className={`font-mono font-medium ${accent === true ? 'text-gain' : accent === false ? 'text-loss' : 'text-foreground'}`}>{value}</span>
     </div>
   );
   if (!audit) return body;

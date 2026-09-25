@@ -146,10 +146,10 @@ export function GoalProjection({
       {/* Probability + Stats */}
       {result && selected && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatBox label={<LabelWithHint label="P(goal met)" title="Probability of hitting the goal" side="top" formula="share of 800 simulated paths ending ≥ target amount">Runs 800 random return paths on the money already allocated to this goal plus your SIP, and counts how many reach the target by its date.</LabelWithHint>} value={`${(result.probability * 100).toFixed(0)}%`} color={result.probability >= 0.7 ? 'text-green-500' : result.probability >= 0.4 ? 'text-yellow-500' : 'text-red-500'} />
+          <StatBox label={<LabelWithHint label="P(goal met)" title="Probability of hitting the goal" side="top" formula="share of 800 simulated paths ending ≥ target amount">Runs 800 random return paths on the money already allocated to this goal plus your SIP, and counts how many reach the target by its date.</LabelWithHint>} value={`${(result.probability * 100).toFixed(0)}%`} color={result.probability >= 0.7 ? 'text-gain' : result.probability >= 0.4 ? 'text-yellow-500' : 'text-loss'} />
           <StatBox label={<LabelWithHint label="Median outcome" title="Median outcome" side="top">The middle simulated corpus at the target date — half the paths finish above this, half below.</LabelWithHint>} value={hidden ? '••••' : fmt(result.p50)} />
-          <StatBox label={<LabelWithHint label="Expected surplus" title="Expected surplus" side="top">Average amount by which the successful paths overshoot the target — your cushion when things go well.</LabelWithHint>} value={hidden ? '••••' : fmt(result.expectedSurplus)} color="text-green-500" />
-          <StatBox label={<LabelWithHint label="Expected shortfall" title="Expected shortfall" side="top">Average gap on the paths that miss the target. This is the number to fund with a higher SIP or a longer horizon.</LabelWithHint>} value={hidden ? '••••' : fmt(result.expectedShortfall)} color="text-red-500" />
+          <StatBox label={<LabelWithHint label="Expected surplus" title="Expected surplus" side="top">Average amount by which the successful paths overshoot the target — your cushion when things go well.</LabelWithHint>} value={hidden ? '••••' : fmt(result.expectedSurplus)} color="text-gain" />
+          <StatBox label={<LabelWithHint label="Expected shortfall" title="Expected shortfall" side="top">Average gap on the paths that miss the target. This is the number to fund with a higher SIP or a longer horizon.</LabelWithHint>} value={hidden ? '••••' : fmt(result.expectedShortfall)} color="text-loss" />
         </div>
       )}
 
@@ -211,7 +211,7 @@ export function GoalProjection({
         </div>
         {solverResult && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <StatBox label={<LabelWithHint label="Flat monthly SIP" title="Flat SIP required" side="top" formula="bisection search on SIP until P(target met) ≥ confidence">The smallest constant monthly contribution that gets the goal to your chosen confidence level.</LabelWithHint>} value={hidden ? '••••' : fmt(solverResult.flatSIP)} color="text-green-500" />
+            <StatBox label={<LabelWithHint label="Flat monthly SIP" title="Flat SIP required" side="top" formula="bisection search on SIP until P(target met) ≥ confidence">The smallest constant monthly contribution that gets the goal to your chosen confidence level.</LabelWithHint>} value={hidden ? '••••' : fmt(solverResult.flatSIP)} color="text-gain" />
             <StatBox label={<LabelWithHint label="Step-up SIP (yr 1, +10%/yr)" title="Step-up SIP" side="top">Starting amount if you increase the SIP 10% every year — usually a much lower year-1 outflow than the flat plan.</LabelWithHint>} value={hidden ? '••••' : fmt(solverResult.stepUpSIP)} color="text-blue-500" />
             <StatBox label={<LabelWithHint label="Achieved probability" title="Achieved probability" side="top">The success rate the solved SIP actually delivers — it can slightly exceed your target confidence because the search steps in discrete amounts.</LabelWithHint>} value={`${(solverResult.achievedProb * 100).toFixed(0)}%`} />
 

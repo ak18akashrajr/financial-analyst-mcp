@@ -303,10 +303,8 @@ const ForecastContent = () => {
               <ArrowLeft className="w-4 h-4" />
             </Link>
             <div>
-              <div className="text-xl font-bold text-foreground flex items-center gap-2">
-                <h1 className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5" /> Forecast
-                </h1>
+              <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" /> Forecast
                 <InfoHint
                   title="Time Series Forecast"
                   side="right"
@@ -316,7 +314,7 @@ const ForecastContent = () => {
                   from its own historical mark-to-market series — not a fixed assumed return. With too little
                   history it falls back to blended asset-class assumptions, flagged below.
                 </InfoHint>
-              </div>
+              </h1>
               <div className="text-xs text-muted-foreground">
                 {series.granularity !== 'unknown' && (
                   <span>{series.granularity} price history · {returns.length} return observations</span>
@@ -622,7 +620,7 @@ const ForecastContent = () => {
 const Stat = ({ label, value, positive }: { label: React.ReactNode; value: string; positive?: boolean }) => (
   <div className="rounded-xl border border-border bg-card p-4">
     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-green-600' : positive === false ? 'text-red-600' : 'text-foreground'}`}>
+    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-foreground'}`}>
       {value}
     </p>
   </div>

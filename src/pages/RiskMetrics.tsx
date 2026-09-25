@@ -152,8 +152,8 @@ const RiskMetricsContent = () => {
           <div className="flex items-center gap-3">
             <Link to="/overview" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /></Link>
             <div>
-              <div className="text-xl font-bold text-foreground flex items-center gap-2">
-                <h1 className="flex items-center gap-2"><Gauge className="w-5 h-5" /> Risk Metrics</h1>
+              <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <Gauge className="w-5 h-5" /> Risk Metrics
                 <InfoHint
                   title="Risk Metrics"
                   side="right"
@@ -165,7 +165,7 @@ const RiskMetricsContent = () => {
                   read on the same numbers. Matches what the portfolio AI's get_risk_metrics tool reports for the same
                   question (except Risk per ₹1 Return, which is shown here only).
                 </InfoHint>
-              </div>
+              </h1>
               <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>Trailing {LOOKBACK_DAYS} trading days · vs. NIFTY 50 · risk-free rate {RISK_FREE_RATE * 100}% (10Y India G-Sec)</span>
                 <InfoHint title="Risk-free rate" side="bottom">
@@ -353,7 +353,7 @@ const RiskMetricsContent = () => {
 const Stat = ({ label, value, positive, note }: { label: ReactNode; value: string; positive?: boolean; note?: string }) => (
   <div className="rounded-xl border border-border bg-card p-4">
     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-green-600' : positive === false ? 'text-red-600' : 'text-foreground'}`}>{value}</p>
+    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-foreground'}`}>{value}</p>
     {/* Explains a null/"—" value in place (e.g. "return isn't positive this window") instead of
         leaving a bare dash with no clue why — a lone "—" otherwise reads as a broken/blank tile. */}
     {note && <p className="text-[10px] text-muted-foreground mt-1 leading-snug">{note}</p>}

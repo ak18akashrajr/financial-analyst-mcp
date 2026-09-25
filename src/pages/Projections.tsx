@@ -61,7 +61,7 @@ const XIRRTab = ({ result, hidden, inputs }: { result: XIRRProjectionResult; hid
         <p>Base = your portfolio's actual XIRR ({(result.baseXIRR * 100).toFixed(1)}%). Conservative = 20% lower to stress-test.</p>
       </DescriptionBox>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label={<LabelWithHint label="Base XIRR" title="Base XIRR" side="top" caveat="Past XIRR is not a promise of future returns.">Your portfolio's realised money-weighted annual return, computed from actual transaction cash flows.</LabelWithHint>} value={`${(result.baseXIRR * 100).toFixed(1)}%`} color="text-green-500" />
+        <StatCard label={<LabelWithHint label="Base XIRR" title="Base XIRR" side="top" caveat="Past XIRR is not a promise of future returns.">Your portfolio's realised money-weighted annual return, computed from actual transaction cash flows.</LabelWithHint>} value={`${(result.baseXIRR * 100).toFixed(1)}%`} color="text-gain" />
         <StatCard label={<LabelWithHint label="Conservative XIRR" title="Conservative XIRR" side="top" formula="base XIRR × 0.8">A deliberately haircut return used as a downside sanity check against over-extrapolating a good run.</LabelWithHint>} value={`${(result.conservativeXIRR * 100).toFixed(1)}%`} color="text-yellow-500" />
         <StatCard label={<LabelWithHint label="Base Final" title="Base final corpus" side="top">Corpus at the end of the horizon if the base XIRR repeats every year and SIPs continue.</LabelWithHint>} value={hidden ? '••••' : fmt(result.baseFinalValue)} />
         <StatCard label={<LabelWithHint label="Conservative Final" title="Conservative final corpus" side="top">The same projection run at the haircut return — plan against this number, not the base one.</LabelWithHint>} value={hidden ? '••••' : fmt(result.conservativeFinalValue)} />
@@ -92,12 +92,12 @@ const CrashTab = ({ result, hidden }: { result: CrashScenarioResult; hidden: boo
   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
     {result.scenarios.map(s => (
       <div key={s.dropPct} className="rounded-lg border border-border bg-card p-4 space-y-2">
-        <div className="flex items-center gap-2"><TrendingDown className="w-4 h-4 text-red-500" /><span className="font-bold text-foreground">−{s.dropPct}% Crash</span>
+        <div className="flex items-center gap-2"><TrendingDown className="w-4 h-4 text-loss" /><span className="font-bold text-foreground">−{s.dropPct}% Crash</span>
           <InfoHint title={`−${s.dropPct}% crash scenario`} side="top" formula={`corpus × (1 − ${s.dropPct / 100}) today, then compounded at the expected return + SIPs`}>An instant market fall of {s.dropPct}% applied to your starting corpus, after which contributions continue and the portfolio compounds at the expected return.</InfoHint>
         </div>
         <div className="space-y-1 text-xs">
           <p className="text-muted-foreground inline-flex items-center gap-1">Post-crash: <span className="text-foreground font-medium">{hidden ? '••••' : fmtFull(s.postCrashValue)}</span><InfoHint title="Post-crash value" side="right">What your corpus is worth the moment after the shock, before any recovery.</InfoHint></p>
-          <p className="text-muted-foreground inline-flex items-center gap-1">Drawdown: <span className="text-red-500 font-medium">{hidden ? '••••' : fmtFull(s.drawdown)}</span><InfoHint title="Drawdown" side="right">Rupee value wiped out by the shock (starting corpus − post-crash value).</InfoHint></p>
+          <p className="text-muted-foreground inline-flex items-center gap-1">Drawdown: <span className="text-loss font-medium">{hidden ? '••••' : fmtFull(s.drawdown)}</span><InfoHint title="Drawdown" side="right">Rupee value wiped out by the shock (starting corpus − post-crash value).</InfoHint></p>
           <p className="text-muted-foreground inline-flex items-center gap-1">Recovery: <span className="text-yellow-500 font-medium">{s.recoveryYears === Infinity ? 'N/A' : `${s.recoveryYears} yrs`}</span><InfoHint title="Recovery time" side="right">Years of compounding (plus SIPs) needed to climb back to the pre-crash corpus.</InfoHint></p>
           <p className="text-muted-foreground inline-flex items-center gap-1">Final: <span className="text-foreground font-medium">{hidden ? '••••' : fmtFull(s.finalValue)}</span><InfoHint title="End-of-horizon value" side="right">Corpus at the end of your chosen horizon despite the crash — useful next to the XIRR tab's no-crash number.</InfoHint></p>
         </div>
@@ -114,10 +114,10 @@ const MonteCarloTab = ({ result, hidden }: { result: MonteCarloResult; hidden: b
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <StatCard label={<LabelWithHint label="Worst" title="Worst simulated path" side="top">The single lowest ending value out of 1,000 simulated paths — a tail case, not a floor.</LabelWithHint>} value={hidden ? '••••' : fmt(result.worst)} color="text-red-500" />
+        <StatCard label={<LabelWithHint label="Worst" title="Worst simulated path" side="top">The single lowest ending value out of 1,000 simulated paths — a tail case, not a floor.</LabelWithHint>} value={hidden ? '••••' : fmt(result.worst)} color="text-loss" />
         <StatCard label={<LabelWithHint label="10th %ile" title="p10 outcome" side="top">90% of simulated paths ended above this value. Treat it as a pessimistic-but-plausible planning number.</LabelWithHint>} value={hidden ? '••••' : fmt(result.percentile10)} color="text-yellow-500" />
         <StatCard label={<LabelWithHint label="Median" title="p50 outcome" side="top">The middle path — half the simulations ended above, half below. The most representative single figure.</LabelWithHint>} value={hidden ? '••••' : fmt(result.median)} />
-        <StatCard label={<LabelWithHint label="90th %ile" title="p90 outcome" side="top">Only 10% of paths beat this. The optimistic edge of the distribution.</LabelWithHint>} value={hidden ? '••••' : fmt(result.percentile90)} color="text-green-500" />
+        <StatCard label={<LabelWithHint label="90th %ile" title="p90 outcome" side="top">Only 10% of paths beat this. The optimistic edge of the distribution.</LabelWithHint>} value={hidden ? '••••' : fmt(result.percentile90)} color="text-gain" />
         <StatCard label={<LabelWithHint label="P(2x)" title="Probability of doubling" side="top" formula="share of the 1,000 paths ending ≥ 2 × initial corpus">How often the simulation at least doubles your starting corpus over the horizon.</LabelWithHint>} value={`${result.goalProbability}%`} color="text-blue-500" />
 
       </div>
@@ -148,7 +148,7 @@ const SequenceTab = ({ result, hidden }: { result: SequenceRiskResult; hidden: b
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <StatCard label={<LabelWithHint label="Uniform" title="Uniform path" side="top">Every year earns exactly the expected return — the textbook straight-line case, used as the baseline.</LabelWithHint>} value={hidden ? '••••' : fmt(result.uniformFinal)} color="text-blue-500" />
         <StatCard label={<LabelWithHint label="Early Bad" title="Bad years first" side="top">Same set of yearly returns, but the negative years are front-loaded. Hurts most when you are withdrawing; helps SIP investors who keep buying cheap.</LabelWithHint>} value={hidden ? '••••' : fmt(result.earlyBadFinal)} color="text-yellow-500" />
-        <StatCard label={<LabelWithHint label="Late Bad" title="Bad years last" side="top">Same returns with the bad years at the end, hitting the largest corpus. Usually the worst outcome for an accumulator.</LabelWithHint>} value={hidden ? '••••' : fmt(result.lateBadFinal)} color="text-red-500" />
+        <StatCard label={<LabelWithHint label="Late Bad" title="Bad years last" side="top">Same returns with the bad years at the end, hitting the largest corpus. Usually the worst outcome for an accumulator.</LabelWithHint>} value={hidden ? '••••' : fmt(result.lateBadFinal)} color="text-loss" />
 
       </div>
       <div className="rounded-lg border border-border bg-card p-4">
@@ -175,7 +175,7 @@ const InflationTab = ({ result, hidden }: { result: InflationResult; hidden: boo
       <div key={s.inflationPct} className="rounded-lg border border-border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium text-foreground">{s.inflationPct}% Inflation</h3>
-          <span className="text-xs text-red-500 font-medium">−{s.purchasingPowerLoss}% purchasing power</span>
+          <span className="text-xs text-loss font-medium">−{s.purchasingPowerLoss}% purchasing power</span>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <StatCard label={<LabelWithHint label="Nominal" title="Nominal value" side="top">The projected corpus in future rupees — the raw number the compounding produces.</LabelWithHint>} value={hidden ? '••••' : fmt(s.nominalFinal)} />
@@ -311,7 +311,7 @@ const ProjectionsContent = () => {
             </InfoHint>
           </div>
           <div className="flex gap-4 text-foreground flex-wrap">
-            <span className="inline-flex items-center gap-1">Expected return: <strong className="text-green-500">{(weighted.expectedReturn * 100).toFixed(1)}%</strong>
+            <span className="inline-flex items-center gap-1">Expected return: <strong className="text-gain">{(weighted.expectedReturn * 100).toFixed(1)}%</strong>
               <InfoHint title="Expected return" side="bottom">Blended long-run annual return of your current mix (e.g. equity 12%, debt 7%, gold 8%). Seeds the Expected Return input and the Goals/FIRE simulations.</InfoHint>
             </span>
             <span className="inline-flex items-center gap-1">Volatility: <strong className="text-yellow-500">{(weighted.volatility * 100).toFixed(1)}%</strong>

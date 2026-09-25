@@ -282,7 +282,7 @@ const RollingContent = () => {
 
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-semibold text-foreground flex items-center gap-1.5">
+            <h1 className="text-xl font-bold text-foreground flex items-center gap-1.5">
               Rolling Returns
               <InfoHint
                 title="Rolling Returns vs. dashboard XIRR"

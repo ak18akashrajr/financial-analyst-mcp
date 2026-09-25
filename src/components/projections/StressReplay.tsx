@@ -83,7 +83,7 @@ function StressCrisisCard({ r, hidden }: { r: CrisisResult; hidden: boolean }) {
         <p className="text-[11px] text-muted-foreground">{r.window}</p>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <MiniStat label={<LabelWithHint label="Max drawdown" title="Max drawdown" side="top" formula="(trough − peak) ÷ peak">Deepest peak-to-trough fall in portfolio value during the replay.</LabelWithHint>} value={`${(r.maxDrawdown * 100).toFixed(1)}%`} color="text-red-500" />
+        <MiniStat label={<LabelWithHint label="Max drawdown" title="Max drawdown" side="top" formula="(trough − peak) ÷ peak">Deepest peak-to-trough fall in portfolio value during the replay.</LabelWithHint>} value={`${(r.maxDrawdown * 100).toFixed(1)}%`} color="text-loss" />
         <MiniStat label={<LabelWithHint label="Trough value" title="Trough value" side="top">The lowest rupee value your portfolio touches during the window — the number you would actually have to sit through.</LabelWithHint>} value={hidden ? '••••' : fmt(r.troughValue)} color="text-orange-500" />
         <MiniStat label={<LabelWithHint label="End value" title="End value" side="top">Portfolio value at the end of the crisis window, after any rebound inside that period.</LabelWithHint>} value={hidden ? '••••' : fmt(r.endValue)} />
         <MiniStat label={<LabelWithHint label="Recovery @ 12%" title="Recovery time" side="top" formula="months of 12% p.a. compounding to regain the starting AUM">How long it would take to get back to where you started, assuming a 12% annual recovery and no fresh contributions.</LabelWithHint>} value={r.recoveryMonths === null ? 'N/A' : r.recoveryMonths === 0 ? 'Already recovered' : `${r.recoveryMonths} mo`} color="text-yellow-500" />

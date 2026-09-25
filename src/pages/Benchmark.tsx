@@ -188,12 +188,12 @@ const BenchmarkContent = () => {
           <div className="flex items-center gap-3">
             <Link to="/overview" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /></Link>
             <div>
-              <div className="text-xl font-bold text-foreground flex items-center gap-2">
-                <h1 className="flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Benchmark Comparison</h1>
+              <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" /> Benchmark Comparison
                 <InfoHint title="Benchmark Comparison" side="right" caveat="Uses holdings value only — excludes cash, PF and liabilities, unlike the AUM figure shown elsewhere in the app. Also a different question from the dashboard's XIRR breakdown: this page compares windowed (30–365d) simple returns, not a whole-history, cash-flow-timed XIRR — the two numbers aren't meant to match.">
                   Tracks how your portfolio's holdings have grown compared to a market index, so you can tell whether being invested the way you are has actually beaten just holding the index. Matches what the portfolio AI reports for the same question.
                 </InfoHint>
-              </div>
+              </h1>
               <div className="text-xs text-muted-foreground flex items-center gap-1">
                 <span>Holdings vs {benchmarkLabel} · last {windowDays}d, rebased to 100 at the start of the shared history</span>
                 <InfoHint title="Rebased to 100" side="bottom" formula="value ÷ first overlapping value × 100">
@@ -345,7 +345,7 @@ const Stat = ({ label, value, sub, positive }: { label: ReactNode; value: string
     {/* div, not <p> — label can carry a LabelWithHint, whose tooltip content itself contains
         block elements (p, div), which is invalid nested inside a <p>. */}
     <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
-    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-green-600' : positive === false ? 'text-red-600' : 'text-foreground'}`}>{value}</p>
+    <p className={`text-lg font-bold mt-1 font-mono ${positive === true ? 'text-gain' : positive === false ? 'text-loss' : 'text-foreground'}`}>{value}</p>
     {sub && <p className="text-[11px] text-muted-foreground mt-1">{sub}</p>}
   </div>
 );

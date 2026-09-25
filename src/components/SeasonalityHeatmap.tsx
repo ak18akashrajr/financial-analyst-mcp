@@ -21,8 +21,8 @@ function fyMonthIdx(d: Date) {
 function colorFor(pct: number): string {
   if (!Number.isFinite(pct)) return 'hsl(var(--muted) / 0.3)';
   const t = Math.max(-10, Math.min(10, pct)) / 10;
-  if (t >= 0) return `hsla(152, 60%, 42%, ${0.15 + t * 0.7})`;
-  return `hsla(0, 72%, 55%, ${0.15 + -t * 0.7})`;
+  if (t >= 0) return `hsl(var(--gain) / ${0.15 + t * 0.7})`;
+  return `hsl(var(--loss) / ${0.15 + -t * 0.7})`;
 }
 
 export function SeasonalityHeatmap() {

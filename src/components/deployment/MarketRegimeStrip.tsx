@@ -147,7 +147,7 @@ export function MarketRegimeStrip({ onCapeChange }: Props) {
               Deviation
               <InfoHint title="Deviation vs median" side="bottom" formula="current CAPE − long-term median">How far the market is stretched from its historical norm. Large positive deviations have historically preceded weaker 5–10 year forward returns; negative deviations, stronger ones.</InfoHint>
             </p>
-            <p className={`text-2xl font-bold font-mono flex items-center gap-1 ${delta > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+            <p className={`text-2xl font-bold font-mono flex items-center gap-1 ${delta > 0 ? 'text-loss' : 'text-gain'}`}>
               <DeltaIcon className="w-4 h-4" />
               {delta > 0 ? '+' : ''}{delta.toFixed(1)}
             </p>
