@@ -51,14 +51,14 @@ describe("AssistantMarkdown", () => {
 | NIFTYBEES.NS | -1.1% |
 `;
     render(<AssistantMarkdown content={table} />);
-    expect(screen.getByRole("cell", { name: "+2.3%" }).className).toMatch(/text-emerald-500/);
-    expect(screen.getByRole("cell", { name: "-1.1%" }).className).toMatch(/text-rose-500/);
+    expect(screen.getByRole("cell", { name: "+2.3%" }).className).toMatch(/\btext-gain\b/);
+    expect(screen.getByRole("cell", { name: "-1.1%" }).className).toMatch(/\btext-loss\b/);
   });
 
   it("leaves a plain unsigned cell uncolored", () => {
     render(<AssistantMarkdown content={SAMPLE_TABLE} />);
     const cell = screen.getByRole("cell", { name: "207" });
-    expect(cell.className).not.toMatch(/text-emerald-500|text-rose-500/);
+    expect(cell.className).not.toMatch(/\btext-(gain|loss)\b/);
   });
 
   it("renders a blockquote as a styled callout", () => {
