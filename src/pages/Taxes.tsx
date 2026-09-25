@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { generateTaxReport, getHarvestableLots, hasSameDayReentry, TaxReport } from '@/lib/taxCalculator';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { Eye, EyeOff, ArrowLeft, TrendingDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -63,7 +62,6 @@ const TaxesContent = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button
               onClick={toggle}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"

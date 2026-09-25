@@ -14,7 +14,6 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -326,7 +325,6 @@ const ForecastContent = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button
               onClick={toggle}
               className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground"

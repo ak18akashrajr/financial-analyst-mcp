@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider } from '@/contexts/PrivacyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -157,7 +156,6 @@ const DeploymentPlanContent = () => {
             >
               Logout
             </button>
-            <ThemeToggle />
           </div>
         </div>
 

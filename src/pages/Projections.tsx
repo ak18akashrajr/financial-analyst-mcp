@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Play, TrendingDown, Shuffle, ArrowDownUp, Percent, Target, Flame, AlertTriangle } from 'lucide-react';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -296,7 +295,6 @@ const ProjectionsContent = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button onClick={toggle} className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors">
               {hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               {hidden ? 'Show' : 'Hide'}

@@ -4,7 +4,6 @@ import {
   ArrowLeft, Terminal, RefreshCw, AlertTriangle, OctagonAlert, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Search, Loader2, Activity, ShieldAlert, LogOut, Receipt, Siren,
 } from 'lucide-react';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { supabase } from '@/integrations/supabase/client';
 import { logClientError } from '@/lib/clientErrorLogging';
 import { useSecurityIncidents, type SecurityIncident } from '@/contexts/SecurityIncidentsContext';
@@ -1333,7 +1332,6 @@ const DevZone = () => {
               </div>
             </div>
           </div>
-          <ThemeToggle />
         </div>
       </div>
 

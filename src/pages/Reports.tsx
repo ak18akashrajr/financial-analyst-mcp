@@ -5,7 +5,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
@@ -445,7 +444,6 @@ One concise paragraph (3-4 sentences) summarising the period.
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button onClick={toggle} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground">
               {hidden ? 'Show' : 'Hide'} numbers
             </button>

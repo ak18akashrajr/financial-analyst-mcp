@@ -6,7 +6,6 @@ import { DebtChart } from '@/components/DebtChart';
 import { PerformanceAttribution } from '@/components/PerformanceAttribution';
 import { SeasonalityHeatmap } from '@/components/SeasonalityHeatmap';
 import { CorrelationHeatmap } from '@/components/CorrelationHeatmap';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
@@ -47,7 +46,6 @@ const ChartsContent = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button
               onClick={toggle}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-border text-muted-foreground hover:text-primary hover:border-primary transition-colors"

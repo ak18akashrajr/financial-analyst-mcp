@@ -4,7 +4,6 @@ import { ArrowLeft, TrendingUp, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
-import { ThemeToggle } from '@/components/ThemeToggle';
 import { toast } from 'sonner';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -204,7 +203,6 @@ const BenchmarkContent = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             <button onClick={toggle} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground">
               {hidden ? 'Show' : 'Hide'} numbers
             </button>
