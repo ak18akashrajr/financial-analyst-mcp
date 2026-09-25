@@ -70,8 +70,8 @@ const components: Components = {
         className={cn(
           'whitespace-nowrap px-3 py-2 text-foreground/90',
           looksNumeric(text) && 'text-right font-mono tabular-nums',
-          sentiment === 'positive' && 'text-emerald-500 font-medium',
-          sentiment === 'negative' && 'text-rose-500 font-medium',
+          sentiment === 'positive' && 'text-gain font-medium',
+          sentiment === 'negative' && 'text-loss font-medium',
         )}
       >
         {children}
