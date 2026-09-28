@@ -201,6 +201,10 @@ describe('Reports page', () => {
     // Recharts renders period shortLabels ("Q1 2026-27" etc.) in several places on
     // this page already (period picker, trend chart, P&L bar chart), so scope every
     // assertion to the AUM Growth card itself rather than a page-wide getByText.
+    // The bars' own generic wording ("Last Quarter"/"Current Quarter" vs. jsdom's
+    // recharts tick rendering, which merges/wraps multi-word tick text under this
+    // suite's fixed-size layout stub) is covered precisely by the pure
+    // buildGrowthComparison unit tests in period-reports.test.ts instead.
     const heading = await screen.findByText('AUM Growth');
     const card = heading.closest('.rounded-2xl') as HTMLElement;
     expect(card).not.toBeNull();
