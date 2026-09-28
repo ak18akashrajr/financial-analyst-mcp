@@ -180,6 +180,49 @@ describe('Reports page', () => {
     // Default active period is in-progress Q2 FY2026-27 (asOf = "now" = 2026-08-22).
     // Prior year (2025-08-22) marks TCS at its ₹120 historical close → netWorth ₹1,200.
     // Today, live-marked at ₹200 → netWorth ₹2,000. Δ = 800, % = 800/1200*100 = 66.67%.
-    await waitFor(() => expect(screen.getByText(/\+66\.67% YoY/)).toBeInTheDocument());
+    // The AUM Growth chart's own badge repeats this same figure (see the dedicated
+    // test below), so this now matches two elements — assert at least the headline
+    // chip's occurrence rather than a single exact match.
+    await waitFor(() => expect(screen.getAllByText(/\+66\.67% YoY/).length).toBeGreaterThanOrEqual(1));
+  });
+
+  it('shows the AUM Growth chart comparing Last Year, previous period, and current period', async () => {
+    historicalPriceRows.push({ symbol: 'TCS', date: '2025-08-01', close: 120 });
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2025-04-15' }],
+      currentPrices: { TCS: 200 },
+    }));
+    renderReports();
+
+    // Default active period is in-progress Q2 FY2026-27. Prev period (Q1) and the
+    // prior-year point both mark TCS at the only historical close available
+    // (2025-08-01 @ ₹120 → netWorth ₹1,200); today is live-marked @ ₹200 → ₹2,000.
+    // So both comparisons land on the same 66.67% figure, per the YoY test above.
+    // Recharts renders period shortLabels ("Q1 2026-27" etc.) in several places on
+    // this page already (period picker, trend chart, P&L bar chart), so scope every
+    // assertion to the AUM Growth card itself rather than a page-wide getByText.
+    const heading = await screen.findByText('AUM Growth');
+    const card = heading.closest('.rounded-2xl') as HTMLElement;
+    expect(card).not.toBeNull();
+    expect(within(card).getByText('+66.67% YoY')).toBeInTheDocument();
+    expect(
+      within(card).getByText('vs previous period (Q1 2026-27): +66.67% · vs last year: +66.67%'),
+    ).toBeInTheDocument();
+  });
+
+  it('hides the AUM Growth chart when there is no prior period or prior year to compare against', async () => {
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-04-15' }],
+      currentPrices: { TCS: 150 },
+    }));
+    renderReports();
+
+    // Q1 FY2026-27 is both the first period of the FY (no previous period) and the
+    // portfolio's very first period ever (no data a year back) — growth is null.
+    await waitFor(() => expect(screen.getByRole('button', { name: /Q1 2026-27/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Q1 2026-27/ }));
+
+    await waitFor(() => expect(screen.getByText('Q1 · Apr–Jun 2026')).toBeInTheDocument());
+    expect(screen.queryByText('AUM Growth')).not.toBeInTheDocument();
   });
 });
