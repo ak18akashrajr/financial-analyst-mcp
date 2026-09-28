@@ -214,6 +214,40 @@ describe('Reports page', () => {
     ).toBeInTheDocument();
   });
 
+  it('wraps the header action row instead of forcing horizontal page overflow on narrow viewports', async () => {
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-04-15' }],
+      currentPrices: { TCS: 150 },
+    }));
+    renderReports();
+
+    // Regression guard: this row (Hide numbers / Backfill FY prices / Backfill benchmark
+    // data / AI Narrative / Print/PDF) previously had no flex-wrap, so five buttons in one
+    // non-wrapping flex row forced the whole page wider than a phone viewport.
+    const printButton = await screen.findByRole('button', { name: /Print \/ PDF/i });
+    const buttonRow = printButton.closest('div')!;
+    expect(buttonRow).toHaveClass('flex-wrap');
+    expect(buttonRow.parentElement).toHaveClass('flex-wrap');
+  });
+
+  it('stacks the projection cards and Top Movers columns to one column on narrow viewports', async () => {
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-04-15' }],
+      currentPrices: { TCS: 150 },
+    }));
+    renderReports();
+
+    // Regression guard: these two grids were fixed at grid-cols-2 with no mobile fallback,
+    // so the Base/Conservative projection cards and Gainers/Losers columns got cramped on
+    // a 320-375px phone screen instead of stacking.
+    const projectionCard = await screen.findByText('Base Case (current XIRR) · click to audit');
+    expect(projectionCard.closest('.grid')).toHaveClass('grid-cols-1', 'sm:grid-cols-2');
+
+    const moversHeading = screen.getByText('Top Movers (period-end)');
+    const moversGrid = moversHeading.parentElement!.querySelector(':scope > .grid');
+    expect(moversGrid).toHaveClass('grid-cols-1', 'sm:grid-cols-2');
+  });
+
   it('hides the AUM Growth chart when there is no prior period or prior year to compare against', async () => {
     mockedUsePortfolio.mockReturnValue(baseHookValue({
       transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-04-15' }],
