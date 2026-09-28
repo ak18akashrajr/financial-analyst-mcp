@@ -439,6 +439,19 @@ One concise paragraph (3-4 sentences) summarising the period.
     xirr: summary.xirr,
   });
 
+  // Last Year / Previous Period / Current Period AUM comparison for the growth
+  // chart above the projection panel. Hidden entirely unless both the YoY and
+  // period-over-period comparisons resolved — a partial bar set would imply a
+  // comparison that isn't actually backed by data (e.g. the very first period).
+  const growth = (yoy && periodOverPeriod) ? {
+    yoy,
+    periodOverPeriod,
+    data: [
+      { label: 'Last Year', value: yoy.prevValue },
+      { label: periodOverPeriod.prevLabel, value: periodOverPeriod.prevValue },
+      { label: active.shortLabel, value: endSnap.netWorth },
+    ],
+  } : null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -602,6 +615,33 @@ One concise paragraph (3-4 sentences) summarising the period.
           <KPI label="Current Value" value={fmt(endSnap.currentValue, hidden)} sub={`${endSnap.holdings.length} holdings`} audit={audits.currentValue} />
           <KPI label="Unrealized P&L" value={fmt(endSnap.pnl, hidden)} sub={fmtPct(endSnap.pnlPercent)} positive={endSnap.pnl >= 0} audit={audits.pnl} />
         </div>
+
+        {/* Net worth growth comparison — Last Year vs Previous Period vs Current Period */}
+        {growth && (
+          <Card className="rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUp className="w-4 h-4 text-foreground" />
+              <h3 className="text-sm font-semibold text-foreground">AUM Growth</h3>
+              <span className={`ml-auto text-xs font-medium ${growth.yoy.pct >= 0 ? 'text-gain' : 'text-loss'}`}>
+                {fmtPct(growth.yoy.pct)} YoY
+              </span>
+            </div>
+            <div className="h-56">
+              <ResponsiveContainer>
+                <BarChart data={growth.data}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                  <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(v: any) => fmt(Number(v), hidden)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', fontSize: 12 }} />
+                  <Bar dataKey="value" name="AUM" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              vs previous period ({growth.periodOverPeriod.prevLabel}): {fmtPct(growth.periodOverPeriod.pct)} · vs last year: {fmtPct(growth.yoy.pct)}
+            </p>
+          </Card>
+        )}
 
         {/* Projection panel (upcoming or in-progress) */}
         {projection && (
