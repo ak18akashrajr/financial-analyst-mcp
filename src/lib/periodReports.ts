@@ -394,3 +394,43 @@ export function projectPeriod(
     monthsAhead,
   };
 }
+
+// ── Last Year / Previous Period / Current Period AUM growth comparison ──
+// Pulled out as a pure function (rather than inlined in Reports.tsx) so the bar
+// labeling logic is unit-testable directly, without depending on recharts'
+// SVG tick rendering (which drops/merges ticks under jsdom's fake layout sizes).
+export interface GrowthComparisonPoint {
+  label: string;
+  value: number;
+}
+export interface GrowthComparison {
+  data: [GrowthComparisonPoint, GrowthComparisonPoint, GrowthComparisonPoint];
+  yoyPct: number;
+  periodOverPeriodLabel: string;
+  periodOverPeriodPct: number;
+}
+
+/**
+ * Yearly view is intentionally unsupported: buildPeriods returns a single period per
+ * FY for 'year', so there is never a "previous period" to diff against within the
+ * same FY — periodOverPeriod is always null there, so this never renders anyway.
+ */
+export function buildGrowthComparison(
+  type: PeriodType,
+  yoy: { prevValue: number; pct: number } | null,
+  periodOverPeriod: { prevLabel: string; prevValue: number; pct: number } | null,
+  currentValue: number,
+): GrowthComparison | null {
+  if (!yoy || !periodOverPeriod) return null;
+  const periodNoun = type === 'half' ? 'Half' : 'Quarter';
+  return {
+    data: [
+      { label: 'Last Year', value: yoy.prevValue },
+      { label: `Last ${periodNoun}`, value: periodOverPeriod.prevValue },
+      { label: `Current ${periodNoun}`, value: currentValue },
+    ],
+    yoyPct: yoy.pct,
+    periodOverPeriodLabel: periodOverPeriod.prevLabel,
+    periodOverPeriodPct: periodOverPeriod.pct,
+  };
+}

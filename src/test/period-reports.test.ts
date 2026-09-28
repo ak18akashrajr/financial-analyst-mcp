@@ -9,6 +9,7 @@ import {
   buildSnapshot,
   buildActivity,
   fyStartYearFor,
+  buildGrowthComparison,
   type HistoricalPriceMap,
   type NetWorthHistoryRow,
 } from '@/lib/periodReports';
@@ -249,5 +250,45 @@ describe('buildActivity', () => {
     expect(activity.sellValue).toBe(600);
     expect(activity.netInvested).toBe(400);
     expect(activity.uniqueSymbols).toBe(1); // both transactions are 'SYM'
+  });
+});
+
+describe('buildGrowthComparison', () => {
+  const yoy = { prevValue: 1200, pct: 66.67 };
+  const periodOverPeriod = { prevLabel: 'Q1 2026-27', prevValue: 1200, pct: 66.67 };
+
+  it('returns null when there is no prior-year comparison', () => {
+    expect(buildGrowthComparison('quarter', null, periodOverPeriod, 2000)).toBeNull();
+  });
+
+  it('returns null when there is no previous-period comparison', () => {
+    expect(buildGrowthComparison('quarter', yoy, null, 2000)).toBeNull();
+  });
+
+  it('labels bars generically ("Last Quarter"/"Current Quarter"), not with the period\'s specific code', () => {
+    const result = buildGrowthComparison('quarter', yoy, periodOverPeriod, 2000);
+    expect(result?.data).toEqual([
+      { label: 'Last Year', value: 1200 },
+      { label: 'Last Quarter', value: 1200 },
+      { label: 'Current Quarter', value: 2000 },
+    ]);
+    expect(result?.yoyPct).toBe(66.67);
+    expect(result?.periodOverPeriodLabel).toBe('Q1 2026-27');
+    expect(result?.periodOverPeriodPct).toBe(66.67);
+  });
+
+  it('labels bars "Last Half"/"Current Half" for Half-Yearly view', () => {
+    const result = buildGrowthComparison('half', yoy, { ...periodOverPeriod, prevLabel: 'H1 2026-27' }, 2000);
+    expect(result?.data.map(d => d.label)).toEqual(['Last Year', 'Last Half', 'Current Half']);
+  });
+
+  it('never resolves for Yearly view — buildPeriods returns a single period per FY for "year", so periodOverPeriod is always null there in practice', () => {
+    // Passed a non-null periodOverPeriod directly here (bypassing the real
+    // computation) purely to prove the labeling itself falls back to the
+    // quarter/half wording rather than throwing on an unexpected type; the
+    // real page never reaches this branch since periodOverPeriod is always
+    // null for 'year' upstream.
+    const result = buildGrowthComparison('year', yoy, periodOverPeriod, 2000);
+    expect(result?.data.map(d => d.label)).toEqual(['Last Year', 'Last Quarter', 'Current Quarter']);
   });
 });
