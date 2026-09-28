@@ -449,7 +449,7 @@ One concise paragraph (3-4 sentences) summarising the period.
     <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-5 print:py-2">
         {/* Header */}
-        <div className="flex items-center justify-between print:hidden">
+        <div className="flex items-center justify-between flex-wrap gap-3 print:hidden">
           <div className="flex items-center gap-3">
             <Link to="/overview" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /></Link>
             <div>
@@ -457,7 +457,7 @@ One concise paragraph (3-4 sentences) summarising the period.
               <p className="text-xs text-muted-foreground">{active.fy} · Board-style earnings & projection reports</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button onClick={toggle} className="text-xs px-3 py-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground">
               {hidden ? 'Show' : 'Hide'} numbers
             </button>
@@ -645,7 +645,7 @@ One concise paragraph (3-4 sentences) summarising the period.
               </h3>
               <span className="ml-auto text-[10px] text-muted-foreground">XIRR {(projection.baseRate * 100).toFixed(2)}% · Conservative {(projection.conservativeRate * 100).toFixed(2)}% · SIP ₹{monthlySIPTarget.toLocaleString('en-IN')}/mo · {projection.monthsAhead} mo</span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <AuditPopover title="Base Case Projection" trigger={
                 <div className="rounded-xl border border-border p-4 bg-secondary/30 text-left cursor-help hover:border-foreground/40 transition-colors w-full">
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Base Case (current XIRR) · click to audit</p>
@@ -737,7 +737,7 @@ One concise paragraph (3-4 sentences) summarising the period.
           </Card>
           <Card className="rounded-2xl p-5 md:col-span-2">
             <h3 className="text-sm font-semibold mb-3">Top Movers (period-end)</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-gain mb-2 flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Gainers</p>
                 <div className="space-y-1.5">
