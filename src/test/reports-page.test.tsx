@@ -290,5 +290,10 @@ describe('Reports page', () => {
 
     // AUM Growth chart should also now render (both yoy and periodOverPeriod resolved).
     expect(screen.getByText('AUM Growth')).toBeInTheDocument();
+
+    // Headline strip badge: "QoQ" only ever means Quarter-over-Quarter — Half-Yearly
+    // view must label this same comparison "HoH" instead, not the quarterly acronym.
+    expect(screen.getByText('+53.85% HoH')).toBeInTheDocument();
+    expect(screen.queryByText(/QoQ/)).not.toBeInTheDocument();
   });
 });
