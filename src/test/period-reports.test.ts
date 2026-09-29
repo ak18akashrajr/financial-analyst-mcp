@@ -10,6 +10,7 @@ import {
   buildActivity,
   fyStartYearFor,
   buildGrowthComparison,
+  periodOverPeriodBadge,
   type HistoricalPriceMap,
   type NetWorthHistoryRow,
 } from '@/lib/periodReports';
@@ -285,5 +286,13 @@ describe('buildGrowthComparison', () => {
   it('labels bars "1 Year Ago"/"Last Year"/"Current Year" for Yearly view, since its previous-period bar (prior FY) would otherwise collide with the YoY bar\'s "Last Year" wording', () => {
     const result = buildGrowthComparison('year', yoy, { ...periodOverPeriod, prevLabel: 'FY2025-26' }, 2000);
     expect(result?.data.map(d => d.label)).toEqual(['1 Year Ago', 'Last Year', 'Current Year']);
+  });
+});
+
+describe('periodOverPeriodBadge', () => {
+  it('is "QoQ" for Quarterly, "HoH" for Half-Yearly, and "FY/FY" for Yearly', () => {
+    expect(periodOverPeriodBadge('quarter')).toBe('QoQ');
+    expect(periodOverPeriodBadge('half')).toBe('HoH');
+    expect(periodOverPeriodBadge('year')).toBe('FY/FY');
   });
 });

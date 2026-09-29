@@ -9,7 +9,7 @@ import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
-  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison,
+  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge,
   type PeriodDef, type PeriodType, type HistoricalPriceMap,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
@@ -543,9 +543,9 @@ One concise paragraph (3-4 sentences) summarising the period.
                   <span className="text-sm font-mono font-semibold text-foreground cursor-help hover:underline decoration-dotted underline-offset-2">{fmt(endSnap.netWorth, hidden)}</span>
                 }>{audits.aum}</AuditPopover>
                 {periodOverPeriod && (
-                  <AuditPopover title="Period-over-period (QoQ)" trigger={
+                  <AuditPopover title={`Period-over-period (${periodOverPeriodBadge(type)})`} trigger={
                     <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${periodOverPeriod.pct >= 0 ? 'text-gain' : 'text-loss'}`}>
-                      {fmtPct(periodOverPeriod.pct)} QoQ
+                      {fmtPct(periodOverPeriod.pct)} {periodOverPeriodBadge(type)}
                     </span>
                   }>{audits.aum}</AuditPopover>
                 )}
@@ -1018,7 +1018,7 @@ function buildAudits(a: BuildAuditsArgs) {
           />
         </AuditSection>
         {periodOverPeriod && (
-          <AuditSection label="Period-over-period (QoQ) Δ">
+          <AuditSection label={`Period-over-period (${periodOverPeriodBadge(active.type)}) Δ`}>
             <Formula>
               Δ = AUM<sub>current</sub> − AUM<sub>{periodOverPeriod.prevLabel}</sub><br />
               % = Δ ÷ AUM<sub>{periodOverPeriod.prevLabel}</sub> × 100

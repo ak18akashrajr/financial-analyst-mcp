@@ -20,6 +20,19 @@ import { parseLocalDate } from './dateUtils';
 
 export type PeriodType = 'quarter' | 'half' | 'year';
 
+/**
+ * Short badge label for the periodOverPeriod comparison, e.g. "+4.83% QoQ".
+ * "QoQ" only ever meant Quarter-over-Quarter — showing it in Half-Yearly or
+ * Yearly view mislabels a Half-over-Half or FY-over-FY comparison as quarterly.
+ * "FY/FY" (not "YoY") for 'year' avoids colliding with the separate, differently
+ * computed same-calendar-date YoY badge shown alongside it.
+ */
+export function periodOverPeriodBadge(type: PeriodType): string {
+  if (type === 'quarter') return 'QoQ';
+  if (type === 'half') return 'HoH';
+  return 'FY/FY';
+}
+
 export interface PeriodDef {
   key: string;          // e.g. "FY2026-27-Q1"
   type: PeriodType;
