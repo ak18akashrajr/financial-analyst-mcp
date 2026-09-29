@@ -410,11 +410,6 @@ export interface GrowthComparison {
   periodOverPeriodPct: number;
 }
 
-/**
- * Yearly view is intentionally unsupported: buildPeriods returns a single period per
- * FY for 'year', so there is never a "previous period" to diff against within the
- * same FY — periodOverPeriod is always null there, so this never renders anyway.
- */
 export function buildGrowthComparison(
   type: PeriodType,
   yoy: { prevValue: number; pct: number } | null,
@@ -422,11 +417,18 @@ export function buildGrowthComparison(
   currentValue: number,
 ): GrowthComparison | null {
   if (!yoy || !periodOverPeriod) return null;
-  const periodNoun = type === 'half' ? 'Half' : 'Quarter';
+  // Yearly view's "previous period" is a full prior FY, which sits almost exactly
+  // where the YoY bar (same calendar date, 1 year ago) already sits too — word them
+  // distinctly ("1 Year Ago" vs "Last Year") so the two bars don't read as the same
+  // thing. Quarter/Half instead keep "Last Year" for the YoY bar since their
+  // previous-period bar is only a quarter/half away, not a full year.
+  const yoyLabel = type === 'year' ? '1 Year Ago' : 'Last Year';
+  const periodNoun = type === 'half' ? 'Half' : type === 'year' ? 'Year' : 'Quarter';
+  const prevLabel = type === 'year' ? 'Last Year' : `Last ${periodNoun}`;
   return {
     data: [
-      { label: 'Last Year', value: yoy.prevValue },
-      { label: `Last ${periodNoun}`, value: periodOverPeriod.prevValue },
+      { label: yoyLabel, value: yoy.prevValue },
+      { label: prevLabel, value: periodOverPeriod.prevValue },
       { label: `Current ${periodNoun}`, value: currentValue },
     ],
     yoyPct: yoy.pct,

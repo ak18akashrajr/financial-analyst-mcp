@@ -218,18 +218,30 @@ const ReportsContent = () => {
   }, [active, status, startSnap, endSnap, monthlySIPTarget, summary.xirr]);
 
   // QoQ / period-over-period growth. Prev period is by definition completed → useLive=false.
+  // Q1 (or H1, or the sole yearly period) is index 0 within `periods`, which only
+  // covers the currently-browsed fiscal year — its real predecessor (Q4/H2/prior FY)
+  // lives in the *previous* FY, which buildPeriods doesn't include here. Look it up
+  // explicitly, but only when that prior FY actually has data (earliestFYStartYear,
+  // already used to bound FY browsing below) — otherwise fall back to "first period"
+  // rather than diffing against a FY that predates any transaction.
   const periodOverPeriod = useMemo(() => {
     if (!active) return null;
     const idx = periods.findIndex(p => p.key === active.key);
-    if (idx <= 0) return null;
-    const prev = periods[idx - 1];
+    let prev: PeriodDef | undefined;
+    if (idx > 0) {
+      prev = periods[idx - 1];
+    } else if (fyStartYear - 1 >= earliestFYStartYear) {
+      const prevFYPeriods = buildPeriods(fyStartYear - 1, type);
+      prev = prevFYPeriods[prevFYPeriods.length - 1];
+    }
+    if (!prev) return null;
     const prevSt = periodStatus(prev);
     const prevEnd = prevSt === 'upcoming' ? prev.start : prev.end;
     const prevSnap = buildSnapshot(prevEnd, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
     const delta = endSnap.netWorth - prevSnap.netWorth;
     const pct = prevSnap.netWorth > 0 ? (delta / prevSnap.netWorth) * 100 : 0;
     return { prevLabel: prev.shortLabel, prevValue: prevSnap.netWorth, delta, pct };
-  }, [periods, active, transactions, currentPrices, symbolMetaLite, history, cash, endSnap, historicalPrices]);
+  }, [periods, active, transactions, currentPrices, symbolMetaLite, history, cash, endSnap, historicalPrices, fyStartYear, earliestFYStartYear, type]);
 
   // YoY — same calendar day one year before this period's as-of point, so it stays
   // apples-to-apples whether the active period is completed, in-progress (QTD-style),
@@ -440,9 +452,9 @@ One concise paragraph (3-4 sentences) summarising the period.
   });
 
   // Last Year / Previous Period / Current Period AUM comparison for the growth
-  // chart above the projection panel — see buildGrowthComparison's doc comment
-  // for why it's null (hidden) on the portfolio's first-ever period, and why
-  // Yearly view never renders it.
+  // chart above the projection panel. Null (hidden) whenever periodOverPeriod or
+  // yoy is null — i.e. the portfolio doesn't have real data as far back as either
+  // comparison needs (see periodOverPeriod's cross-FY lookup above).
   const growth = buildGrowthComparison(type, yoy, periodOverPeriod, endSnap.netWorth);
 
   return (
