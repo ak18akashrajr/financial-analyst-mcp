@@ -263,4 +263,32 @@ describe('Reports page', () => {
     await waitFor(() => expect(screen.getByText('Q1 · Apr–Jun 2026')).toBeInTheDocument());
     expect(screen.queryByText('AUM Growth')).not.toBeInTheDocument();
   });
+
+  it('compares H1 against the prior fiscal year\'s H2 instead of showing "First period", when that prior-FY data actually exists', async () => {
+    // Only historical close available: ₹130 on 2026-02-01, inside H2 FY2025-26
+    // (Oct 2025–Mar 2026) but after the YoY lookback date (2025-08-22).
+    historicalPriceRows.push({ symbol: 'TCS', date: '2026-02-01', close: 130 });
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2025-04-15' }],
+      currentPrices: { TCS: 200 },
+    }));
+    renderReports();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Half-Yearly' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Half-Yearly' }));
+
+    // "now" (2026-08-22) falls in H1 FY2026-27 (Apr-Sep 2026) → in-progress → default
+    // active period. H1 is index 0 of this FY's half list, so its real predecessor,
+    // H2 FY2025-26, isn't in that list at all — it has to be looked up in the prior FY.
+    await waitFor(() => expect(screen.getByText('H1 · Apr–Sep 2026')).toBeInTheDocument());
+    expect(screen.queryByText('First period')).not.toBeInTheDocument();
+
+    // H2 FY2025-26 ends 2026-04-01; the ₹130 close (2026-02-01) is the latest at-or-before
+    // that date → prev netWorth = 10 × ₹130 = ₹1,300. Today, live @ ₹200 → ₹2,000.
+    // Δ = 700, % = 700 / 1300 × 100 = 53.8461...% → "+53.85%".
+    await waitFor(() => expect(screen.getByText('+53.85% vs H2 2025-26')).toBeInTheDocument());
+
+    // AUM Growth chart should also now render (both yoy and periodOverPeriod resolved).
+    expect(screen.getByText('AUM Growth')).toBeInTheDocument();
+  });
 });

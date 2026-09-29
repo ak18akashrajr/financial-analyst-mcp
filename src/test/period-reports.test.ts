@@ -282,13 +282,8 @@ describe('buildGrowthComparison', () => {
     expect(result?.data.map(d => d.label)).toEqual(['Last Year', 'Last Half', 'Current Half']);
   });
 
-  it('never resolves for Yearly view — buildPeriods returns a single period per FY for "year", so periodOverPeriod is always null there in practice', () => {
-    // Passed a non-null periodOverPeriod directly here (bypassing the real
-    // computation) purely to prove the labeling itself falls back to the
-    // quarter/half wording rather than throwing on an unexpected type; the
-    // real page never reaches this branch since periodOverPeriod is always
-    // null for 'year' upstream.
-    const result = buildGrowthComparison('year', yoy, periodOverPeriod, 2000);
-    expect(result?.data.map(d => d.label)).toEqual(['Last Year', 'Last Quarter', 'Current Quarter']);
+  it('labels bars "1 Year Ago"/"Last Year"/"Current Year" for Yearly view, since its previous-period bar (prior FY) would otherwise collide with the YoY bar\'s "Last Year" wording', () => {
+    const result = buildGrowthComparison('year', yoy, { ...periodOverPeriod, prevLabel: 'FY2025-26' }, 2000);
+    expect(result?.data.map(d => d.label)).toEqual(['1 Year Ago', 'Last Year', 'Current Year']);
   });
 });
