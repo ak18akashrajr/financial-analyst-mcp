@@ -463,7 +463,7 @@ function Content() {
                       <span className={a.ok ? 'text-gain' : 'text-loss'}>
                         {a.ok ? '✓' : '✕'} {a.source}
                       </span>
-                      <span className="font-mono text-muted-foreground truncate">{a.note}</span>
+                      <span className="font-mono text-muted-foreground truncate min-w-0 flex-1">{a.note}</span>
                     </li>
                   ))}
                 </ul>
