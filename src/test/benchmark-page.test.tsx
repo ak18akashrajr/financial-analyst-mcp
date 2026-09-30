@@ -72,6 +72,17 @@ describe('Benchmark page', () => {
     invokeMock.mockReset().mockResolvedValue({ data: { benchmarks: {} }, error: null });
   });
 
+  it('wraps the header action group instead of forcing horizontal page overflow on narrow viewports', async () => {
+    // Regression guard: the outer header row already wraps (flex-wrap), but
+    // that only let this whole action group (Hide numbers / Window picker /
+    // benchmark picker / Backfill button) drop to its own line — the group's
+    // own container had no flex-wrap, so its 5 children still laid out in one
+    // unbroken row wider than a phone viewport.
+    renderPage();
+    const hideNumbersButton = await screen.findByRole('button', { name: /hide numbers/i });
+    expect(hideNumbersButton.parentElement).toHaveClass('flex-wrap');
+  });
+
   it('shows an empty-state message when there is no portfolio history yet', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText(/no portfolio history yet/i)).toBeInTheDocument());

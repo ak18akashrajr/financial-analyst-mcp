@@ -57,6 +57,18 @@ describe('XirrDetailsCard', () => {
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(2);
   });
 
+  it('clamps the popover width to the viewport instead of a fixed 320px, on narrow phone screens', () => {
+    // Regression guard: PopoverContent was hardcoded to w-80 (320px) with no
+    // viewport clamp, so on a phone narrower than 320px this popover was
+    // wider than the screen itself (Radix repositions on collision, but
+    // never shrinks a fixed width).
+    renderCard();
+    fireEvent.click(screen.getByRole('button', { name: /xirr/i }));
+
+    const heading = screen.getByText('XIRR Breakdown');
+    expect(heading.closest('.w-80')).toHaveClass('max-w-[calc(100vw-2rem)]');
+  });
+
   it('states that this is a whole-history cash-flow XIRR, distinct from the /benchmark page, with a link there', () => {
     renderCard();
     fireEvent.click(screen.getByRole('button', { name: /xirr/i }));
