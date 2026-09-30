@@ -1331,7 +1331,7 @@ const DevZone = () => {
       </div>
 
       <div className="max-w-5xl mx-auto px-4 py-5">
-        <div className="mb-4 flex gap-1 rounded-lg border border-border bg-card p-1 w-fit">
+        <div className="mb-4 flex flex-wrap gap-1 rounded-lg border border-border bg-card p-1 w-fit">
           <button
             onClick={() => setTab('status')}
             className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
