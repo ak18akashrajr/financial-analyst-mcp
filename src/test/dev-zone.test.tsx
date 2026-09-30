@@ -138,6 +138,16 @@ describe('DevZone', () => {
     updateIncidentMock.mockClear();
   });
 
+  it('wraps the tab strip instead of forcing horizontal page overflow on narrow viewports', async () => {
+    // Regression guard: the 6-button tab strip (System Status/Requests/App
+    // Logs/Audit Trail/AI Safety/Security) previously had no flex-wrap, so it
+    // overflowed the page width on phone screens instead of wrapping to a
+    // second line.
+    renderPage();
+    const tabRow = screen.getByRole('button', { name: 'App Logs' }).parentElement!;
+    expect(tabRow).toHaveClass('flex-wrap');
+  });
+
   it('shows an empty state on the App Logs tab when nothing has been logged', async () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'App Logs' }));
