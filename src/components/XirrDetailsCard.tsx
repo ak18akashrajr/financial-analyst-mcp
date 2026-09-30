@@ -119,7 +119,7 @@ export function XirrDetailsCard({ overallXirr, portfolioXirr, transactions }: Pr
           </div>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 space-y-3">
+      <PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)] space-y-3">
         <p className="text-xs font-semibold text-foreground">XIRR Breakdown</p>
 
         <Row label="Overall Portfolio XIRR" value={fmtPct(overallXirr)} tone={toneOf(overallXirr)} xirr={overallXirr} />
