@@ -9,10 +9,12 @@ import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
-  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge,
+  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge, nearestSnapshot,
   type PeriodDef, type PeriodType, type HistoricalPriceMap,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
+import { buildPeriodBridge, type PeriodBridge } from '@/lib/netWorthMovement';
+import { PeriodMovementCard } from '@/components/PeriodMovementCard';
 import { EmptyState } from '@/components/EmptyState';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend,
@@ -263,8 +265,9 @@ const ReportsContent = () => {
   }, [active, endAsOf, transactions, currentPrices, symbolMetaLite, history, cash, historicalPrices, endSnap]);
 
   // Net worth trend across this FY. Each period uses historical mark unless that period is in-progress.
-  const trend = useMemo(() => {
-    return periods.map(p => {
+  const { trend, periodBridges } = useMemo(() => {
+    const bridges: Array<PeriodBridge | null> = [];
+    const rows = periods.map(p => {
       const st = periodStatus(p);
       const asOf = st === 'upcoming' ? p.start : (st === 'in-progress' ? new Date() : p.end);
       const snap = buildSnapshot(asOf, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: st === 'in-progress' });
@@ -273,6 +276,8 @@ const ReportsContent = () => {
       // p.start since a period's start is never in the future.
       const startOfPeriodSnap = buildSnapshot(p.start, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
       const periodPnl = st === 'upcoming' ? 0 : snap.pnl - startOfPeriodSnap.pnl;
+      // Net-worth attribution for this period: opening = start-of-period snapshot above, closing = `snap`.
+      bridges.push(st === 'upcoming' ? null : buildPeriodBridge(startOfPeriodSnap, snap, transactions));
       return {
         label: p.shortLabel,
         status: st,
@@ -283,7 +288,33 @@ const ReportsContent = () => {
         periodPnl: Math.round(periodPnl),
       };
     });
+    return { trend: rows, periodBridges: bridges };
   }, [periods, transactions, currentPrices, symbolMetaLite, history, cash, historicalPrices]);
+
+  // What moved net worth over the active period. Built from the SAME startSnap/endSnap that feed the
+  // AUM tile, so opening/closing here always tie to the AUM figures on the page.
+  const activeBridge = useMemo(
+    () => (status === 'upcoming' ? null : buildPeriodBridge(startSnap, endSnap, transactions)),
+    [status, startSnap, endSnap, transactions],
+  );
+  const movementColumns = useMemo(
+    () => periods.map((p, i) => ({
+      key: p.key,
+      label: p.shortLabel,
+      title: p.label,
+      status: periodStatus(p),
+      bridge: p.key === activeKey ? activeBridge : periodBridges[i],
+    })),
+    [periods, periodBridges, activeKey, activeBridge],
+  );
+  const openingCashSnapshotAt = useMemo(() => {
+    const r = nearestSnapshot(history, startSnap.asOf);
+    return r ? new Date(r.recorded_at) : null;
+  }, [history, startSnap]);
+  const closingCashSnapshotAt = useMemo(() => {
+    const r = nearestSnapshot(history, endSnap.asOf);
+    return r ? new Date(r.recorded_at) : null;
+  }, [history, endSnap]);
 
   const { selection: trendRangeSelection, handlers: trendRangeHandlers, clear: clearTrendRange } = useChartRangeSelection();
   const trendRangeResult =
@@ -646,6 +677,19 @@ One concise paragraph (3-4 sentences) summarising the period.
             </p>
           </Card>
         )}
+
+        {/* What moved net worth vs the previous period: balance updates vs new money vs price movement */}
+        <PeriodMovementCard
+          periodLabel={active.shortLabel}
+          periodTypeLabel={type === 'quarter' ? 'quarter' : type === 'half' ? 'half-year' : 'year'}
+          status={status}
+          bridge={activeBridge}
+          columns={movementColumns}
+          activeKey={active.key}
+          openingCashSnapshotAt={openingCashSnapshotAt}
+          closingCashSnapshotAt={closingCashSnapshotAt}
+          hidden={hidden}
+        />
 
         {/* Projection panel (upcoming or in-progress) */}
         {projection && (

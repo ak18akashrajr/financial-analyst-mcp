@@ -249,7 +249,7 @@ export interface NetWorthHistoryRow {
   credit_card_debt: number;
 }
 
-function nearestSnapshot(rows: NetWorthHistoryRow[], target: Date): NetWorthHistoryRow | null {
+export function nearestSnapshot(rows: NetWorthHistoryRow[], target: Date): NetWorthHistoryRow | null {
   const eligible = rows.filter(r => new Date(r.recorded_at) <= target);
   if (eligible.length === 0) return null;
   return eligible.reduce((a, b) => new Date(a.recorded_at) > new Date(b.recorded_at) ? a : b);

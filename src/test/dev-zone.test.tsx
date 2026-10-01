@@ -148,6 +148,30 @@ describe('DevZone', () => {
     expect(tabRow).toHaveClass('flex-wrap');
   });
 
+  describe('Trade-offs tab', () => {
+    it('lists the accepted trade-offs grouped by area, without the log-rows footnote', async () => {
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: 'Trade-offs' }));
+
+      expect(await screen.findByRole('region', { name: 'Snapshots (data source)' })).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Seasonality audit' })).toBeInTheDocument();
+      expect(screen.getByRole('region', { name: 'Reports movement card' })).toBeInTheDocument();
+      expect(screen.getByText('A symbol with no stored price counts as ₹0 in a snapshot')).toBeInTheDocument();
+      expect(screen.getAllByText('Why it was accepted').length).toBeGreaterThan(0);
+      // The "Showing the latest N rows" note only makes sense for the log tabs.
+      expect(screen.queryByText(/Showing the latest/)).not.toBeInTheDocument();
+    });
+
+    it('can be opened directly from the URL', async () => {
+      render(
+        <MemoryRouter initialEntries={['/dev-zone?tab=trade-offs']}>
+          <DevZone />
+        </MemoryRouter>,
+      );
+      expect(await screen.findByRole('region', { name: 'Seasonality audit' })).toBeInTheDocument();
+    });
+  });
+
   it('shows an empty state on the App Logs tab when nothing has been logged', async () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'App Logs' }));

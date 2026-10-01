@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Terminal, RefreshCw, AlertTriangle, OctagonAlert, ChevronDown, ChevronRight,
-  CheckCircle2, XCircle, Search, Loader2, Activity, ShieldAlert, LogOut, Receipt, Siren,
+  CheckCircle2, XCircle, Search, Loader2, Activity, ShieldAlert, LogOut, Receipt, Siren, Scale,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { logClientError } from '@/lib/clientErrorLogging';
 import { useSecurityIncidents, type SecurityIncident } from '@/contexts/SecurityIncidentsContext';
 import { EmptyState } from '@/components/EmptyState';
+import { TradeOffsTab } from '@/components/TradeOffsTab';
 
 import { Card } from '@/components/ui/card';
 
@@ -82,7 +83,7 @@ interface LlmRequestRow {
 const SUSPICIOUS_INPUT_MESSAGE = 'Suspicious input detected (possible prompt-injection attempt)';
 const OUTPUT_GUARDRAIL_MESSAGE = 'Output guardrail triggered — response withheld before streaming';
 
-type Tab = 'status' | 'requests' | 'app-logs' | 'audit-trail' | 'safety' | 'security';
+type Tab = 'status' | 'requests' | 'app-logs' | 'audit-trail' | 'safety' | 'security' | 'trade-offs';
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
@@ -1295,7 +1296,7 @@ function ErrorBanner({ message }: { message: string }) {
   );
 }
 
-const VALID_TABS: Tab[] = ['status', 'requests', 'app-logs', 'audit-trail', 'safety', 'security'];
+const VALID_TABS: Tab[] = ['status', 'requests', 'app-logs', 'audit-trail', 'safety', 'security', 'trade-offs'];
 
 const DevZone = () => {
   const [searchParams] = useSearchParams();
@@ -1323,7 +1324,7 @@ const DevZone = () => {
               </div>
               <div>
                 <h1 className="text-sm font-bold text-foreground tracking-tight">Dev Zone</h1>
-                <p className="text-[10px] text-muted-foreground">System status, AI requests, application logs, MCP audit trail, AI safety &amp; security</p>
+                <p className="text-[10px] text-muted-foreground">System status, AI requests, application logs, MCP audit trail, AI safety, security &amp; accepted trade-offs</p>
               </div>
             </div>
           </div>
@@ -1384,9 +1385,18 @@ const DevZone = () => {
             <ShieldAlert className="w-3.5 h-3.5" />
             Security
           </button>
+          <button
+            onClick={() => setTab('trade-offs')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              tab === 'trade-offs' ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Scale className="w-3.5 h-3.5" />
+            Trade-offs
+          </button>
         </div>
 
-        {tab !== 'status' && tab !== 'security' && (
+        {tab !== 'status' && tab !== 'security' && tab !== 'trade-offs' && (
           <p className="mb-4 text-[11px] text-muted-foreground">
             Showing the latest {ROW_LIMIT} rows. Info-level edge-function logs aren't persisted here —
             use <code className="rounded bg-muted px-1 py-0.5 font-mono">supabase functions logs &lt;fn&gt;</code> for
@@ -1399,6 +1409,7 @@ const DevZone = () => {
           : tab === 'app-logs' ? <AppLogsTab />
           : tab === 'audit-trail' ? <AuditTrailTab />
           : tab === 'safety' ? <AiSafetyTab />
+          : tab === 'trade-offs' ? <TradeOffsTab />
           : <SecurityTab />}
       </div>
     </div>

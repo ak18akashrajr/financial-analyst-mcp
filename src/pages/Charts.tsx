@@ -79,7 +79,7 @@ const ChartsContent = () => {
         <PerformanceAttribution holdings={holdings} />
 
         {/* Seasonality + Correlation */}
-        <SeasonalityHeatmap />
+        <SeasonalityHeatmap transactions={transactions} currentPrices={currentPrices} />
         <CorrelationHeatmap transactions={transactions} />
       </div>
     </div>
