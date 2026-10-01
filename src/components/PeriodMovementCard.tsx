@@ -81,8 +81,8 @@ function BalancesAudit({ b, openAt, closeAt, hidden }: { b: PeriodBridge; openAt
       </AuditSection>
       <AuditSection label="Where the balances come from">
         <div className="space-y-1">
-          <p><SourceBadge source={openAt ? 'snapshot' : 'none'} /> Opening: {openAt ? `net-worth snapshot of ${fmtWhen(openAt)} (latest at or before ${fmtDate(b.openingAsOf)})` : 'no snapshot at or before the opening date → ₹0'}</p>
-          <p><SourceBadge source={closeAt ? 'snapshot' : 'none'} /> Closing: {closeAt ? `net-worth snapshot of ${fmtWhen(closeAt)} (latest at or before ${fmtDate(b.closingAsOf)})` : 'no snapshot at or before the closing date → ₹0'}</p>
+          <p><SourceBadge source={openAt ? 'snapshot' : 'none'} /> Opening: {openAt ? `net-worth snapshot of ${fmtWhen(openAt)} (latest at or before the end of ${fmtDate(b.openingAsOf)})` : 'no snapshot at or before the opening date → ₹0'}</p>
+          <p><SourceBadge source={closeAt ? 'snapshot' : 'none'} /> Closing: {closeAt ? `net-worth snapshot of ${fmtWhen(closeAt)} (latest at or before the end of ${fmtDate(b.closingAsOf)})` : 'no snapshot at or before the closing date → ₹0'}</p>
         </div>
       </AuditSection>
     </>
@@ -199,7 +199,7 @@ export function PeriodMovementCard({
           </div>
           {bridge && (
             <p className="text-[11px] text-muted-foreground mt-1">
-              {fmtDate(bridge.openingAsOf)} → {status === 'in-progress' ? 'today (live)' : fmtDate(new Date(bridge.closingAsOf.getTime() - 1))} · vs previous {periodTypeLabel}
+              close of {fmtDate(bridge.openingAsOf)} → {status === 'in-progress' ? 'today (live)' : `close of ${fmtDate(bridge.closingAsOf)}`} · vs previous {periodTypeLabel}
             </p>
           )}
         </div>

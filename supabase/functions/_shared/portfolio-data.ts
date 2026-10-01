@@ -68,6 +68,30 @@ export interface Txn {
   date: string;
 }
 
+const IST_OFFSET_MS = 330 * 60 * 1000; // IST is UTC+05:30 and has no DST
+
+/**
+ * The IST calendar day ("YYYY-MM-DD") a transaction belongs to.
+ *
+ * `transactions.date` is NOT always a bare date: add_transaction_and_snapshot inserts without a date, so
+ * the column default fills it with the full entry timestamp (e.g. "2026-09-30T14:22:10+00:00"). Comparing
+ * that string against a bare "2026-09-30" (`t.date <= "2026-09-30"`) is false for every trade made on that
+ * day, silently dropping the whole last day from an as-of valuation, and a UTC date-prefix would put a trade
+ * made at 02:00 IST on the wrong (previous) day. Always compare on the IST day instead; a bare
+ * "YYYY-MM-DD" is already a day and passes through unchanged.
+ */
+export function txnDayIst(dateStr: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const t = Date.parse(dateStr);
+  if (Number.isNaN(t)) return dateStr.slice(0, 10);
+  return new Date(t + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Last instant of an IST calendar day, as a UTC ISO string (23:59:59.999 IST = 18:29:59.999Z the same date). */
+export function endOfIstDay(dateStr: string): string {
+  return `${dateStr}T18:29:59.999Z`;
+}
+
 /**
  * Replays transactions (optionally only up to `asOfDate`) into net quantity +
  * invested amount per symbol, then prices them at `priceMap`. Used both for
@@ -80,7 +104,7 @@ export function computeHoldingsFromTxns(
   metaMap: Record<string, { geography: string; sector: string }>,
   asOfDate?: string,
 ): Holding[] {
-  const relevant = asOfDate ? txns.filter((t) => t.date <= asOfDate) : txns;
+  const relevant = asOfDate ? txns.filter((t) => txnDayIst(t.date) <= asOfDate) : txns;
   const bySymbol: Record<string, { qty: number; invested: number }> = {};
   for (const t of relevant) {
     if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { qty: 0, invested: 0 };
@@ -174,8 +198,13 @@ export async function listTransactions(
   const effectiveStart = startDate ?? `${effectiveEnd.slice(0, 7)}-01`; // 1st of endDate's calendar month
 
   const txns = await fetchTxns(sb);
+  // Compare on the IST calendar day, not the raw string: with a full entry timestamp, "2026-09-30T14:00:00+00:00"
+  // is > "2026-09-30", which dropped every trade made on the end date. The returned `date` is left untouched.
   const inRange = txns
-    .filter((t) => t.date >= effectiveStart && t.date <= effectiveEnd)
+    .filter((t) => {
+      const day = txnDayIst(t.date);
+      return day >= effectiveStart && day <= effectiveEnd;
+    })
     .filter((t) => !symbol || t.symbol === symbol);
 
   let buyCount = 0, sellCount = 0, buyValue = 0, sellValue = 0;
@@ -768,18 +797,20 @@ async function fetchPriceMapAsOf(sb: SupabaseClient, asOf: string, symbols: stri
   return map;
 }
 
-/** Cash/PF/debt as of `asOf`: nearest net_worth_history snapshot at-or-before it, else — only when
- * `useLiveFallback` — today's live cash, else zeros. Never blends today's cash into a past date. */
+/** Cash/PF/debt as of the instant `asOfInstant` (an ISO timestamp, inclusive): nearest net_worth_history
+ * snapshot at-or-before it, else — only when `useLiveFallback` — today's live cash, else zeros. Never
+ * blends today's cash into a past date. Pass `endOfIstDay(date)` to mean "end of that calendar day": a bare
+ * date string would be read by Postgres as 00:00 UTC (05:30 IST) and miss the whole day's balance edits. */
 async function fetchCashAsOf(
   sb: SupabaseClient,
-  asOf: string,
+  asOfInstant: string,
   liveCash: CashSettings,
   useLiveFallback: boolean,
 ): Promise<{ cash: CashSettings; source: "history" | "live" | "none" }> {
   const { data, error } = await sb
     .from("net_worth_history")
     .select("recorded_at, liquid_cash, vault_cash, pf_balance, credit_card_debt")
-    .lte("recorded_at", asOf)
+    .lte("recorded_at", asOfInstant)
     .order("recorded_at", { ascending: false })
     .limit(1);
   assertNoError(error, "fetchCashAsOf");
@@ -836,17 +867,21 @@ export async function getPeriodPerformance(
   }
 
   const useLiveForEnd = status === "in-progress";
+  // A period opens where the previous one closed — the end of the day BEFORE period.start — and a completed
+  // period closes on its own last day (period.end is exclusive). Every day then belongs to exactly one period,
+  // so a first-day trade is activity of the new period only, never also part of its opening holdings.
+  const openingAsOf = dayBefore(period.start);
   const endAsOf = useLiveForEnd ? todayStr : dayBefore(period.end);
 
   const [txns, meta] = await Promise.all([fetchTxns(sb), fetchMetaMap(sb)]);
   const everTradedSymbols = [...new Set(txns.map((t) => t.symbol))];
   const [startPriceMap, endPriceMap] = await Promise.all([
-    fetchPriceMapAsOf(sb, period.start, everTradedSymbols),
+    fetchPriceMapAsOf(sb, openingAsOf, everTradedSymbols),
     useLiveForEnd ? Promise.resolve({}) : fetchPriceMapAsOf(sb, endAsOf, everTradedSymbols),
   ]);
 
   const { priced: startHoldings, missingSymbols: missingStartPrice } = splitByPriceAvailability(
-    computeHoldingsFromTxns(txns, startPriceMap, meta, period.start),
+    computeHoldingsFromTxns(txns, startPriceMap, meta, openingAsOf),
   );
   let endHoldings: Holding[];
   let missingEndPrice: string[];
@@ -860,8 +895,9 @@ export async function getPeriodPerformance(
   }
 
   const [{ cash: startCash, source: startCashSource }, { cash: endCash }] = await Promise.all([
-    fetchCashAsOf(sb, period.start, currentCash, false),
-    fetchCashAsOf(sb, endAsOf, currentCash, useLiveForEnd),
+    fetchCashAsOf(sb, endOfIstDay(openingAsOf), currentCash, false),
+    // In progress: the latest snapshot up to right now (not just up to midnight UTC, which hid today's edits).
+    fetchCashAsOf(sb, useLiveForEnd ? now.toISOString() : endOfIstDay(endAsOf), currentCash, useLiveForEnd),
   ]);
 
   const startEquity = startHoldings.reduce((s, h) => s + h.currentValue, 0);
@@ -869,7 +905,10 @@ export async function getPeriodPerformance(
   const startPortfolioValue = startEquity + startCash.liquid + startCash.vault + startCash.pf - startCash.creditCardDebt;
   const endPortfolioValue = endEquity + endCash.liquid + endCash.vault + endCash.pf - endCash.creditCardDebt;
 
-  const inPeriod = txns.filter((t) => t.date >= period.start && t.date <= endAsOf);
+  const inPeriod = txns.filter((t) => {
+    const day = txnDayIst(t.date);
+    return day >= period.start && day <= endAsOf;
+  });
   let buyCount = 0, sellCount = 0, buyValue = 0, sellValue = 0;
   for (const t of inPeriod) {
     const v = Number(t.quantity) * Number(t.price);
@@ -892,7 +931,8 @@ export async function getPeriodPerformance(
   const notes: string[] = [
     status === "completed"
       ? "Both start and end values use historical_prices closes on or before their respective dates — a completed period is never re-priced with today's live price."
-      : "startPortfolioValue marks holdings at the closest historical_prices close on or before the period start; endPortfolioValue uses today's live prices since this period is still in progress.",
+      : "startPortfolioValue marks holdings at the closest historical_prices close on or before the day before the period start (the previous period's close); endPortfolioValue uses today's live prices since this period is still in progress.",
+    `The period opens at the end of ${openingAsOf} (the previous period's close) and ${useLiveForEnd ? "runs to now" : `closes at the end of ${endAsOf}`}; trades are placed in a period by their IST calendar day.`,
     "totalChange/totalChangePercent is the raw change in startPortfolioValue vs. endPortfolioValue. " +
       "netInvestedInPeriod (buys minus sells within the period) is reported separately as informational " +
       "activity, not subtracted from totalChange — buying/selling with cash already tracked in this " +
@@ -901,13 +941,13 @@ export async function getPeriodPerformance(
       "'redeployed existing cash' since no such distinction is tracked in the underlying data.",
   ];
   if (missingStartPrice.length > 0) {
-    notes.push(`No historical_prices row on or before ${period.start} for ${missingStartPrice.join(", ")} — excluded from startPortfolioValue, not counted as ₹0.`);
+    notes.push(`No historical_prices row on or before ${openingAsOf} for ${missingStartPrice.join(", ")} — excluded from startPortfolioValue, not counted as ₹0.`);
   }
   if (missingEndPrice.length > 0) {
     notes.push(`No price available as of ${endAsOf} for ${missingEndPrice.join(", ")} — excluded from endPortfolioValue, not counted as ₹0.`);
   }
   if (startCashSource === "none") {
-    notes.push("No net_worth_history snapshot on or before the period start — start-of-period cash/PF/credit-card-debt assumed ₹0 rather than today's live values.");
+    notes.push("No net_worth_history snapshot on or before the end of the day before the period start — start-of-period cash/PF/credit-card-debt assumed ₹0 rather than today's live values.");
   }
 
   return {
@@ -945,7 +985,7 @@ export async function getPortfolioValueAsOf(sb: SupabaseClient, asOfDate: string
   );
   const { cash, source: cashSource } = await fetchCashAsOf(
     sb,
-    asOfDate,
+    endOfIstDay(asOfDate), // the whole as-of day counts, consistent with the day's close and trades above
     { liquid: 0, vault: 0, pf: 0, creditCardDebt: 0 },
     false, // never fall back to today's live cash for a past-date valuation
   );

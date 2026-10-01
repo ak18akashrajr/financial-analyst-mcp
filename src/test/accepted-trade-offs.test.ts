@@ -25,4 +25,10 @@ describe('accepted trade-offs register', () => {
       expect(ACCEPTED_TRADE_OFFS.some((t) => t.area === area), area).toBe(true);
     }
   });
+
+  it('keeps a fixed trade-off in the register, marked resolved, instead of deleting it', () => {
+    const boundary = ACCEPTED_TRADE_OFFS.find((t) => t.id === 'reports-period-end-boundary')!;
+    expect(boundary.resolvedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(boundary.resolvedOn! >= boundary.acceptedOn).toBe(true);
+  });
 });

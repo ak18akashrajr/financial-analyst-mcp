@@ -13,7 +13,14 @@ function Entry({ t }: { t: AcceptedTradeOff }) {
     <Card className="rounded-xl p-4 space-y-3">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <h4 className="text-sm font-semibold text-foreground">{t.title}</h4>
-        <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">accepted {t.acceptedOn}</span>
+        <span className="flex items-center gap-2 whitespace-nowrap">
+          {t.resolvedOn && (
+            <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
+              Resolved {t.resolvedOn}
+            </span>
+          )}
+          <span className="text-[10px] font-mono text-muted-foreground">accepted {t.acceptedOn}</span>
+        </span>
       </div>
       <Field label="The trade-off">{t.tradeOff}</Field>
       <Field label="Why it was accepted">{t.whyAccepted}</Field>

@@ -12,7 +12,7 @@
 // random histories, the attribution means what the UI says it means.
 import { describe, expect, it } from 'vitest';
 import { buildMonthlyMovements, buildPeriodBridge, type NetWorthSnapshotRow } from '@/lib/netWorthMovement';
-import { buildPeriods, buildSnapshot, type HistoricalPriceMap, type NetWorthHistoryRow } from '@/lib/periodReports';
+import { buildPeriods, buildSnapshot, periodClosingAsOf, periodOpeningAsOf, type HistoricalPriceMap, type NetWorthHistoryRow } from '@/lib/periodReports';
 import type { Transaction } from '@/types/portfolio';
 
 function rng(seed: number) {
@@ -129,22 +129,25 @@ describe('Reports period bridge vs per-share oracle', () => {
     for (const type of ['quarter', 'half'] as const) {
       for (const p of buildPeriods(2026, type)) {
         if (p.end > new Date(2026, 11, 31)) continue;
-        const a = buildSnapshot(p.start, txs, {}, {}, history, cash, { historicalPrices: hist });
-        const b = buildSnapshot(p.end, txs, {}, {}, history, cash, { historicalPrices: hist });
+        // Measured exactly as Reports.tsx does: previous day's last instant → the period's own last instant.
+        const open = periodOpeningAsOf(p);
+        const close = periodClosingAsOf(p, 'completed');
+        const a = buildSnapshot(open, txs, {}, {}, history, cash, { historicalPrices: hist });
+        const b = buildSnapshot(close, txs, {}, {}, history, cash, { historicalPrices: hist });
         const bridge = buildPeriodBridge(a, b, txs);
 
         let oracleNewMoney = 0, oraclePrice = 0;
         const closeAt = (s: string, d: Date) => closeOn[s][ymd(d)];
         for (const s of SYMS) {
-          const qOpen = txs.filter((t) => t.symbol === s && new Date(t.date + 'T00:00:00') <= p.start)
+          const qOpen = txs.filter((t) => t.symbol === s && new Date(t.date + 'T00:00:00') <= open)
             .reduce((q, t) => q + (t.type === 'BUY' ? t.quantity : -t.quantity), 0);
-          oraclePrice += qOpen * (closeAt(s, p.end) - closeAt(s, p.start));
+          oraclePrice += qOpen * (closeAt(s, close) - closeAt(s, open));
           for (const t of txs) {
             const td = new Date(t.date + 'T00:00:00');
-            if (t.symbol !== s || !(td > p.start && td <= p.end)) continue;
+            if (t.symbol !== s || !(td > open && td <= close)) continue;
             const sq = t.type === 'BUY' ? t.quantity : -t.quantity;
             oracleNewMoney += sq * t.price;
-            oraclePrice += sq * (closeAt(s, p.end) - t.price);
+            oraclePrice += sq * (closeAt(s, close) - t.price);
           }
         }
         const find = (k: string) => bridge.rows.find((x) => x.key === k)!.amount;

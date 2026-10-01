@@ -137,6 +137,26 @@ describe('Reports page', () => {
     expect(screen.getAllByText(/No net-worth snapshot exists at or before the opening date/).length).toBeGreaterThan(0);
   });
 
+  it("does not count a trade or closing price from the next period's first day in a completed period (period-end boundary)", async () => {
+    // Q1 FY2026-27 ends Jul 1 (exclusive). 10 TCS were bought in April; 10 more on Jul 1 — the first day of Q2.
+    // Q1's AUM must be 10 × the Jun-30 close (₹120) = ₹1,200, not 20 × the Jul-1 close (₹130) = ₹2,600.
+    historicalPriceRows.push({ symbol: 'TCS', date: '2026-06-30', close: 120 }, { symbol: 'TCS', date: '2026-07-01', close: 130 });
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [
+        { id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-04-15' },
+        { id: '2', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-07-01' },
+      ],
+      currentPrices: { TCS: 150 },
+    }));
+    renderReports();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Q1 2026-27/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Q1 2026-27/ }));
+
+    await waitFor(() => expect(screen.getAllByText('₹1,200').length).toBeGreaterThan(0));
+    expect(screen.queryByText('₹2,600')).not.toBeInTheDocument();
+  });
+
   it('shows the real projection start value (not a hardcoded ₹0) for an upcoming period', async () => {
     mockedUsePortfolio.mockReturnValue(baseHookValue({
       transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 100, price: 123.45, date: '2026-04-15' }],
