@@ -84,6 +84,28 @@ export function periodStatus(p: PeriodDef, now: Date = new Date()): 'completed' 
   return 'upcoming';
 }
 
+/**
+ * The instants at which a period is measured. `PeriodDef.end` is EXCLUSIVE — it is midnight at the START
+ * of the next period (e.g. Q2's end is Oct 1 00:00). buildSnapshot treats `asOf` as inclusive of that whole
+ * calendar day (a trade or close dated Oct 1 is "≤ Oct 1 00:00"), so passing `p.end` as the closing point
+ * silently pulled the next period's first-day trades and closing price into this period's close, and
+ * `p.start` as the opening point pulled the first day's in as well.
+ *
+ * Measure at the last instant of the day BEFORE instead: a period opens where the previous one closed
+ * (`start − 1 ms`) and a completed period closes at its own last instant (`end − 1 ms`). Every day's trades
+ * and closes then land in exactly one period, and consecutive periods share a boundary point.
+ * Balance snapshots (net_worth_history) are compared by timestamp, so they were never affected.
+ */
+export function periodOpeningAsOf(p: PeriodDef): Date {
+  return new Date(p.start.getTime() - 1);
+}
+
+export function periodClosingAsOf(p: PeriodDef, status: ReturnType<typeof periodStatus>, now: Date = new Date()): Date {
+  if (status === 'in-progress') return now;
+  if (status === 'upcoming') return periodOpeningAsOf(p); // not started: close == open, nothing has happened yet
+  return new Date(p.end.getTime() - 1);
+}
+
 // ── Historical prices ──
 // Each symbol's array MUST be sorted ascending by date (ISO string).
 export type HistoricalPriceMap = Record<string, Array<{ date: string; close: number }>>;

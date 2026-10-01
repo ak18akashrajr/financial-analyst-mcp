@@ -7,7 +7,7 @@
  * Add new entries at the END of the relevant area; never silently delete one — mark it resolved in
  * `revisitWhen` and keep the history instead.
  */
-export type TradeOffArea = 'Snapshots (data source)' | 'Seasonality audit' | 'Reports movement card';
+export type TradeOffArea = 'Snapshots (data source)' | 'Seasonality audit' | 'Reports movement card' | 'AI tools (edge functions)';
 
 export interface AcceptedTradeOff {
   /** Stable slug — never reuse. */
@@ -24,11 +24,13 @@ export interface AcceptedTradeOff {
   revisitWhen: string;
   /** ISO date the trade-off was accepted. */
   acceptedOn: string;
+  /** ISO date it was fixed. Set instead of deleting the entry, so the history and reasoning stay. */
+  resolvedOn?: string;
   /** Where the behaviour lives. */
   source: string;
 }
 
-export const TRADE_OFF_AREAS: TradeOffArea[] = ['Snapshots (data source)', 'Seasonality audit', 'Reports movement card'];
+export const TRADE_OFF_AREAS: TradeOffArea[] = ['Snapshots (data source)', 'Seasonality audit', 'Reports movement card', 'AI tools (edge functions)'];
 
 const ACCEPTED = '2026-10-01';
 
@@ -116,17 +118,18 @@ export const ACCEPTED_TRADE_OFFS: AcceptedTradeOff[] = [
   {
     id: 'reports-period-end-boundary',
     area: 'Reports movement card',
-    title: 'Trades and prices dated on the first day of the next period count in the earlier period\'s close',
+    title: "Trades and prices dated on the first day of the next period counted in the earlier period's close",
     tradeOff:
-      'Reports values a completed period at 00:00 on the exclusive end date (e.g. Oct 1). Holdings and historical closes dated that day are therefore included in the Sep-30 quarter close, while a balance edit made later on Oct 1 is correctly excluded.',
+      'Reports measured a completed period at 00:00 on its exclusive end date (e.g. Oct 1). Because a snapshot treats that date as a whole day, holdings and historical closes dated Oct 1 leaked into the Sep-30 quarter close (and the first day of a period leaked into its own opening point). Balance edits were never affected: they are compared by timestamp.',
     whyAccepted:
-      'It is existing behaviour behind the AUM figures and their tests; changing it moves published numbers, so it was kept out of this change.',
+      'It was accepted at first because it sat behind the published AUM figures and their tests, and changing it moves those numbers. It has since been fixed deliberately in its own change.',
     impact:
-      'The movement card stays consistent with the AUM tile (it uses the same snapshots), and the next period opens from the same point, so nothing is double counted. The quarter close can be slightly overstated if you traded on the first day of the next quarter.',
+      "Before the fix a quarter close could be overstated if you traded on the first day of the next quarter (e.g. 10 shares held at the quarter end plus a buy of 10 more on the next quarter's first day showed as 20 shares at that day's higher price). Now a period opens where the previous one closed (the last instant of the day before) and closes at its own last instant, so each day's trades and prices land in exactly one period. AUM, the YoY and period-over-period figures and the movement card all use this rule; historical AUM for affected periods can differ from what was shown before.",
     revisitWhen:
-      'Worth a separate fix: value completed periods at the last instant of the final day (end − 1 ms). It will change existing AUM figures and tests, so do it deliberately.',
+      "Resolved for the Reports page. The AI tools had their own version of the problem, fixed separately — see the 'AI tools' entries below. Note for next time: in production transactions.date is a full entry timestamp (not a bare date), so the page-level leak showed up mainly through historical closes dated on the boundary day.",
     acceptedOn: ACCEPTED,
-    source: 'src/pages/Reports.tsx · endAsOf, src/lib/periodReports.ts · computeHoldingsAt',
+    resolvedOn: '2026-10-01',
+    source: 'src/lib/periodReports.ts · periodOpeningAsOf / periodClosingAsOf, src/pages/Reports.tsx',
   },
   {
     id: 'reports-no-opening-snapshot',
@@ -172,5 +175,39 @@ export const ACCEPTED_TRADE_OFFS: AcceptedTradeOff[] = [
       'Only if the ₹1 display difference starts to bother you: show paise in the audit popovers.',
     acceptedOn: ACCEPTED,
     source: 'src/components/NetWorthBridgeTable.tsx',
+  },
+
+  // ── AI tools (edge functions) ──
+  {
+    id: 'ai-tools-period-boundaries',
+    area: 'AI tools (edge functions)',
+    title: "Period and as-of valuations compared timestamps against bare dates and midnight UTC",
+    tradeOff:
+      "get_period_performance, get_portfolio_value_as_of and get_exposure_drift compared transactions.date (a full entry timestamp in production, because add_transaction_and_snapshot lets the column default fill it) against bare YYYY-MM-DD strings, and compared net_worth_history.recorded_at against a bare date, which Postgres reads as 00:00 UTC (05:30 IST). The period start was also inclusive.",
+    whyAccepted:
+      "Not accepted — fixed. Recorded here so the reasoning and the before/after behaviour are not lost.",
+    impact:
+      "Before: every trade made on a period's last day was missing from its closing holdings; the whole last day's balance edits (and, for an in-progress period, today's own edits) were missing from closing cash; and a bare-dated first-day trade counted in both the opening holdings and the period's activity, understating market appreciation. Now: trades are placed by their IST calendar day, a period opens at the end of the previous day (so it opens where the previous one closed), and cash is read up to the end of the IST day (up to now for an in-progress period). The same rule applies to the as-of valuation tools, so those figures can differ from what the AI quoted before.",
+    revisitWhen:
+      "Resolved. Deploy the edge functions for it to take effect: npx supabase@1.190.0 functions deploy --use-api.",
+    acceptedOn: ACCEPTED,
+    resolvedOn: '2026-10-01',
+    source: 'supabase/functions/_shared/portfolio-data.ts · txnDayIst, endOfIstDay, getPeriodPerformance',
+  },
+  {
+    id: 'ai-tools-list-transactions-range',
+    area: 'AI tools (edge functions)',
+    title: "list_transactions compared dates as plain strings",
+    tradeOff:
+      "listTransactions filtered t.date >= startDate && t.date <= endDate on the raw string. With timestamped trades, any trade made on the end date itself was excluded from the range.",
+    whyAccepted:
+      "Not accepted — fixed in the same change as the period boundaries, once it was clear it was the same defect. It is kept apart from the period entry because it is a different tool with its own callers.",
+    impact:
+      "Before: asking the AI for transactions between two dates could miss trades made on the end date. Now the range is inclusive on IST calendar days at both ends; the returned date strings are unchanged.",
+    revisitWhen:
+      "Resolved. Deploy the edge functions for it to take effect.",
+    acceptedOn: ACCEPTED,
+    resolvedOn: '2026-10-01',
+    source: 'supabase/functions/_shared/portfolio-data.ts · listTransactions',
   },
 ];

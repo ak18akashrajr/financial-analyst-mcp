@@ -9,7 +9,7 @@ import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
-  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge, nearestSnapshot,
+  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge, nearestSnapshot, periodOpeningAsOf, periodClosingAsOf,
   type PeriodDef, type PeriodType, type HistoricalPriceMap,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
@@ -199,8 +199,9 @@ const ReportsContent = () => {
   //  - start snapshot: always a past point → useLive=false (historical close, else cost).
   //  - end snapshot:   live only when period is in-progress; otherwise historical.
   const fallbackDate = useMemo(() => new Date(), []);
-  const startDate = active?.start ?? fallbackDate;
-  const endAsOf = !active ? fallbackDate : (status === 'upcoming' ? active.start : (status === 'in-progress' ? new Date() : active.end));
+  // Measured at the last instant of the previous day / of the period itself — see periodOpeningAsOf.
+  const startDate = active ? periodOpeningAsOf(active) : fallbackDate;
+  const endAsOf = !active ? fallbackDate : periodClosingAsOf(active, status);
   const startSnap = useMemo(
     () => buildSnapshot(startDate, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false }),
     [startDate, transactions, currentPrices, symbolMetaLite, history, cash, historicalPrices],
@@ -238,7 +239,7 @@ const ReportsContent = () => {
     }
     if (!prev) return null;
     const prevSt = periodStatus(prev);
-    const prevEnd = prevSt === 'upcoming' ? prev.start : prev.end;
+    const prevEnd = periodClosingAsOf(prev, prevSt);
     const prevSnap = buildSnapshot(prevEnd, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
     const delta = endSnap.netWorth - prevSnap.netWorth;
     const pct = prevSnap.netWorth > 0 ? (delta / prevSnap.netWorth) * 100 : 0;
@@ -269,12 +270,12 @@ const ReportsContent = () => {
     const bridges: Array<PeriodBridge | null> = [];
     const rows = periods.map(p => {
       const st = periodStatus(p);
-      const asOf = st === 'upcoming' ? p.start : (st === 'in-progress' ? new Date() : p.end);
+      const asOf = periodClosingAsOf(p, st);
       const snap = buildSnapshot(asOf, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: st === 'in-progress' });
       // Period-only (incremental) unrealized P&L — resets each period, unlike `pnl`
-      // below which is the all-time cumulative figure. Always marked historically at
-      // p.start since a period's start is never in the future.
-      const startOfPeriodSnap = buildSnapshot(p.start, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
+      // below which is the all-time cumulative figure. Always marked historically, at the
+      // previous period's close, since a period's opening point is never in the future.
+      const startOfPeriodSnap = buildSnapshot(periodOpeningAsOf(p), transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
       const periodPnl = st === 'upcoming' ? 0 : snap.pnl - startOfPeriodSnap.pnl;
       // Net-worth attribution for this period: opening = start-of-period snapshot above, closing = `snap`.
       bridges.push(st === 'upcoming' ? null : buildPeriodBridge(startOfPeriodSnap, snap, transactions));
@@ -1221,7 +1222,7 @@ function buildAudits(a: BuildAuditsArgs) {
     ),
 
     buyCount: (
-      <AuditSection label={`BUY transactions between ${asOfLabel(active.start)} and ${asOfLabel(active.end)}`}>{txnTable(buyTxns)}</AuditSection>
+      <AuditSection label={`BUY transactions between ${asOfLabel(active.start)} and ${asOfLabel(new Date(active.end.getTime() - 1))}`}>{txnTable(buyTxns)}</AuditSection>
     ),
     sellCount: (
       <AuditSection label={`SELL transactions in period`}>{sellTxns.length ? txnTable(sellTxns) : <p className="text-[11px] text-muted-foreground">No SELL transactions.</p>}</AuditSection>
