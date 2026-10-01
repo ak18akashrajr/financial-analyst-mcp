@@ -3,6 +3,283 @@
 Running list of action items for this repo. Add new items to the bottom of the relevant section;
 check items off (`- [x]`) when merged, and note the PR number.
 
+## Open: calculation audit (2026-10-01)
+
+Whole-codebase audit of calculation logic (client `src/`, edge functions and SQL in `supabase/`).
+Nothing was changed by the audit itself; these are the findings, to be fixed in small themed
+branches (one PR each, with tests — per CLAUDE.md). Items already on the Dev Zone trade-offs
+register ([acceptedTradeOffs.ts](src/lib/acceptedTradeOffs.ts)) are deliberately excluded.
+
+**Status tags:** `[checked]` = code re-read and confirmed by hand · `[reproduced]` = ran the real
+code and got the wrong output · `[agent-traced]` = traced by the audit but not independently
+re-checked (re-verify before fixing — see the "verify before implementing" convention) ·
+`[conditional]` = depends on something not visible from the repo (stated in the item).
+Numeric examples are hand-computed unless marked reproduced.
+
+### High — wrong numbers a decision could rest on
+
+- [ ] **H1. AI tools compute cost basis with the old "subtract sale proceeds" formula; the app uses
+      FIFO.** [`portfolio-data.ts:112-118`](supabase/functions/_shared/portfolio-data.ts)
+      (`computeHoldingsFromTxns`) vs [`costBasis.ts`](src/lib/costBasis.ts), whose header comment
+      documents this exact formula as the bug that was replaced. Feeds `invested`, `avgPrice`,
+      `pnl`, `pnlPercent` in `get_portfolio_summary` / `list_holdings`. Example: buy 10@100, sell
+      5@300, price 300 → app invested ₹500 / P&L +₹1,000; AI invested **−₹500**, P&L +₹2,000,
+      `pnlPercent` **−400%**. Fix: port FIFO into the Deno side (same hand-mirrored pattern as
+      `forecast.ts`) and add a partial-sell case to `portfolio-data.test.ts` (none today). Needs
+      `functions deploy`. `[checked]`
+- [ ] **H2. Forecast compounds cash, PF and credit-card debt at the equity drift/volatility.**
+      [`Forecast.tsx:227`](src/pages/Forecast.tsx), [`forecast.ts:292`](src/lib/forecast.ts),
+      [`mcp-tools.ts:544-547`](supabase/functions/_shared/mcp-tools.ts),
+      [`_shared/forecast.ts:333`](supabase/functions/_shared/forecast.ts). Comments,
+      `docs/forecasting-plan.md` and the page banner all say cash is a "flat, non-stochastic
+      offset … held constant", but `startValue = equity + cashOffset` is multiplied by
+      `exp(drift + shock)` every month. Example: equity ₹50L + cash/PF ₹30L, 12% / 18% vol, 24
+      months → code p50 ₹98.5L vs intended ₹91.5L; p90 overstated ~₹21L. Also affects the
+      bootstrap method and the `forecast_portfolio_value` AI tool. Fix: simulate equity only, add
+      the offset after (both copies). `[checked]`
+- [ ] **H3. Portfolio risk metrics don't re-weight after dropping holdings with no price history.**
+      [`riskMetrics.ts:127-132,160-165`](src/lib/riskMetrics.ts) and
+      [`portfolio-data.ts:459-492`](supabase/functions/_shared/portfolio-data.ts) (same code).
+      The skipped holding counts as zero return / volatility / beta, contradicting the page footer
+      ("not assumed to be zero"). Example: A 60% (20% return, beta 1.0), B 40% with no data →
+      page shows return 12%, beta 0.60, alpha +2.0%; re-weighted should be 20%, 1.0, +8.0%. Alpha
+      can flip sign. Fix: divide by the included weight; add a test with an excluded holding
+      (existing test uses two equal holdings only). `[checked]`
+- [ ] **H4. XIRR returns `null` for any annualised loss worse than ~−42%.**
+      [`xirr.ts:38-53`](src/lib/xirr.ts): Newton starts at 10%, first step overshoots below the
+      −0.99 guard, solver gives up. Reproduced: 365d 1000→600 (−40%) OK; 1000→550 (−45%) and
+      1000→500 (−50%) → `null`; 30d 1000→900 and 90d 1000→800 → `null`. Hits dashboard XIRR, USD
+      XIRR, benchmark XIRR, rolling XIRR (shared solver). Fix: retry from several guesses
+      (e.g. −0.5, 0.1, 1) or bracket + bisect. `[reproduced]`
+- [ ] **H5. Category `'Stocks'` gets the wrong tax rules.**
+      [`taxCalculator.ts:53-86`](src/lib/taxCalculator.ts) has no `'Stocks'` case (falls to the
+      24-month / 30% default) while `:99` lists it as exemption-eligible; `'Stocks'` is the first
+      option in [`HoldingsTable.tsx:15`](src/components/HoldingsTable.tsx). Example: gain ₹10,000 on
+      a lot held 400 days → taxed short-term 30% (₹3,000) vs long-term 12.5% fully inside the
+      ₹1.25L exemption (₹0). Other categories also fall to the default ('US Stocks / ETFs', 'Gold &
+      Silver', 'Fixed Deposits', 'NPS', …) — decide intended treatment for each (see Questions).
+      `[checked]`
+- [ ] **H6. Unpaginated reads hit the 1,000-row response cap.**
+      [`usePortfolio.ts:46`](src/hooks/usePortfolio.ts) (all transactions — past 1,000 the oldest
+      are silently dropped, breaking FIFO / XIRR / tax / holdings everywhere),
+      [`RiskMetrics.tsx:77`](src/pages/RiskMetrics.tsx) (keeps ~1000/N days per symbol while
+      labelled "90 trading days"), [`CorrelationHeatmap.tsx:69`](src/components/CorrelationHeatmap.tsx)
+      (keeps the *oldest* 1,000 rows), [`RollingReturns.tsx:174`](src/pages/RollingReturns.tsx)
+      (no order, no range), [`useNetWorthHistory.ts:48`](src/hooks/useNetWorthHistory.ts),
+      [`mcp-tools.ts:504`](supabase/functions/_shared/mcp-tools.ts) (forecast tool keeps the oldest
+      1,000 rows → stale start value), [`portfolio-data.ts:164,342`](supabase/functions/_shared/portfolio-data.ts).
+      `Reports.tsx` and `useDollarReturns.ts` already page correctly — reuse that pattern. Also add
+      `symbol` as a secondary order key in Reports' pagination (ties on `date` can skip/duplicate
+      rows). `[conditional]` — the repo itself states the 1,000-row cap and `supabase/config.toml`
+      has no `max_rows` override, but the live project setting isn't visible: **check current row
+      counts first** (see Questions).
+
+### Medium — misleading or inconsistent numbers
+
+**Labels / definitions**
+- [ ] **M1. "Realized & Unrealized Alpha" shows unrealized P&L only.**
+      [`SummaryBar.tsx:93-98`](src/components/SummaryBar.tsx) ← `usePortfolio.ts:557`. Buy 10@100,
+      sell 10@150 → card shows ₹0 / 0.00%, not ₹500. Also the AUM sub-label "Holdings + Cash −
+      Debt" omits PF, which `totalPortfolioValue` adds. Needs an owner decision (Question 2).
+      `[checked]`
+- [ ] **M2. "Top Gainers" includes losing holdings; same holding can be in both lists.**
+      [`usePortfolio.ts:576-581`](src/hooks/usePortfolio.ts): no `pnlPercent > 0` filter on
+      `gainers`. Three holdings at +10% / −3% / −12% → all three are "Top Gainers". `[checked]`
+- [ ] **M3. Tax: no loss set-off, and "Total Gains" / "Post-Tax Profit" ignore losses.**
+      [`taxCalculator.ts:205-206`](src/lib/taxCalculator.ts) (`Math.max(0, gain)` per lot),
+      [`Taxes.tsx:207-209`](src/pages/Taxes.tsx). LT gain ₹3,00,000 + ST loss ₹1,00,000 → tax
+      ₹21,875 vs ₹9,375 with set-off; repo's own test numbers show "Total Gains" +500 when true net
+      is −250. Note `tax-calculator.test.ts` asserts the missing-price → full-loss behaviour.
+      Decide scope first (Question 4). `[checked]`
+
+**Returns / benchmarks / charts**
+- [ ] **M4. Dollar-adjusted returns mix FIFO cost (INR) with average cost (USD).**
+      [`fx.ts:115-129`](src/lib/fx.ts) vs `usePortfolio.ts:467` / `useDollarReturns.ts:124`. After a
+      partial sell across different buy prices a fake "currency effect" appears: buy 10@100 +
+      10@200, sell 10, price ₹200, FX flat at 80 → shows +33% currency effect and avg entry rate
+      ₹106.67 (should be 0% / 80). `[checked]`
+- [ ] **M5. "Portfolio Return" on Benchmark / `compare_to_benchmark` includes new contributions;
+      window is N snapshots, not N days.** [`Benchmark.tsx:162-171`](src/pages/Benchmark.tsx),
+      [`portfolio-data.ts:647-671`](supabase/functions/_shared/portfolio-data.ts). Holdings ₹1L +
+      another ₹1L bought, prices flat → +100% (outperformance +98% vs NIFTY +2%). S&P benchmark is
+      in USD points vs an INR portfolio, no FX (also `benchmarkXirr.ts:79,94`, `[agent-traced]`).
+      `[checked]`
+- [ ] **M6. Rolling Returns: missing start price makes pre-window units "free money"; summary
+      columns aren't window-gated.** [`RollingReturns.tsx:53-67`](src/pages/RollingReturns.tsx):
+      opening outflow only `if (qtyAtStart > 0 && startPrice)` but terminal value uses full qty
+      (the portfolio-level function returns `null` here — inconsistent). `hasFullTrailingWindow`
+      gates only the chart, so a 122-day-old position shows the same +33% under 1Y/3Y/5Y.
+      Asymmetry `[checked]`; ungated columns `[agent-traced]`.
+- [ ] **M7. PortfolioCharts reduces "invested" by sell *proceeds*.**
+      [`PortfolioCharts.tsx:82-88`](src/components/PortfolioCharts.tsx) — the old bug
+      `costBasis.ts` documents. Buy 10@100, sell 9@500 → invested −₹3,500; a full exit erases the
+      realised gain from the P&L line. Also: every past date valued at today's price; unpriced
+      symbol valued at cost (table shows ₹0); `t.date.split('T')[0]` keys on the UTC date;
+      drag-select XIRR badge uses these hypothetical values. `[checked]`
+- [ ] **M8. Drag-select range keeps following the cursor after mouse-up.**
+      [`useChartRangeSelection.ts:58-63`](src/hooks/useChartRangeSelection.ts): `onMouseMove`
+      updates the cursor regardless of `isDragging`. Affects the range badge on Reports, NetWorth,
+      Debt, Rolling, Portfolio charts. Test gap: `chart-range-selection.test.ts` never moves the
+      mouse after `onMouseUp`. `[checked]`
+- [ ] **M9. Reports KPI shows green "+0.00% vs …" when the previous period's AUM is 0.**
+      [`Reports.tsx:245,649`](src/pages/Reports.tsx): `pct` falls back to `0`; should be `—` (also
+      feeds the AI-narrative prompt). `[checked]`
+
+**Goals / projections**
+- [ ] **M10. Projections "currently allocated" differs from GoalTrack.**
+      [`Projections.tsx:254-268`](src/pages/Projections.tsx) uses the stored `quantity` snapshot
+      (stale for `track_max`) and doesn't clamp over-allocations;
+      [`GoalTrack.tsx:119-219`](src/pages/GoalTrack.tsx) uses `resolveSymbolRequestQty` +
+      `buildScaleMap`. Example: `track_max` row with stored qty 10, 20 units held @₹1,500 →
+      Projections ₹15,000 vs GoalTrack ₹30,000. Monte Carlo start corpus and P(goal met) inherit
+      it. Fix: share the GoalTrack resolver. `[checked]`
+- [ ] **M11. "Step-up SIP equivalent" matches total rupees contributed, not future value.**
+      [`monteCarloAdvanced.ts:102-106`](src/lib/monteCarloAdvanced.ts). Flat ₹10,000/mo × 10y @10%
+      → ₹20.48L; suggested ₹6,275 step-up reaches ₹18.95L (7.5% short). Also `years < 1` returns
+      `flat × years`. Code `[checked]`; figures `[agent-traced]`.
+- [ ] **M12. Two monthly-rate conventions.** Exact `(1+r)^(1/12)−1` in `projectXIRR` /
+      `simulateCrash` / `replayCrisis`; nominal `r/12` in
+      [`projectionEngine.ts:128`](src/lib/projectionEngine.ts),
+      [`monteCarloAdvanced.ts:35,145`](src/lib/monteCarloAdvanced.ts). 12% stated → 12.68%
+      effective on the `r/12` tabs; 10y ×3.30 vs ×3.106. Pick one and document. `[checked]`
+- [ ] **M13. FIRE age is a median over only the paths that reach FI, capped at retirement age.**
+      [`monteCarloAdvanced.ts:160-169,210-213`](src/lib/monteCarloAdvanced.ts). At a 60.6% reach
+      rate the page shows 45; counting non-reachers gives 48. Already-FI at m=0 is never detected.
+      UI copy ("earliest age the median path can sustain") doesn't match. `[agent-traced]`
+- [ ] **M14. Forecast backtest and bootstrap.** (a) [`forecast.ts:456-458`](src/lib/forecast.ts):
+      backtest compares a no-contribution forecast with an actual value that includes new buys →
+      coverage biased for anyone still investing. (b) [`Forecast.tsx:241-246`](src/pages/Forecast.tsx):
+      bootstrap ignores the ±50% drift clamp while the page shows the clamped "Fitted Drift". (c)
+      Backtest always uses plain-vol parametric even when Bootstrap/EWMA is selected. `[checked]`
+- [ ] **M15. "Portfolio volatility" is a weighted average of per-holding volatilities (no
+      diversification).** [`riskMetrics.ts:129,160`](src/lib/riskMetrics.ts),
+      [`portfolio-data.ts:488`](supabase/functions/_shared/portfolio-data.ts). Two uncorrelated 20%
+      assets at 50/50 → shows 20% vs true 14.1%; Sharpe understated. Either compute from the
+      portfolio return series or relabel as an upper bound. `[checked]`
+
+**Data integrity**
+- [ ] **M16. Editing a trade resets its timestamp to date-only midnight (00:00Z).**
+      [`TransactionHistory.tsx:58-65`](src/components/TransactionHistory.tsx) always sends
+      `date: editDate`; `update_transaction_and_snapshot` does `COALESCE(p_date, date)`. A
+      price-only edit of a 15:00 SELL can move it before its 10:00 BUY → FIFO drops the SELL and
+      shows a phantom holding. Fix: only send `date` when changed. UI side `[checked]`, SQL side
+      `[agent-traced]`.
+- [ ] **M17. No oversell guard; FIFO vs net-quantity disagree once the ledger is impossible.**
+      [`AddTransactionForm.tsx:57-69`](src/components/AddTransactionForm.tsx), edit path, and
+      `add_transaction_and_snapshot` only check `quantity > 0`. Buy 10, sell 15, buy 10 → holdings
+      10 shares, snapshot 5. `[agent-traced]`
+- [ ] **M18. "All Family" view pools SELLs across members and consumes the oldest lot regardless of
+      who sold.** [`lotAttribution.ts:14-34`](src/lib/lotAttribution.ts) → family split, GoalTrack
+      contributions. A buys 10 (Jan), B buys 10 (Mar), B sells 10 → split shows A ₹0 / B ₹1,200
+      (should be reversed). A test asserts the pooling — confirm intent first (Question 3).
+      `[checked]`
+- [ ] **M19. Edge functions ignore `family_member_id`.**
+      [`portfolio-data.ts:164,268,810`](supabase/functions/_shared/portfolio-data.ts): `fetchCash`
+      reads one arbitrary row (`limit(1).single()`), `fetchCashAsOf` reads any member's snapshot.
+      `[agent-traced]` — dormant if only one member exists (Question 3).
+
+**AI tools vs app**
+- [ ] **M20. `get_period_performance` drops a holding with no price at one end only, then reports
+      the difference as the return** (app falls back to cost).
+      [`portfolio-data.ts:883-929`](supabase/functions/_shared/portfolio-data.ts) vs
+      [`periodReports.ts:143-159`](src/lib/periodReports.ts). Agent example: +40.0% vs +7.7%.
+      `[agent-traced]`
+- [ ] **M21. AI exposure / limit tools exclude cash and PF; the app includes them.**
+      [`portfolio-data.ts:299-310`](supabase/functions/_shared/portfolio-data.ts) vs
+      `usePortfolio.ts:603-626`. India 75% (AI) vs 80% (UI). Intent is a question (Question 5).
+      `[agent-traced]`
+- [ ] **M22. IST fix leftover: UTC "today" in the edge functions.**
+      [`portfolio-data.ts:196,851`](supabase/functions/_shared/portfolio-data.ts)
+      (`now.toISOString().slice(0,10)`). Between 00:00–05:30 IST, `list_transactions` with no dates
+      returns the previous month and `get_period_performance` can resolve the wrong period. Use the
+      IST day helper already in this file. `[checked]`
+- [ ] **M23. Monthly bars can overwrite daily rows.**
+      [`fetch-historical-prices/index.ts:28,51,62`](supabase/functions/fetch-historical-prices/index.ts):
+      upsert key `(symbol, date)`; a monthly bar is dated the 1st but carries the month-end close →
+      spurious daily returns inflate volatility. `RiskMetrics` has no granularity guard
+      (`detectGranularity` exists in `portfolioSeries.ts`). `[conditional]` — depends on Yahoo's
+      monthly-bar date convention, which was not verified.
+
+### Low
+
+- [ ] **XIRR / dates:** same-day net-zero flows return the seed 10% (`xirr.ts:46`); tax holding
+      period uses elapsed 24h blocks, so a lot can read short-term up to a day late
+      (`taxCalculator.ts:148`); `hasSameDayReentry` groups by UTC date (`taxCalculator.ts:274`);
+      float residue (~2.8e-17) creates phantom lots in the Tax report (`taxCalculator.ts:198`);
+      `forecast.ts:53-59` `toDayString` slices the UTC date.
+- [ ] **Unpriced / zero prices:** client values a symbol with no price at ₹0 (stays in invested,
+      shows −100%), server excludes it; a stored price of 0 is accepted by `fetch-prices` and
+      treated as valid by `hasPriceData`; `fetch-historical-prices` / `fetch-benchmark-prices` only
+      skip null. `fetch-fx-rates` already guards `<= 0` — copy that.
+- [ ] **Display:** Family split % can exceed 100% with a negative-net-worth member
+      (`FamilyNetWorthSplit.tsx:25,44`); one thinly-priced symbol blanks the whole Correlation
+      heatmap (`CorrelationHeatmap.tsx:90-101`); Debt/Net-worth charts don't refresh in-session
+      (`Index.tsx:62,154`); treemap keeps 8 tiles with no "Other"; untagged holdings show as
+      "Equity / India" in the table but "Untagged" in exposure (→ 0% equity weight in the stress
+      default, `HoldingsTable.tsx:101`, `Projections.tsx:207-213`).
+- [ ] **Reports:** SIP adherence / in-progress projection miscount months (`periodReports.ts:393`;
+      e.g. 200% shown instead of 100%); early-history flows divided by a tiny base
+      (`portfolioSeries.ts:276`); `period-reports.test.ts:156-178` still describes the pre-fix
+      boundary; `RollingReturns.tsx:297` says "Time-weighted XIRR" but XIRR is money-weighted.
+- [ ] **Projections:** "Conservative" = `xirr × 0.8` is better than base when XIRR is negative
+      (`periodReports.ts:426`, `projectionEngine.ts:27`); Overview Monte Carlo hardcodes 18% vol
+      (`projectionEngine.ts:127`); recovery-years hint says "(plus SIPs)" but the code ignores SIP;
+      fractional horizon makes `Array(years)` throw; `purchasingPowerLoss` shows "−NaN%" when the
+      corpus is depleted; GoalTrack splits LT/ST gain by cost share rather than per-lot
+      (`GoalTrack.tsx:170-179`); required-SIP bisection uses fresh random draws per step.
+- [ ] **Deployment signal:** zero/negative PE (and negative forward PE) scores as the cheapest
+      possible reading (`deploymentSignal.ts:58-59,85-86`, `DeploymentPlan.tsx:48`); CAPE applies
+      the CPI array oldest-first (`fetch-ticker-cape/index.ts:17-27`, `[agent-traced]` on the
+      ordering).
+- [ ] **AI tools:** `get_exposure_drift` omits fully-sold categories; `run_stress_test` with
+      unmatched symbols silently shocks nothing; as-of prices have no staleness limit and the
+      output hides the price date.
+- [ ] **Stale comments/docs:** `dateUtils.ts` and `taxCalculator.ts` say `transactions.date` is a
+      Postgres `DATE`; the migration defines `TIMESTAMP WITH TIME ZONE`. Tests use bare dates, so
+      they don't exercise the production shape.
+
+### Questions that block (or shape) the fixes above
+
+1. **Row counts (H6):** how many rows are in `transactions`, `historical_prices`,
+   `net_worth_history` today? Is the project's API max-rows still the default 1,000?
+2. **M1:** should "Realized & Unrealized Alpha" include realized gains (needs realized P&L from
+   sells), or should the label say "Unrealized"?
+3. **Family members (M18, M19):** does a second `family_members` row exist? Is pooled FIFO in "All
+   Family" intended?
+4. **Tax scope (H5, M3):** intended treatment for Gold (page disclaimer says 12 months / 12.5%, code
+   uses 24 months / 30%), Crypto (flat 30%), debt mutual funds, listed bonds, grandfathering? Should
+   "if I sell everything" ignore loss lots? Is "more than 12 months" calendar-month or > 365 days?
+5. **Cash on trades:** `add_transaction_and_snapshot` never changes cash — do you always lower
+   Operating Cash by hand after a buy? Affects NetWorthChart range XIRR, `get_period_performance`
+   (tells the AI a buy is "a reallocation"), and the income/expense ratio (a manual cash cut books
+   as an expense unless "exclude" is ticked). Also: should AI exposure/limit tools include cash and
+   PF (M21)?
+6. **Non-INR symbols:** any `.L` (pence) or USD tickers? `fetch-prices` stores Yahoo's price with no
+   currency check.
+7. **Seasonality "returns":** month-over-month net-worth change includes deposits — intended as a
+   return? (With a negative opening net worth a −100 → +50 move prints −150%.)
+8. **Deployment signal:** are the PE bands (<12, 12–15, …) meant for index-level PE but applied to
+   single stocks? Should the ERP penalty stack with the sector-PE penalty? Should missing factors
+   deflate the score or be rescaled? Also: is the 0.7× drawdown volatility in FIRE intentional?
+
+### Suggested order
+
+1. H1, H4, H5, and the H6 pagination — small, well-bounded.
+2. H2, H3 — shared between client and server, so each is one change in two places.
+3. M1, M2, M4, M7, M10 — the numbers on screen most often.
+4. The rest, after the questions above are answered. Edge-function fixes need
+   `npx supabase@1.190.0 functions deploy --use-api` to take effect.
+
+**Verified correct in the same audit (no action):** net-worth formula consistency across client,
+SQL snapshot and family split; XIRR NPV/derivative/signs; client FIFO and tax lots; 12.5% LTCG /
+20% STCG / ₹1.25L exemption / 4% cess; sample stdev, √252 annualisation and beta formula (client
+and server match line-for-line); FX direction; Reports period construction and bridge sums;
+exposure percentages summing to 100%; Monte Carlo σ/√12, Box–Muller, percentile indexing, GBM
+`μ − σ²/2` drift, inflation and FIRE corpus formulas; deployment-signal weights (sum to 1.00); SQL
+cash-flow classification; lakh/crore formatters. The 2026-10-01 period-boundary fix (`de1614d`)
+was re-verified as correct on both the client and the edge functions — only the UTC "today" (M22)
+remains.
+
 <details>
 <summary>Archive (completed)</summary>
 
