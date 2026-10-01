@@ -114,6 +114,29 @@ describe('Reports page', () => {
     expect(screen.queryByText(/marked at cost, not a real price/i)).not.toBeInTheDocument();
   });
 
+  it('shows what moved net worth in the active period: a holding price rise lands in "price movement", not "new money"', async () => {
+    // Q2 (in progress) opens Jul 1 with 10 TCS marked at the Jun-30 close of ₹120 = ₹1,200,
+    // and closes live at ₹150 = ₹1,500. The trade was dated Apr 15, so there is no new money in Q2.
+    historicalPriceRows.push({ symbol: 'TCS', date: '2026-06-30', close: 120 });
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-04-15' }],
+      currentPrices: { TCS: 150 },
+    }));
+    renderReports();
+
+    await waitFor(() => expect(screen.getByText(/What Moved Your Net Worth · Q2 2026-27/)).toBeInTheDocument());
+    // Opening ₹1,200 → closing ₹1,500: +₹300, all of it price movement. The historical close loads
+    // asynchronously, so wait for the figures to settle.
+    await waitFor(() => {
+      const priceRow = screen.getAllByText(/Price movement on holdings/)[0].closest('tr')!;
+      expect(within(priceRow).getByText('+₹300')).toBeInTheDocument();
+    });
+    const newMoneyRow = screen.getAllByText(/New money invested \(buys − sells\)/)[0].closest('tr')!;
+    expect(within(newMoneyRow).getByText('₹0')).toBeInTheDocument();
+    // No net-worth snapshot exists in this fixture, so the page must say its cash side is ₹0 by design.
+    expect(screen.getAllByText(/No net-worth snapshot exists at or before the opening date/).length).toBeGreaterThan(0);
+  });
+
   it('shows the real projection start value (not a hardcoded ₹0) for an upcoming period', async () => {
     mockedUsePortfolio.mockReturnValue(baseHookValue({
       transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 100, price: 123.45, date: '2026-04-15' }],
