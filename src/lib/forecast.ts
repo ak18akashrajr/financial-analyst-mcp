@@ -165,6 +165,14 @@ export interface ForecastOptions {
   rng?: () => number;
   /** Recurring monthly contribution added at each month end, ₹. Default 0. */
   monthlyContribution?: number;
+  /**
+   * A flat, non-stochastic amount (e.g. today's cash + PF − credit-card debt) added to every
+   * simulated value AFTER simulating. `startValue` must then be the equity-only value: the simulation
+   * compounds only that. Folding the offset into `startValue` instead would compound cash, PF and debt
+   * at the equity drift and volatility — a ₹30L cash/PF balance does not earn 12% with 18% vol — which
+   * overstated the median by ~₹7L and the p90 by ~₹21L in the audit's example. Default 0.
+   */
+  flatOffset?: number;
 }
 
 export interface BootstrapOptions extends ForecastOptions {
@@ -188,6 +196,7 @@ export interface FanPoint {
 
 export interface ForecastFan {
   method: ForecastMethod;
+  /** Equity start value plus `flatOffset` — i.e. the total the chart anchors on. */
   startValue: number;
   horizonMonths: number;
   simulations: number;
@@ -240,13 +249,16 @@ function summarize(
   method: ForecastMethod,
   startValue: number,
   horizonMonths: number,
-  paths: number[][],
+  simulatedPaths: number[][],
+  flatOffset = 0,
 ): ForecastFan {
+  // The offset is added here, after simulation, so it never compounds (see ForecastOptions.flatOffset).
+  const paths = flatOffset === 0 ? simulatedPaths : simulatedPaths.map((p) => p.map((v) => v + flatOffset));
   const points = buildFan(paths, horizonMonths);
   const finals = paths.map((p) => p[p.length - 1]).sort((a, b) => a - b);
   return {
     method,
-    startValue,
+    startValue: startValue + flatOffset,
     horizonMonths,
     simulations: paths.length,
     points,
@@ -296,7 +308,7 @@ export function forecastParametric(
     paths.push(path);
   }
 
-  return summarize('parametric', startValue, months, paths);
+  return summarize('parametric', startValue, months, paths, opts.flatOffset);
 }
 
 /**
@@ -327,7 +339,7 @@ export function forecastBootstrap(
 
   if (returns.length === 0) {
     const flat = [Array.from({ length: months + 1 }, (_, m) => startValue + contribution * m)];
-    return summarize('bootstrap', startValue, months, flat);
+    return summarize('bootstrap', startValue, months, flat, opts.flatOffset);
   }
 
   const periodsPerMonth = Math.max(1, Math.round(perYear / 12));
@@ -356,7 +368,7 @@ export function forecastBootstrap(
     paths.push(path);
   }
 
-  return summarize('bootstrap', startValue, months, paths);
+  return summarize('bootstrap', startValue, months, paths, opts.flatOffset);
 }
 
 export interface BacktestFold {

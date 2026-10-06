@@ -3,7 +3,7 @@
 // deliberately smaller surface). The priority case is the same one as src/test/portfolio-series.test.ts:
 // flow-adjustment must not read a contribution as a market return, since that's what would silently
 // corrupt forecast_portfolio_value's fitted drift.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildValueSeries,
   fitCaveats,
@@ -183,6 +183,47 @@ describe("forecastParametricTerminal", () => {
     expect(terminal.p10).toBe(100_000);
     expect(terminal.p50).toBe(100_000);
     expect(terminal.p90).toBe(100_000);
+  });
+});
+
+describe("forecastParametricTerminal: flatOffset must not compound (audit H2)", () => {
+  it("is exactly compounded equity plus a flat offset when volatility is zero", () => {
+    // Audit example: equity 50L + cash/PF 30L, 12% drift, 24 months. Intended p50 is about 91.5L; the old
+    // code compounded the whole 80L and reported about 98.5L.
+    const terminal = forecastParametricTerminal(5_000_000, 0.12, 0, 24, 50, 3_000_000);
+    expect(terminal.p50).toBeCloseTo(5_000_000 * Math.exp(0.24) + 3_000_000, 4);
+    expect(terminal.p50).toBeLessThan((5_000_000 + 3_000_000) * Math.exp(0.24) - 700_000);
+  });
+
+  it("shifts every percentile by exactly the offset and leaves the spread alone", () => {
+    const seeded = (seed: number) => {
+      let a = seed >>> 0;
+      return () => {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = a;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    };
+    const run = (offset: number) => {
+      const spy = vi.spyOn(Math, "random").mockImplementation(seeded(7)); // same draws for both runs
+      try {
+        return forecastParametricTerminal(5_000_000, 0.12, 0.18, 24, 400, offset);
+      } finally {
+        spy.mockRestore();
+      }
+    };
+    const base = run(0);
+    const shifted = run(3_000_000);
+    expect(shifted.p10).toBeCloseTo(base.p10 + 3_000_000, 4);
+    expect(shifted.p50).toBeCloseTo(base.p50 + 3_000_000, 4);
+    expect(shifted.p90).toBeCloseTo(base.p90 + 3_000_000, 4);
+    expect(shifted.p90 - shifted.p10).toBeCloseTo(base.p90 - base.p10, 4);
+  });
+
+  it("defaults to no offset, leaving existing callers unchanged", () => {
+    expect(forecastParametricTerminal(100_000, 0.12, 0, 0, 5).p50).toBe(100_000);
   });
 });
 

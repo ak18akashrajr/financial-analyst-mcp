@@ -548,10 +548,18 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       // Equity-only fit (see forecast.ts), with today's cash/PF/credit-card-debt added back as a
       // flat, non-stochastic offset — same approach as the Forecast page's cashOffset (see its doc
       // comment in src/pages/Forecast.tsx): only the market-driven portion carries fitted risk.
+      // Only the equity value is simulated; the offset is added after (never compounded) - audit H2.
       const cashOffset = p.cash.liquid + p.cash.vault + p.cash.pf - p.cash.creditCardDebt;
-      const startValue = lastComplete.value + cashOffset;
+      const startValue = lastComplete.value + cashOffset; // total, for the reported startValue
 
-      const terminal = forecastParametricTerminal(startValue, fit.driftAnnual, fit.volAnnual, horizonMonths, 1000);
+      const terminal = forecastParametricTerminal(
+        lastComplete.value,
+        fit.driftAnnual,
+        fit.volAnnual,
+        horizonMonths,
+        1000,
+        cashOffset,
+      );
 
       const noteParts = fitCaveats(fit, series.granularity);
       if (series.symbolsWithoutPrices.length > 0) {

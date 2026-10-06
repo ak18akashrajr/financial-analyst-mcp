@@ -320,6 +320,31 @@ describe("forecast_portfolio_value", () => {
     expect(result.forecast.p75).toBeLessThanOrEqual(result.forecast.p90);
   });
 
+  it("adds cash/PF/debt as a flat offset to the forecast instead of compounding it (audit H2)", async () => {
+    // Price history growing at a constant 0.1%/day has zero fitted volatility, so the forecast is
+    // deterministic and two runs differing only in cash must differ by exactly the cash offset. With the
+    // old behaviour (offset folded into the compounded start value) the gap was offset x e^(drift x years).
+    const tables = {
+      ...BASE_TABLES,
+      current_prices: { rows: [{ symbol: "TCS", price: 110 }, { symbol: "HDFC", price: 210 }] },
+      historical_prices: { rows: [...dailyCloses("TCS", 90, 100), ...dailyCloses("HDFC", 90, 200)] },
+    };
+    const run = async (cash: Record<string, number>) =>
+      (await findTool("forecast_portfolio_value")!.handler(
+        { horizonMonths: 24 },
+        makeFakeSb({ ...tables, cash_settings: { rows: [cash] } }),
+      )) as { startValue: number; forecast: { p10: number; p50: number; p90: number } };
+
+    const noCash = await run({ liquid_cash: 0, vault_cash: 0, pf_balance: 0, credit_card_debt: 0 });
+    const withCash = await run({ liquid_cash: 1_000_000, vault_cash: 500_000, pf_balance: 500_000, credit_card_debt: 100_000 });
+    const offset = 1_000_000 + 500_000 + 500_000 - 100_000; // 19L
+
+    expect(withCash.startValue - noCash.startValue).toBe(offset);
+    for (const q of ["p10", "p50", "p90"] as const) {
+      expect(Math.abs(withCash.forecast[q] - noCash.forecast[q] - offset)).toBeLessThanOrEqual(1); // rounding only
+    }
+  });
+
   it("falls back to blended asset-class assumptions with too little price history, and says so", async () => {
     const sb = makeFakeSb({
       ...BASE_TABLES,

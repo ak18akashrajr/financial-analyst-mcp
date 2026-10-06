@@ -27,12 +27,17 @@ vi.mock('@/integrations/supabase/client', () => ({
       if (table === 'historical_prices') {
         return {
           select: () => ({
+            // Paged via fetchAllPages: .in().order(date).order('id').range(from, to).
             in: (_col: string, symbols: string[]) => ({
-              order: () => Promise.resolve({
-                data: [...historicalPriceRows.filter((r) => symbols.includes(r.symbol))].sort(
-                  (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0),
-                ),
-                error: null,
+              order: () => ({
+                order: () => ({
+                  range: (from: number, to: number) => Promise.resolve({
+                    data: [...historicalPriceRows.filter((r) => symbols.includes(r.symbol))]
+                      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+                      .slice(from, Math.min(to + 1, from + 1000)), // PostgREST's silent 1,000-row response cap
+                    error: null,
+                  }),
+                }),
               }),
             }),
           }),
@@ -232,6 +237,43 @@ describe('Forecast page', () => {
     expect(screen.getByText('Predicted p10–p90')).toBeInTheDocument();
     expect(screen.getByText('Actual')).toBeInTheDocument();
     expect(screen.getByText('Covered')).toBeInTheDocument();
+  });
+
+  it('adds cash/PF as a flat offset after simulating instead of compounding it (audit H2)', async () => {
+    // 90 days of exactly +0.1%/day: fitted volatility is 0, so the median is deterministic. Cash + PF
+    // (30L) dwarfs the equity (~1.1K), which makes the old behaviour obvious: it compounded the whole
+    // thing and showed ~49.7L at 2y; cash that merely sits there should still read ~30.0L.
+    seedDailyPrices(90);
+    mockPortfolio({
+      transactions: [txn({ date: '2026-01-01' })],
+      cash: { liquidCash: 1_500_000, vaultCash: 0, pfBalance: 1_500_000, creditCardDebt: 0 },
+    });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Current Value')).toBeInTheDocument());
+    const equity = 10 * 100 * 1.001 ** 89; // last close is day index 89
+    const lakh = (n: number) => `₹${(n / 100_000).toFixed(2)}L`;
+
+    const current = screen.getByText('Current Value').closest('.rounded-xl') as HTMLElement;
+    expect(within(current).getByText(lakh(equity + 3_000_000))).toBeInTheDocument();
+
+    const median = screen.getByText('Median in 2y').closest('.rounded-xl') as HTMLElement;
+    const expected = equity * Math.exp(0.252 * 2) + 3_000_000; // equity compounds at the fitted 25.2%/yr; cash does not
+    expect(within(median).getByText(lakh(expected))).toBeInTheDocument();
+    // What the compounded-cash bug would have shown instead.
+    expect(within(median).queryByText(lakh((equity + 3_000_000) * Math.exp(0.252 * 2)))).not.toBeInTheDocument();
+  });
+
+  it('reads the whole price history past the 1,000-row cap, so the start value is the newest close (audit H6)', async () => {
+    // 1,200 daily closes, oldest first. Unpaged, the cap kept only the OLDEST 1,000 rows and the page
+    // anchored on a close ~200 days stale: 1000 x 1.001^999 = 2.7K instead of 1000 x 1.001^1199 = 3.3K.
+    seedDailyPrices(1200);
+    mockPortfolio({ transactions: [txn({ date: '2026-01-01' })] });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Current Value')).toBeInTheDocument());
+    const card = screen.getByText('Current Value').closest('.rounded-xl') as HTMLElement;
+    expect(within(card).getByText(`₹${((10 * 100 * 1.001 ** 1199) / 1000).toFixed(1)}K`)).toBeInTheDocument();
   });
 
   it('masks the current-value figure when privacy mode is toggled on', async () => {

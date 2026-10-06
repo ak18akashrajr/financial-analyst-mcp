@@ -242,6 +242,74 @@ describe('forecastParametric', () => {
   });
 });
 
+describe('flatOffset: cash/PF/debt must not compound (audit H2)', () => {
+  const fit = { driftAnnual: 0.12, volAnnual: 0.18 };
+  const EQUITY = 5_000_000; // 50L
+  const OFFSET = 3_000_000; // 30L cash + PF
+
+  it('adds the offset to every percentile at every month, leaving the equity spread untouched', () => {
+    const base = forecastParametric(EQUITY, fit, 24, { simulations: 500, rng: seeded(21) });
+    const withOffset = forecastParametric(EQUITY, fit, 24, { simulations: 500, rng: seeded(21), flatOffset: OFFSET });
+
+    for (let m = 0; m <= 24; m++) {
+      expect(withOffset.points[m].p10).toBeCloseTo(base.points[m].p10 + OFFSET, 4);
+      expect(withOffset.points[m].p50).toBeCloseTo(base.points[m].p50 + OFFSET, 4);
+      expect(withOffset.points[m].p90).toBeCloseTo(base.points[m].p90 + OFFSET, 4);
+    }
+    // Same spread: the old behaviour scaled it by (equity + offset) / equity = 1.6x.
+    const spread = (f: typeof base) => f.terminal.p90 - f.terminal.p10;
+    expect(spread(withOffset)).toBeCloseTo(spread(base), 4);
+    expect(withOffset.terminal.mean).toBeCloseTo(base.terminal.mean + OFFSET, 4);
+  });
+
+  it('reports startValue as equity + offset and starts the fan there', () => {
+    const fan = forecastParametric(EQUITY, fit, 12, { simulations: 100, rng: seeded(22), flatOffset: OFFSET });
+
+    expect(fan.startValue).toBe(EQUITY + OFFSET);
+    expect(fan.points[0].p10).toBe(EQUITY + OFFSET);
+    expect(fan.points[0].p90).toBe(EQUITY + OFFSET);
+  });
+
+  it('is exactly equity compounded plus a flat offset when volatility is zero (the audit example)', () => {
+    // 12% drift, 24 months, no vol: equity 50L -> 50L*e^0.24, cash/PF stays 30L.
+    const fan = forecastParametric(EQUITY, { driftAnnual: 0.12, volAnnual: 0 }, 24, {
+      simulations: 5,
+      flatOffset: OFFSET,
+    });
+    expect(fan.terminal.p50).toBeCloseTo(EQUITY * Math.exp(0.24) + OFFSET, 4);
+    // The old code compounded the offset too: (equity + offset)*e^0.24, about 7.6L higher here.
+    expect(fan.terminal.p50).toBeLessThan((EQUITY + OFFSET) * Math.exp(0.24) - 700_000);
+  });
+
+  it('a negative offset (credit-card debt above cash) is subtracted flat, not compounded', () => {
+    const fan = forecastParametric(EQUITY, { driftAnnual: 0.12, volAnnual: 0 }, 12, {
+      simulations: 5,
+      flatOffset: -200_000,
+    });
+    expect(fan.terminal.p50).toBeCloseTo(EQUITY * Math.exp(0.12) - 200_000, 4);
+  });
+
+  it('applies to the bootstrap method too, including the no-observations flat fan', () => {
+    const base = forecastBootstrap(EQUITY, repeat(0.01, 100), 6, { simulations: 20, rng: seeded(23), periodsPerYear: 12 });
+    const withOffset = forecastBootstrap(EQUITY, repeat(0.01, 100), 6, {
+      simulations: 20,
+      rng: seeded(23),
+      periodsPerYear: 12,
+      flatOffset: OFFSET,
+    });
+    expect(withOffset.points[6].p50).toBeCloseTo(base.points[6].p50 + OFFSET, 4);
+    expect(withOffset.startValue).toBe(EQUITY + OFFSET);
+
+    const flat = forecastBootstrap(EQUITY, [], 6, { simulations: 5, flatOffset: OFFSET });
+    expect(flat.points.every((p) => p.p50 === EQUITY + OFFSET)).toBe(true);
+  });
+
+  it('defaults to no offset, leaving existing callers unchanged', () => {
+    const fan = forecastParametric(EQUITY, fit, 6, { simulations: 50, rng: seeded(24) });
+    expect(fan.startValue).toBe(EQUITY);
+  });
+});
+
 describe('forecastBootstrap', () => {
   it('compounds a constant observed return deterministically', () => {
     // Every resampled block is 0.01, so with 12 periods/year (one per month) the path is
