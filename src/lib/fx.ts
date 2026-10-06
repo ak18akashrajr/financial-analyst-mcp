@@ -95,6 +95,13 @@ export interface HoldingUsdRow {
 /**
  * Per-holding USD view. Cost basis is converted at each buy's trade-date rate;
  * current value at the latest rate.
+ *
+ * Cost basis is FIFO — a SELL consumes the oldest still-open BUY lot(s) first, each lot keeping its own
+ * trade-date rate — matching `h.totalInvested` (the INR side, from src/lib/costBasis.ts) so the two
+ * currencies describe the SAME shares. This used to reduce both bases by average cost on a sell, which
+ * disagreed with the FIFO INR figure after a partial sell across different buy prices and manufactured a
+ * currency effect out of nothing: buy 10 @ 100 + 10 @ 200, sell 10, price 200, FX flat at 80 showed a
+ * +33% currency effect and a ~106.67 average entry rate instead of 0% and 80.
  */
 export function holdingsInUsd(
   holdings: DerivedHolding[],
@@ -102,28 +109,30 @@ export function holdingsInUsd(
   spot: number
 ): HoldingUsdRow[] {
   return holdings.map((h) => {
-    let investedUsd = 0;
-    let netQty = 0;
-    let costInr = 0;
+    const lots: Array<{ qty: number; price: number; rate: number }> = [];
     let approximated = false;
 
     for (const t of [...h.transactions].sort((a, b) => +new Date(a.date) - +new Date(b.date))) {
       const look = rateOn(sorted, t.date);
       const rate = look?.rate ?? spot;
       if (!look || !look.exact) approximated = true;
-      const amt = t.quantity * t.price;
       if (t.type === 'BUY') {
-        investedUsd += amt / rate;
-        costInr += amt;
-        netQty += t.quantity;
+        lots.push({ qty: t.quantity, price: t.price, rate });
       } else {
-        // Reduce cost basis proportionally (average-cost) in both currencies
-        const portion = netQty > 0 ? Math.min(t.quantity / netQty, 1) : 0;
-        investedUsd -= investedUsd * portion;
-        costInr -= costInr * portion;
-        netQty -= t.quantity;
+        // FIFO: consume the oldest open lot(s); an oversell simply depletes everything, as in costBasis.ts.
+        let remaining = t.quantity;
+        for (const lot of lots) {
+          if (remaining <= 0) break;
+          const used = Math.min(lot.qty, remaining);
+          lot.qty -= used;
+          remaining -= used;
+        }
       }
     }
+
+    const open = lots.filter((l) => l.qty > 1e-9);
+    const investedUsd = open.reduce((sum, l) => sum + (l.qty * l.price) / l.rate, 0);
+    const costInr = open.reduce((sum, l) => sum + l.qty * l.price, 0);
 
     const currentUsd = spot > 0 ? h.currentValue / spot : 0;
     const inrReturnPct = h.totalInvested !== 0 ? (h.pnl / h.totalInvested) * 100 : 0;
