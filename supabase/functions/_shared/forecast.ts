@@ -313,6 +313,11 @@ export interface ForecastTerminal {
  * Log-normal GBM terminal-value distribution at `horizonMonths`, monthly steps —
  * `v *= exp((μ_m − σ_m²/2) + σ_m·Z)`. See src/lib/forecast.ts's `forecastParametric` doc comment for
  * why GBM (not the arithmetic walk elsewhere in this repo) and why this can't go negative.
+ *
+ * `startValue` is the EQUITY-only value, the only part that compounds. `flatOffset` (today's cash + PF -
+ * credit-card debt) is added to each simulated terminal value afterwards, so it stays flat as the caller's
+ * docs promise. Folding it into `startValue` instead compounded cash/PF/debt at the equity drift and
+ * volatility (audit H2). Mirrors `flatOffset` in src/lib/forecast.ts's `forecastParametric`.
  */
 export function forecastParametricTerminal(
   startValue: number,
@@ -320,6 +325,7 @@ export function forecastParametricTerminal(
   volAnnual: number,
   horizonMonths: number,
   simulations = 1000,
+  flatOffset = 0,
 ): ForecastTerminal {
   const months = Math.max(0, Math.floor(horizonMonths));
   const muM = driftAnnual / 12;
@@ -334,7 +340,7 @@ export function forecastParametricTerminal(
       v = v * Math.exp(logDrift + shock);
       if (v < 0) v = 0;
     }
-    finals.push(v);
+    finals.push(v + flatOffset);
   }
   finals.sort((a, b) => a - b);
 

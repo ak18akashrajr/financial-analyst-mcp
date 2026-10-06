@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { TrendingUp, Loader2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { computeBenchmarkXirr, type BenchmarkPricePoint, type BenchmarkXirrResult } from '@/lib/benchmarkXirr';
 import { formatYearsToDouble, yearsToDouble } from '@/lib/timeToDouble';
 import type { Transaction } from '@/types/portfolio';
@@ -33,11 +34,17 @@ function dateLabel(iso: string): string {
 async function fetchBenchmarkHistory(symbol: string): Promise<BenchmarkPricePoint[]> {
   // benchmark_history isn't in the generated Supabase types (see src/pages/Benchmark.tsx's
   // same-cause comment), hence the `as any` cast.
-  const { data, error } = await supabase
-    .from('benchmark_history' as any)
-    .select('date, close')
-    .eq('symbol', symbol)
-    .order('date', { ascending: true });
+  // Paged: this replays the benchmark over the portfolio's whole history, and daily benchmark bars
+  // pass the 1,000-row response cap after ~4 years — unpaged, the cap kept the OLDEST 1,000 and the
+  // replay's terminal price was years stale. (symbol, date) is unique, so `date` alone is a total order.
+  const { data, error } = await fetchAllPages((from, to) =>
+    supabase
+      .from('benchmark_history' as any)
+      .select('date, close')
+      .eq('symbol', symbol)
+      .order('date', { ascending: true })
+      .range(from, to),
+  );
   if (error) throw new Error(error.message);
   return ((data as unknown as BenchmarkPricePoint[]) ?? []).map(r => ({ date: r.date, close: Number(r.close) }));
 }

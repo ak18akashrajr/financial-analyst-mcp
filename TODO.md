@@ -18,24 +18,6 @@ Numeric examples are hand-computed unless marked reproduced.
 
 ### High — wrong numbers a decision could rest on
 
-- [ ] **H2. Forecast compounds cash, PF and credit-card debt at the equity drift/volatility.**
-      [`Forecast.tsx:227`](src/pages/Forecast.tsx), [`forecast.ts:292`](src/lib/forecast.ts),
-      [`mcp-tools.ts:544-547`](supabase/functions/_shared/mcp-tools.ts),
-      [`_shared/forecast.ts:333`](supabase/functions/_shared/forecast.ts). Comments,
-      `docs/forecasting-plan.md` and the page banner all say cash is a "flat, non-stochastic
-      offset … held constant", but `startValue = equity + cashOffset` is multiplied by
-      `exp(drift + shock)` every month. Example: equity ₹50L + cash/PF ₹30L, 12% / 18% vol, 24
-      months → code p50 ₹98.5L vs intended ₹91.5L; p90 overstated ~₹21L. Also affects the
-      bootstrap method and the `forecast_portfolio_value` AI tool. Fix: simulate equity only, add
-      the offset after (both copies). `[checked]`
-- [ ] **H3. Portfolio risk metrics don't re-weight after dropping holdings with no price history.**
-      [`riskMetrics.ts:127-132,160-165`](src/lib/riskMetrics.ts) and
-      [`portfolio-data.ts:459-492`](supabase/functions/_shared/portfolio-data.ts) (same code).
-      The skipped holding counts as zero return / volatility / beta, contradicting the page footer
-      ("not assumed to be zero"). Example: A 60% (20% return, beta 1.0), B 40% with no data →
-      page shows return 12%, beta 0.60, alpha +2.0%; re-weighted should be 20%, 1.0, +8.0%. Alpha
-      can flip sign. Fix: divide by the included weight; add a test with an excluded holding
-      (existing test uses two equal holdings only). `[checked]`
 - [ ] **H5 (remaining). Other categories still fall to the 24-month / 30% default.** `'Stocks'` is
       fixed (see Archive); the rest — `'US Stocks / ETFs'`, `'Gold & Silver'` / `'Gold'`,
       `'Fixed Deposits'`, `'NPS'`, `'Crypto'`, … — are unchanged until the intended treatment for
@@ -232,9 +214,9 @@ Numeric examples are hand-computed unless marked reproduced.
 
 ### Suggested order
 
-1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, PR pending; only H5's non-`'Stocks'`
+1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192); only H5's non-`'Stocks'`
    categories remain, blocked on Question 4).
-2. H2, H3 — shared between client and server, so each is one change in two places.
+2. ~~H2, H3~~ — done (batch 2, PR pending).
 3. M1, M2, M4, M7, M10 — the numbers on screen most often.
 4. The rest, after the questions above are answered. Edge-function fixes need
    `npx supabase@1.190.0 functions deploy --use-api` to take effect.
@@ -252,8 +234,46 @@ remains.
 <details>
 <summary>Archive (completed)</summary>
 
+- [x] **Calculation audit, batch 2 — H2, H3, plus a missed H6 sweep** (2026-10-06). Branch
+      `fix/audit-high-batch-2`, PR pending (number to be filled in on opening). H2, H3 and the H6
+      follow-up all change edge functions or shared code, so the edge-function side needs
+      `npx supabase@1.190.0 functions deploy --use-api` to take effect.
+      - **H2 — forecast compounded cash, PF and credit-card debt at the equity drift/volatility.**
+        `forecastParametric` / `forecastBootstrap` ([`forecast.ts`](src/lib/forecast.ts)) gained a
+        `flatOffset` option: the simulation now compounds the equity-only value and the offset is
+        added to every path afterwards. The [Forecast page](src/pages/Forecast.tsx) and the
+        `forecast_portfolio_value` tool (via `forecastParametricTerminal`'s hand-mirrored copy in
+        [`_shared/forecast.ts`](supabase/functions/_shared/forecast.ts)) pass equity as the start
+        value plus the offset. The backtest was already equity-only and is unchanged. Audit example
+        (equity ₹50L + cash/PF ₹30L, 12% / 18% vol, 24 months): p50 was ₹98.5L, intended ₹91.5L.
+        Tests: function-level invariants (every percentile shifts by exactly the offset, spread
+        untouched, zero-vol closed form, negative offset, bootstrap incl. the no-observations fan),
+        plus page- and tool-level wiring tests; seven function-level and both wiring tests confirmed
+        to fail against the old behaviour.
+      - **H3 — portfolio risk metrics did not re-weight after dropping holdings with no price
+        history.** [`riskMetrics.ts`](src/lib/riskMetrics.ts) and the identical code in
+        [`portfolio-data.ts`](supabase/functions/_shared/portfolio-data.ts) now divide each weighted
+        sum by the included weight. Audit example: A 60% (20% return, beta 1.0) + B 40% with no data
+        read as 12% / 0.60 / alpha +3.2%; now 20% / 1.0 / +10.0%. The page footer and the
+        `get_risk_metrics` description now say the rest is re-weighted. **The existing exclusion test
+        could not have caught this** (both holdings had zero volatility); the new tests use the
+        audit's numbers and four of them fail against the old weighting.
+      - **H6 follow-up — three reads the original sweep missed.** I trusted the audit's list of call
+        sites instead of sweeping every `.from(...)` read, and batch 1 shipped without these:
+        [`Forecast.tsx`](src/pages/Forecast.tsx) (`historical_prices`, ascending — kept the oldest
+        1,000 rows, so the start value was stale), [`XirrDetailsCard.tsx`](src/components/XirrDetailsCard.tsx)
+        (`benchmark_history`, whole daily history — past ~4 years the replay's terminal price was
+        years stale) and [`DollarReturnsCard.tsx`](src/components/DollarReturnsCard.tsx)
+        (`.limit(3000)` with a "most recent 3000" comment that the 1,000-row cap silently overrode).
+        All now use `fetchAllPages`; each has a regression test whose fake enforces the cap and
+        fails with paging disabled. A full sweep of every client `.from(...)` read afterwards found
+        nothing else unbounded: the remaining reads are `.limit(n)` windows, filtered to one request /
+        the unacknowledged incidents only (DevZone, `SecurityIncidentsContext`), single-row lookups,
+        or small config tables.
+
 - [x] **Calculation audit, batch 1 — H1, H4, H5 (partial), H6** (2026-10-06). One branch, one commit
-      per item: `fix/audit-high-batch-1`, PR pending (number to be filled in on opening). H1 and H6
+      per item: `fix/audit-high-batch-1`, merged via
+      [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192). H1 and H6
       change edge functions, so they need `npx supabase@1.190.0 functions deploy --use-api` to take
       effect; H4 and H5 are frontend only.
       - **H1 — AI tools used the old "subtract sale proceeds" cost basis.**

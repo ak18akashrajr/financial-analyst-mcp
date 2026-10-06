@@ -13,6 +13,7 @@ import {
   Tooltip,
 } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { toast } from 'sonner';
@@ -129,11 +130,18 @@ const ForecastContent = () => {
       setLoading(false);
       return;
     }
-    const { data, error } = await supabase
-      .from('historical_prices')
-      .select('symbol, date, close')
-      .in('symbol', symbols)
-      .order('date', { ascending: true });
+    // Paged: oldest-first order + the 1,000-row response cap used to keep the OLDEST 1,000 rows, so
+    // the realized series (and the forecast's start value) came from stale prices. `id` is the
+    // unique tie-break — many symbols share a date.
+    const { data, error } = await fetchAllPages((from, to) =>
+      supabase
+        .from('historical_prices')
+        .select('symbol, date, close')
+        .in('symbol', symbols)
+        .order('date', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
     if (error) toast.error(`Failed to load historical prices: ${error.message}`);
     setPriceRows((data ?? []).map((r) => ({ symbol: r.symbol, date: r.date, close: Number(r.close) })));
     setLoading(false);
@@ -224,7 +232,11 @@ const ForecastContent = () => {
   // starting point or the chart's anchor date.
   const completePoints = useMemo(() => series.points.filter((p) => p.complete), [series.points]);
   const lastPoint = completePoints[completePoints.length - 1];
-  const startValue = (lastPoint?.value ?? 0) + cashOffset;
+  // Equity-only start value — what the simulation compounds. The flat cash/PF/debt offset is added
+  // AFTER simulating (flatOffset below); folding it into the start value would compound it at the
+  // equity drift/volatility, contradicting the "held constant" banner (audit H2).
+  const equityStartValue = lastPoint?.value ?? 0;
+  const startValue = equityStartValue + cashOffset; // total, for the chart anchor and the stat card
 
   // The forecast is anchored at the last date with a real historical_prices row for this
   // portfolio's holdings — NOT the literal calendar date — since there's no realized value to plot
@@ -239,16 +251,18 @@ const ForecastContent = () => {
     if (!lastPoint) return null;
     const vol = useEwma ? fit.ewmaVolAnnual : fit.volAnnual;
     if (method === 'bootstrap' && fit.sufficient) {
-      return forecastBootstrap(startValue, returns, horizonMonths, {
+      return forecastBootstrap(equityStartValue, returns, horizonMonths, {
         simulations: 1000,
         periodsPerYear: series.periodsPerYear,
+        flatOffset: cashOffset,
       });
     }
-    return forecastParametric(startValue, { driftAnnual: fit.driftAnnual, volAnnual: vol }, horizonMonths, {
+    return forecastParametric(equityStartValue, { driftAnnual: fit.driftAnnual, volAnnual: vol }, horizonMonths, {
       simulations: 1000,
+      flatOffset: cashOffset,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastPoint, method, fit, returns, horizonMonths, series.periodsPerYear, startValue, useEwma]);
+  }, [lastPoint, method, fit, returns, horizonMonths, series.periodsPerYear, equityStartValue, cashOffset, useEwma]);
 
   const caveats = useMemo(() => fitCaveats(fit, series.granularity), [fit, series.granularity]);
 

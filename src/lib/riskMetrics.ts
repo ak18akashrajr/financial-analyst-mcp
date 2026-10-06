@@ -116,6 +116,7 @@ export function computeRiskMetrics(
   let weightedVol = 0;
   let weightedBeta = 0;
   let weightedReturn = 0;
+  let includedWeight = 0; // share of total portfolio value that had enough history
 
   for (const h of holdings) {
     const returns = returnsBySymbol[h.symbol] || [];
@@ -126,6 +127,7 @@ export function computeRiskMetrics(
     const symbolBeta = benchmarkDataAvailable ? beta(returns, benchReturns) : null;
     const weight = totalValue > 0 ? h.currentValue / totalValue : 0;
     if (hasData) {
+      includedWeight += weight;
       weightedVol += annualizedVol * weight;
       weightedReturn += symbolAnnualizedReturn! * weight;
       if (symbolBeta !== null) weightedBeta += symbolBeta * weight;
@@ -155,6 +157,17 @@ export function computeRiskMetrics(
       riskPerRupeeOfReturn: symbolRiskPerReturn !== null ? Number(symbolRiskPerReturn.toFixed(2)) : null,
       dataPoints: returns.length,
     });
+  }
+
+  // Re-weight over the holdings that actually had data. `weight` above is each holding's share of the
+  // WHOLE portfolio, so without this a holding that was skipped (fewer than 2 days of history) silently
+  // contributed zero return / volatility / beta — A 60% (20% return, beta 1.0) + B 40% (no data) read as
+  // 12% return and beta 0.60 instead of 20% and 1.0, and alpha could flip sign (audit H3). Dividing by
+  // the included weight makes the "not assumed to be zero" promise true.
+  if (includedWeight > 0) {
+    weightedVol /= includedWeight;
+    weightedBeta /= includedWeight;
+    weightedReturn /= includedWeight;
   }
 
   const portfolioVolDecimal = weightedVol / 100;

@@ -348,7 +348,8 @@ const RiskMetricsContent = () => {
               All figures are estimated from the last {LOOKBACK_DAYS} trading days of{' '}
               <code>historical_prices</code>/<code>benchmark_history</code> rows, weighted by each holding's current
               market value — a holding with fewer than 2 days of history, or no current price, is left out of the
-              weighted portfolio-level figures entirely rather than assumed to be zero. Matches the{' '}
+              weighted portfolio-level figures entirely rather than assumed to be zero, and the remaining holdings
+              are re-weighted to sum to 100%. Matches the{' '}
               <code>get_risk_metrics</code> MCP tool's methodology exactly, so this page and the portfolio AI always
               agree for the same question.
             </p>

@@ -237,7 +237,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       "Per-holding and portfolio-level annualized volatility, beta vs. NIFTY 50, Jensen's Alpha (CAPM, " +
       "vs. the 10Y India G-Sec risk-free rate — see riskFreeRatePercent), and Sharpe ratio, estimated " +
       "from historical prices. A holding with no current price is left out of the portfolio-level " +
-      "weighted figures entirely (see missingPriceSymbols) rather than weighted at a fabricated ₹0. " +
+      "weighted figures entirely (see missingPriceSymbols) rather than weighted at a fabricated ₹0, and " +
+      "one with too little price history is left out too, with the rest re-weighted to sum to 100%. " +
       "Note: this Alpha is the statistical CAPM risk ratio, unrelated to the plain P&L figure the app " +
       "elsewhere also calls \"Alpha\" (e.g. dashboard/USD-view) — don't conflate the two if asked.",
     complexity: "complex",
@@ -548,10 +549,18 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       // Equity-only fit (see forecast.ts), with today's cash/PF/credit-card-debt added back as a
       // flat, non-stochastic offset — same approach as the Forecast page's cashOffset (see its doc
       // comment in src/pages/Forecast.tsx): only the market-driven portion carries fitted risk.
+      // Only the equity value is simulated; the offset is added after (never compounded) - audit H2.
       const cashOffset = p.cash.liquid + p.cash.vault + p.cash.pf - p.cash.creditCardDebt;
-      const startValue = lastComplete.value + cashOffset;
+      const startValue = lastComplete.value + cashOffset; // total, for the reported startValue
 
-      const terminal = forecastParametricTerminal(startValue, fit.driftAnnual, fit.volAnnual, horizonMonths, 1000);
+      const terminal = forecastParametricTerminal(
+        lastComplete.value,
+        fit.driftAnnual,
+        fit.volAnnual,
+        horizonMonths,
+        1000,
+        cashOffset,
+      );
 
       const noteParts = fitCaveats(fit, series.granularity);
       if (series.symbolsWithoutPrices.length > 0) {

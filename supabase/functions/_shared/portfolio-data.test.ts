@@ -709,6 +709,35 @@ describe("getRiskMetrics", () => {
     expect(aapl.alpha).toBe(-result.riskFreeRatePercent);
   });
 
+  it("re-weights over holdings with price history instead of counting a skipped holding as zero (audit H3)", async () => {
+    // A: 60% of value, 20% annualized return, beta 1.0 vs a 10%-return benchmark; B: 40% of value, no rows.
+    const swing = (annualMean: number) =>
+      Array.from({ length: 20 }, (_, i) => annualMean / 252 + (i % 2 === 0 ? 0.01 : -0.01));
+    const closesFrom = (returns: number[], start: number) => {
+      const closes = [start];
+      for (const r of returns) closes.push(closes[closes.length - 1] * (1 + r));
+      return closes;
+    };
+    const dated = (symbol: string, closes: number[]) =>
+      closes.map((close, i) => ({ symbol, date: `2026-01-${String(i + 1).padStart(2, "0")}`, close }));
+
+    const sb = makeFakeSb({
+      historical_prices: { rows: dated("A", closesFrom(swing(0.2), 100)) },
+      benchmark_history: { rows: dated("NIFTY50", closesFrom(swing(0.1), 20000)) },
+    });
+    const twoHoldings: Holding[] = [
+      makeHolding({ symbol: "A", currentValue: 600 }),
+      makeHolding({ symbol: "B", currentValue: 400 }), // no historical_prices rows
+    ];
+    const result = await getRiskMetrics(sb, twoHoldings, 30);
+
+    expect(result.portfolioAnnualizedReturnPercent).toBeCloseTo(20, 1); // was 12.0
+    expect(result.portfolioBetaVsNifty50).toBeCloseTo(1, 2); // was 0.60
+    expect(result.portfolioAlphaPercent).toBeCloseTo(10, 1); // was ~3.2
+    expect(result.perHolding.find((h) => h.symbol === "B")!.annualizedReturnPercent).toBeNull();
+    expect(result.note).toContain("re-weighted");
+  });
+
   it("fetches historical_prices for every holding in a single batched query, not one per holding", async () => {
     const multiHoldings: Holding[] = [
       makeHolding({ symbol: "AAPL", currentValue: 1000 }),

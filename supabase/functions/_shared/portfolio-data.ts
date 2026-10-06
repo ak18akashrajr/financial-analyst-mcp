@@ -489,6 +489,7 @@ export async function getRiskMetrics(
   let weightedVol = 0;
   let weightedBeta = 0;
   let weightedReturn = 0;
+  let includedWeight = 0; // share of total portfolio value that had enough history
   for (const h of holdings) {
     const returns = returnsBySymbol[h.symbol] || [];
     const hasData = returns.length >= 2;
@@ -498,6 +499,7 @@ export async function getRiskMetrics(
     const symbolBeta = benchmarkDataAvailable ? beta(returns, benchReturns) : null;
     const weight = totalValue > 0 ? h.currentValue / totalValue : 0;
     if (hasData) {
+      includedWeight += weight;
       weightedVol += annualizedVol * weight;
       weightedReturn += symbolAnnualizedReturn! * weight;
       if (symbolBeta !== null) weightedBeta += symbolBeta * weight;
@@ -525,6 +527,17 @@ export async function getRiskMetrics(
     });
   }
 
+  // Re-weight over the holdings that actually had data. `weight` above is each holding's share of the
+  // WHOLE portfolio, so without this a holding that was skipped (fewer than 2 days of history) silently
+  // contributed zero return / volatility / beta — A 60% (20% return, beta 1.0) + B 40% (no data) read as
+  // 12% return and beta 0.60 instead of 20% and 1.0, and alpha could flip sign (audit H3). Dividing by
+  // the included weight makes the "not assumed to be zero" promise true.
+  if (includedWeight > 0) {
+    weightedVol /= includedWeight;
+    weightedBeta /= includedWeight;
+    weightedReturn /= includedWeight;
+  }
+
   const portfolioVolDecimal = weightedVol / 100;
   const portfolioAlpha = benchmarkDataAvailable && benchAnnualizedReturn !== null
     ? (weightedReturn - (RISK_FREE_RATE + weightedBeta * (benchAnnualizedReturn - RISK_FREE_RATE))) * 100
@@ -550,7 +563,8 @@ export async function getRiskMetrics(
     note: benchmarkDataAvailable
       ? "Volatility/return/beta estimated from available historical_prices/benchmark_history rows " +
         `(risk-free rate assumed ${(RISK_FREE_RATE * 100).toFixed(2)}%, the 10Y India G-Sec yield); ` +
-        "symbols with fewer than 2 data points are excluded from the weighted averages, and a " +
+        "symbols with fewer than 2 data points are excluded from the weighted averages (which are " +
+        "re-weighted over the remaining holdings, not assumed zero), and a " +
         "holding with zero volatility has a null (not infinite) Sharpe ratio."
       : "Volatility/return estimated from historical_prices; beta, Alpha and Sharpe ratio vs NIFTY50 " +
         "are not available because benchmark_history has no NIFTY50 data yet — run the " +
