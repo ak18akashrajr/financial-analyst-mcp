@@ -194,7 +194,7 @@ _No High items open — H1–H6 are all done (see Archive)._
 
 ### Suggested order
 
-1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192); H5's remaining categories in batch 4, PR pending).
+1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192); H5's remaining categories in batch 4, [PR #195](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/195)).
 2. ~~H2, H3~~ — done (batch 2, [PR #193](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/193)).
 3. ~~M2, M4, M7, M10~~ — done (batch 3, [PR #194](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/194); M7's valuation-model follow-ups remain). **M1 is
    still open, waiting on Question 2.**
@@ -215,7 +215,8 @@ remains.
 <summary>Archive (completed)</summary>
 
 - [x] **Calculation audit, batch 4 — H5 (remaining categories), M8, M9** (2026-10-06). Branch
-      `fix/audit-batch-4`, PR pending (number to be filled in on opening). All frontend only. **M1 was not
+      `fix/audit-batch-4`, merged via
+      [PR #195](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/195). All frontend only. **M1 was not
       started:** the owner confirmed sold units are realized gain, but the "include realized in the card"
       design (and its % denominator) still needs a go-ahead.
       - **H5 — per-category tax rules.** Decided from the owner's tax table, cross-checked against public
