@@ -232,7 +232,7 @@ Numeric examples are hand-computed unless marked reproduced.
 
 ### Suggested order
 
-1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, PR pending; only H5's non-`'Stocks'`
+1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192); only H5's non-`'Stocks'`
    categories remain, blocked on Question 4).
 2. H2, H3 — shared between client and server, so each is one change in two places.
 3. M1, M2, M4, M7, M10 — the numbers on screen most often.
@@ -253,7 +253,8 @@ remains.
 <summary>Archive (completed)</summary>
 
 - [x] **Calculation audit, batch 1 — H1, H4, H5 (partial), H6** (2026-10-06). One branch, one commit
-      per item: `fix/audit-high-batch-1`, PR pending (number to be filled in on opening). H1 and H6
+      per item: `fix/audit-high-batch-1`, merged via
+      [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192). H1 and H6
       change edge functions, so they need `npx supabase@1.190.0 functions deploy --use-api` to take
       effect; H4 and H5 are frontend only.
       - **H1 — AI tools used the old "subtract sale proceeds" cost basis.**
