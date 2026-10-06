@@ -18,11 +18,7 @@ Numeric examples are hand-computed unless marked reproduced.
 
 ### High — wrong numbers a decision could rest on
 
-- [ ] **H5 (remaining). Other categories still fall to the 24-month / 30% default.** `'Stocks'` is
-      fixed (see Archive); the rest — `'US Stocks / ETFs'`, `'Gold & Silver'` / `'Gold'`,
-      `'Fixed Deposits'`, `'NPS'`, `'Crypto'`, … — are unchanged until the intended treatment for
-      each is decided (see Question 4). The default is arguably right for US stocks; Gold's page
-      disclaimer (12 months / 12.5%) disagrees with the code. `[checked]`
+_No High items open — H1–H6 are all done (see Archive)._
 
 ### Medium — misleading or inconsistent numbers
 
@@ -60,15 +56,6 @@ Numeric examples are hand-computed unless marked reproduced.
       so the realised gain never appears in the P&L-over-time chart (by design — it's unrealised-only);
       and the drag-select XIRR badge runs on these hypothetical values. Decide whether any of these should
       change before touching them. Code: [`portfolioTimeline.ts`](src/lib/portfolioTimeline.ts).
-- [ ] **M8. Drag-select range keeps following the cursor after mouse-up.**
-      [`useChartRangeSelection.ts:58-63`](src/hooks/useChartRangeSelection.ts): `onMouseMove`
-      updates the cursor regardless of `isDragging`. Affects the range badge on Reports, NetWorth,
-      Debt, Rolling, Portfolio charts. Test gap: `chart-range-selection.test.ts` never moves the
-      mouse after `onMouseUp`. `[checked]`
-- [ ] **M9. Reports KPI shows green "+0.00% vs …" when the previous period's AUM is 0.**
-      [`Reports.tsx:245,649`](src/pages/Reports.tsx): `pct` falls back to `0`; should be `—` (also
-      feeds the AI-narrative prompt). `[checked]`
-
 **Goals / projections**
 - [ ] **M11. "Step-up SIP equivalent" matches total rupees contributed, not future value.**
       [`monteCarloAdvanced.ts:102-106`](src/lib/monteCarloAdvanced.ts). Flat ₹10,000/mo × 10y @10%
@@ -177,15 +164,21 @@ Numeric examples are hand-computed unless marked reproduced.
 
 ### Questions that block (or shape) the fixes above
 
-1. **Row counts (H6):** how many rows are in `transactions`, `historical_prices`,
-   `net_worth_history` today? Is the project's API max-rows still the default 1,000?
+1. ~~**Row counts (H6)**~~ — answered 2026-10-06: `transactions` 118, `historical_prices` **3,425**,
+   `net_worth_history` 136. Only `historical_prices` is over 1,000, so the pagination mattered for price
+   history (Forecast, Correlation, Rolling, Risk Metrics and the AI risk/as-of/forecast tools) but never for
+   trades or holdings. The project's max-rows setting was not found in the dashboard; unknown whether it was
+   still 1,000 (the fix is correct either way).
 2. **M1:** should "Realized & Unrealized Alpha" include realized gains (needs realized P&L from
    sells), or should the label say "Unrealized"?
 3. **Family members (M18, M19):** does a second `family_members` row exist? Is pooled FIFO in "All
    Family" intended?
-4. **Tax scope (H5, M3):** intended treatment for Gold (page disclaimer says 12 months / 12.5%, code
-   uses 24 months / 30%), Crypto (flat 30%), debt mutual funds, listed bonds, grandfathering? Should
-   "if I sell everything" ignore loss lots? Is "more than 12 months" calendar-month or > 365 days?
+4. **Tax scope (M3, and what's left of H5):** the per-category rules are decided and shipped (batch 4:
+   Gold/Silver ETFs and listed bonds 12 months; US stocks / real estate / custom 24 months; crypto flat 30%;
+   FDs/PF/NPS excluded). Still open: **debt mutual funds** and **unlisted bonds** (not modelled — a category
+   can't tell listed from unlisted; ask the CA), **grandfathering**, whether physical gold / gold
+   funds-of-funds are held (they need 24 months), and for M3: should "if I sell everything" ignore loss lots,
+   and is "more than 12 months" calendar-month or > 365 days?
 5. **Cash on trades:** `add_transaction_and_snapshot` never changes cash — do you always lower
    Operating Cash by hand after a buy? Affects NetWorthChart range XIRR, `get_period_performance`
    (tells the AI a buy is "a reallocation"), and the income/expense ratio (a manual cash cut books
@@ -201,10 +194,9 @@ Numeric examples are hand-computed unless marked reproduced.
 
 ### Suggested order
 
-1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192); only H5's non-`'Stocks'`
-   categories remain, blocked on Question 4).
+1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192); H5's remaining categories in batch 4, PR pending).
 2. ~~H2, H3~~ — done (batch 2, [PR #193](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/193)).
-3. ~~M2, M4, M7, M10~~ — done (batch 3, PR pending; M7's valuation-model follow-ups remain). **M1 is
+3. ~~M2, M4, M7, M10~~ — done (batch 3, [PR #194](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/194); M7's valuation-model follow-ups remain). **M1 is
    still open, waiting on Question 2.**
 4. The rest, after the questions above are answered. Edge-function fixes need
    `npx supabase@1.190.0 functions deploy --use-api` to take effect.
@@ -222,8 +214,35 @@ remains.
 <details>
 <summary>Archive (completed)</summary>
 
+- [x] **Calculation audit, batch 4 — H5 (remaining categories), M8, M9** (2026-10-06). Branch
+      `fix/audit-batch-4`, PR pending (number to be filled in on opening). All frontend only. **M1 was not
+      started:** the owner confirmed sold units are realized gain, but the "include realized in the card"
+      design (and its % denominator) still needs a go-ahead.
+      - **H5 — per-category tax rules.** Decided from the owner's tax table, cross-checked against public
+        sources. [`taxCalculator.ts`](src/lib/taxCalculator.ts): Gold / Gold & Silver / Bonds are now 12
+        months at 12.5% (assumed listed ETFs / listed bonds; slab-rate 30% estimate short-term);
+        **crypto is a flat 30% with no long-term class** (a 3-year-old lot with a ₹2L gain was taxed ₹25,000
+        at 12.5%, now ₹60,000); FDs / Fixed Deposits / PPF-EPF / NPS have no capital-gains treatment and are
+        left out of the estimate and listed in a visible note (new `excluded` on `TaxReport`) instead of
+        showing a made-up bill. US stocks / ETFs, Real Estate, Commodity and Custom Assets are unchanged
+        (24 months). The Taxes page rate cards and disclaimer now match and call out the assumptions (physical
+        gold / gold funds-of-funds need 24 months; unlisted bonds and debt funds differ — confirm with a CA).
+        Not modelled: debt mutual funds, unlisted bonds, grandfathering, crypto's 1% TDS. Tests: ten new
+        calculator cases fail against the old code, plus a page-level test for the note and rate cards.
+        Not looked at in a running browser (the app is behind a login).
+      - **M8 — drag-select range followed the cursor after mouse-up.** `onMouseMove` in
+        [`useChartRangeSelection.ts`](src/hooks/useChartRangeSelection.ts) now only extends the range while a
+        drag is held (tracked in a ref so a move can't race the mouse-down's state update). Fixes the badge on
+        Reports, NetWorth, Debt, Rolling and Portfolio charts. The two tests that exercise the bug fail
+        against the old hook.
+      - **M9 — Reports KPI showed a green "+0.00% vs …" off a zero base.** New `percentChangeOver` in
+        [`periodReports.ts`](src/lib/periodReports.ts) returns null for a non-positive base; `pct` is
+        nullable through the page and `buildGrowthComparison`, rendered as a neutral "—" (and a plain
+        sentence in the AI-narrative prompt and the audit table). Page test fails against the old page.
+
 - [x] **Calculation audit, batch 3 — M2, M4, M7 (partial), M10** (2026-10-06). Branch
-      `fix/audit-medium-batch-3`, PR pending (number to be filled in on opening). All frontend only —
+      `fix/audit-medium-batch-3`, merged via
+      [PR #194](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/194). All frontend only —
       nothing here needs an edge-function deploy. **M1 was deliberately not started:** it needs an owner
       decision first (Question 2 — should "Realized & Unrealized Alpha" include realized gains, or be
       relabelled "Unrealized").

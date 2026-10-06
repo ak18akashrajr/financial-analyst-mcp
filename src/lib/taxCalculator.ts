@@ -29,8 +29,17 @@ export interface SymbolTaxSummary {
   ltcgTax: number;
 }
 
+/** A held symbol deliberately left out of the capital-gains report, and why. */
+export interface ExcludedHolding {
+  symbol: string;
+  category: Category;
+  reason: string;
+}
+
 export interface TaxReport {
   holdings: SymbolTaxSummary[];
+  /** Holdings with no capital-gains treatment (FDs, PF, NPS) — shown as a note, never taxed here. */
+  excluded: ExcludedHolding[];
   totalSTCG: number;
   totalLTCG: number;
   ltcgExemption: number;
@@ -47,8 +56,37 @@ const LTCG_EXEMPTION = 125000; // ₹1.25 lakh
 const CESS_RATE = 0.04; // 4% Health & Education Cess
 
 /**
+ * Categories with no capital-gains treatment at all, so a "tax if sold today" estimate is meaningless for
+ * them: FD / deposit interest is taxed yearly as ordinary income, PPF/EPF are exempt, and NPS is taxed on
+ * withdrawal under its own rules (60% lump sum tax-free, 40% annuitised). They are listed on the report as
+ * `excluded` rather than silently dropped — previously they fell to the 24-month / 30% default and showed
+ * a made-up tax bill.
+ */
+const NO_CAPITAL_GAINS: Partial<Record<Category, string>> = {
+  'Fixed Deposits': 'Interest is taxed yearly as income at your slab rate — not a capital gain',
+  FDs: 'Interest is taxed yearly as income at your slab rate — not a capital gain',
+  'PPF / EPF': 'Exempt from capital gains (PPF/EPF maturity is tax-free)',
+  NPS: 'Not a capital gain — taxed on withdrawal (60% lump sum tax-free, 40% annuity taxed as income)',
+};
+
+/** Reason a category is left out of the capital-gains report, or null if it belongs in it. */
+export function capitalGainsExclusionReason(category: Category): string | null {
+  return NO_CAPITAL_GAINS[category] ?? null;
+}
+
+/**
  * Determines holding period threshold (in days) for long-term classification.
  * Based on Indian tax law FY 2026-27 (unchanged from FY 2025-26 per Budget 2026).
+ *
+ * - 12 months: listed equity / equity funds, and — by assumption about what is held — listed Gold/Silver
+ *   ETFs (tickers priced through Yahoo are listed instruments) and listed bonds.
+ * - Never: crypto / virtual digital assets are a flat 30% regime (Sec 115BBH) with no long-term class.
+ * - 24 months: everything else — US stocks / ETFs (foreign shares are treated as unlisted), real estate,
+ *   physical gold and gold funds-of-funds, and any custom asset.
+ *
+ * Gold is category-level, so a physical-gold or gold fund-of-funds holding tagged "Gold" is under-classified
+ * as long-term at 12-24 months; the Taxes page says so. Whether a bond is listed also can't be told from its
+ * category — see the page's CA note.
  */
 function getLTThresholdDays(category: Category): number {
   switch (category) {
@@ -57,13 +95,15 @@ function getLTThresholdDays(category: Category): number {
     case 'ETF':
     case 'Index':
     case 'Mutual Funds':
-      return 365; // 12 months
     case 'Gold':
-    case 'Commodity':
+    case 'Gold & Silver':
     case 'Bonds':
-    case 'Real Estate':
+      return 365; // 12 months
     case 'Crypto':
-    case 'FDs':
+      return Number.POSITIVE_INFINITY; // never long-term: flat 30% (Sec 115BBH)
+    case 'US Stocks / ETFs':
+    case 'Commodity':
+    case 'Real Estate':
     default:
       return 730; // 24 months
   }
@@ -82,6 +122,8 @@ function getSTCGRate(category: Category): number {
     case 'Index':
     case 'Mutual Funds':
       return 0.20; // 20% flat
+    case 'Crypto':
+      return 0.30; // flat 30% on all gains, no slab, no set-off
     default:
       return 0.30; // slab rate (upper estimate)
   }
@@ -90,8 +132,9 @@ function getSTCGRate(category: Category): number {
 /**
  * LTCG rate: 12.5% for all asset classes (post Budget 2024)
  */
-function getLTCGRate(_category: Category): number {
-  return 0.125;
+function getLTCGRate(category: Category): number {
+  // Crypto never reaches the long-term branch (threshold is infinite); 30% is what it would be if it did.
+  return category === 'Crypto' ? 0.30 : 0.125;
 }
 
 /**
@@ -185,6 +228,7 @@ export function generateTaxReport(
   }
 
   const holdings: SymbolTaxSummary[] = [];
+  const excluded: ExcludedHolding[] = [];
   let totalSTCG = 0;
   let totalLTCG = 0;
   let equityLTCG = 0; // eligible for exemption
@@ -192,6 +236,14 @@ export function generateTaxReport(
   for (const [symbol, txns] of Object.entries(bySymbol)) {
     const price = currentPrices[symbol] || 0;
     const category = symbolMetadata[symbol]?.category || 'Equity';
+    const exclusionReason = capitalGainsExclusionReason(category);
+    if (exclusionReason) {
+      // Only list it if something is still held — a fully-sold FD isn't a current holding to mention.
+      if (computeLotsForSymbol(txns, price, category, today).some(l => l.quantity > 0)) {
+        excluded.push({ symbol, category, reason: exclusionReason });
+      }
+      continue;
+    }
     const lots = computeLotsForSymbol(txns, price, category, today);
 
     // Tag symbol on each lot
@@ -234,6 +286,7 @@ export function generateTaxReport(
 
   return {
     holdings,
+    excluded,
     totalSTCG,
     totalLTCG,
     ltcgExemption,

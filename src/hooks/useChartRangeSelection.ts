@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 /**
  * Recharts fires chart-level mouse events with a CategoricalChartState that includes
@@ -46,16 +46,24 @@ export function useChartRangeSelection(): UseChartRangeSelectionResult {
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
   const [cursorIndex, setCursorIndex] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // Mirrors `isDragging` synchronously. onMouseMove must only extend the range while a drag is actually in
+  // progress; reading React state there would race the setState batch from a mouse-down that has just fired.
+  const draggingRef = useRef(false);
 
   const onMouseDown = useCallback((state: RechartsMouseState) => {
     const idx = toIndex(state.activeTooltipIndex);
     if (idx === null) return;
     setAnchorIndex(idx);
     setCursorIndex(idx);
+    draggingRef.current = true;
     setIsDragging(true);
   }, []);
 
   const onMouseMove = useCallback((state: RechartsMouseState) => {
+    // Only a held-down drag moves the range. Previously this updated the cursor on EVERY move, so after
+    // releasing the mouse, merely hovering over the chart kept dragging the finalized selection's end
+    // (and its range badge) along with the pointer.
+    if (!draggingRef.current) return;
     setCursorIndex((prev) => {
       const idx = toIndex(state.activeTooltipIndex);
       return idx === null ? prev : idx;
@@ -63,18 +71,21 @@ export function useChartRangeSelection(): UseChartRangeSelectionResult {
   }, []);
 
   const onMouseUp = useCallback(() => {
+    draggingRef.current = false;
     setIsDragging(false);
   }, []);
 
   const onMouseLeave = useCallback(() => {
     // Cancel an in-progress drag if the cursor leaves the chart area, but leave an
     // already-finalized selection (anchor/cursor from a completed drag) visible.
+    draggingRef.current = false;
     setIsDragging(false);
   }, []);
 
   const clear = useCallback(() => {
     setAnchorIndex(null);
     setCursorIndex(null);
+    draggingRef.current = false;
     setIsDragging(false);
   }, []);
 

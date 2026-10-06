@@ -442,13 +442,26 @@ export interface GrowthComparison {
   data: [GrowthComparisonPoint, GrowthComparisonPoint, GrowthComparisonPoint];
   yoyPct: number;
   periodOverPeriodLabel: string;
-  periodOverPeriodPct: number;
+  /** Null when the previous period's AUM was zero (or negative) — there is no base to take a % of. */
+  periodOverPeriodPct: number | null;
+}
+
+/**
+ * `delta` as a percentage of `base`, or null when `base` is zero/negative/non-finite.
+ *
+ * A growth % off a zero base is undefined, not 0%: the Reports KPI used to fall back to 0 there and showed a
+ * green "+0.00% vs <previous period>" for a portfolio that had just gone from ₹0 to something (and fed the
+ * same fake 0% into the AI-narrative prompt). Callers show "—" for null.
+ */
+export function percentChangeOver(delta: number, base: number): number | null {
+  if (!Number.isFinite(delta) || !Number.isFinite(base) || base <= 0) return null;
+  return (delta / base) * 100;
 }
 
 export function buildGrowthComparison(
   type: PeriodType,
   yoy: { prevValue: number; pct: number } | null,
-  periodOverPeriod: { prevLabel: string; prevValue: number; pct: number } | null,
+  periodOverPeriod: { prevLabel: string; prevValue: number; pct: number | null } | null,
   currentValue: number,
 ): GrowthComparison | null {
   if (!yoy || !periodOverPeriod) return null;

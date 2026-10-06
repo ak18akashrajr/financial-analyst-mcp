@@ -106,12 +106,30 @@ const TaxesContent = () => {
               <p className="text-muted-foreground">LTCG Exempt up to: <span className="text-foreground font-medium">₹1,25,000/yr</span></p>
             </div>
             <div className="p-3 rounded-md bg-muted/20 border border-border space-y-1">
-              <p className="font-semibold text-foreground">Gold / Bonds / Real Estate / Others</p>
+              <p className="font-semibold text-foreground">Gold / Silver ETFs &amp; Listed Bonds</p>
+              <p className="text-muted-foreground">STCG (≤12 months): <span className="text-foreground font-medium">Slab Rate (~30%)</span></p>
+              <p className="text-muted-foreground">LTCG (&gt;12 months): <span className="text-foreground font-medium">12.5%</span></p>
+              <p className="text-muted-foreground">No LTCG exemption threshold</p>
+            </div>
+            <div className="p-3 rounded-md bg-muted/20 border border-border space-y-1">
+              <p className="font-semibold text-foreground">US Stocks / ETFs, Real Estate, Commodity, Others</p>
               <p className="text-muted-foreground">STCG (≤24 months): <span className="text-foreground font-medium">Slab Rate (~30%)</span></p>
               <p className="text-muted-foreground">LTCG (&gt;24 months): <span className="text-foreground font-medium">12.5%</span> §112</p>
               <p className="text-muted-foreground">No LTCG exemption threshold</p>
             </div>
+            <div className="p-3 rounded-md bg-muted/20 border border-border space-y-1">
+              <p className="font-semibold text-foreground">Crypto / Virtual Digital Assets</p>
+              <p className="text-muted-foreground">All gains: <span className="text-foreground font-medium">Flat 30%</span> §115BBH, no long-term rate</p>
+              <p className="text-muted-foreground">Losses can't be set off or carried forward</p>
+            </div>
           </div>
+          {report && report.excluded.length > 0 && (
+            <p className="mt-3 text-[11px] text-muted-foreground" data-testid="tax-excluded-note">
+              <span className="font-medium text-foreground">Not in this estimate (no capital-gains treatment): </span>
+              {report.excluded.map(e => `${e.symbol} (${e.category})`).join(', ')}. FD interest is taxed yearly as
+              income, PPF/EPF are exempt, and NPS is taxed on withdrawal.
+            </p>
+          )}
         </Card>
 
         {/* Per-Symbol Breakdown */}
@@ -375,7 +393,10 @@ const TaxesContent = () => {
             Actual tax may vary based on your income slab, surcharge applicability, and specific transaction details.
             STCG slab-rate assets use 30% as upper estimate. Consult a qualified CA for filing.
             Tax rules as per Indian Income Tax Act, FY 2026–27 (Budget 2026 — rates unchanged from FY 2025–26).
-            Gold/Silver ETFs from Apr 2025 onwards: 12-month holding for LTCG @12.5%.
+            Gold is assumed to be listed Gold/Silver ETFs (12-month holding for LTCG @12.5%); physical gold and gold
+            funds-of-funds need 24 months, so a lot tagged Gold in that period may show as long-term here before it is.
+            Bonds are assumed to be listed (12 months) — unlisted bonds and debt funds are taxed differently, so confirm
+            with a CA. Crypto is a flat 30% with no loss set-off.
           </p>
         </div>
       </div>

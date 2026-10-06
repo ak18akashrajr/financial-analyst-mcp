@@ -51,6 +51,54 @@ describe('useChartRangeSelection', () => {
     expect(result.current.selection).toEqual({ startIndex: null, endIndex: null, isDragging: false });
   });
 
+  // Audit M8: onMouseMove used to update the cursor regardless of isDragging.
+  it('keeps a finalized selection fixed when the mouse keeps moving after mouse-up', () => {
+    const { result } = renderHook(() => useChartRangeSelection());
+    act(() => result.current.handlers.onMouseDown({ activeTooltipIndex: 2 }));
+    act(() => result.current.handlers.onMouseMove({ activeTooltipIndex: 5 }));
+    act(() => result.current.handlers.onMouseUp());
+    expect(result.current.selection).toEqual({ startIndex: 2, endIndex: 5, isDragging: false });
+
+    // Hovering around the chart afterwards must not drag the range's end along with the pointer.
+    act(() => result.current.handlers.onMouseMove({ activeTooltipIndex: 9 }));
+    act(() => result.current.handlers.onMouseMove({ activeTooltipIndex: 0 }));
+    expect(result.current.selection).toEqual({ startIndex: 2, endIndex: 5, isDragging: false });
+  });
+
+  it('does not create or change a selection from hovering when no drag was started', () => {
+    const { result } = renderHook(() => useChartRangeSelection());
+    act(() => result.current.handlers.onMouseMove({ activeTooltipIndex: 4 }));
+    expect(result.current.selection).toEqual({ startIndex: null, endIndex: null, isDragging: false });
+  });
+
+  it('stops following the pointer once the cursor leaves the chart mid-drag', () => {
+    const { result } = renderHook(() => useChartRangeSelection());
+    act(() => result.current.handlers.onMouseDown({ activeTooltipIndex: 1 }));
+    act(() => result.current.handlers.onMouseMove({ activeTooltipIndex: 3 }));
+    act(() => result.current.handlers.onMouseLeave());
+    act(() => result.current.handlers.onMouseMove({ activeTooltipIndex: 8 })); // re-enters without the button held
+    expect(result.current.selection).toEqual({ startIndex: 1, endIndex: 3, isDragging: false });
+  });
+
+  it('lets a fresh drag start after a finalized one, replacing the old range', () => {
+    const { result } = renderHook(() => useChartRangeSelection());
+    act(() => result.current.handlers.onMouseDown({ activeTooltipIndex: 2 }));
+    act(() => result.current.handlers.onMouseMove({ activeTooltipIndex: 5 }));
+    act(() => result.current.handlers.onMouseUp());
+
+    act(() => result.current.handlers.onMouseDown({ activeTooltipIndex: 6 }));
+    act(() => result.current.handlers.onMouseMove({ activeTooltipIndex: 8 }));
+    expect(result.current.selection).toEqual({ startIndex: 6, endIndex: 8, isDragging: true });
+  });
+
+  it('clear() stops following the pointer too', () => {
+    const { result } = renderHook(() => useChartRangeSelection());
+    act(() => result.current.handlers.onMouseDown({ activeTooltipIndex: 2 }));
+    act(() => result.current.clear());
+    act(() => result.current.handlers.onMouseMove({ activeTooltipIndex: 6 }));
+    expect(result.current.selection).toEqual({ startIndex: null, endIndex: null, isDragging: false });
+  });
+
   it('ignores a mouse-move with no active index', () => {
     const { result } = renderHook(() => useChartRangeSelection());
     act(() => result.current.handlers.onMouseDown({ activeTooltipIndex: 2 }));

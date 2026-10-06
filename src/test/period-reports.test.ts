@@ -10,6 +10,7 @@ import {
   buildActivity,
   fyStartYearFor,
   buildGrowthComparison,
+  percentChangeOver,
   periodOverPeriodBadge,
   type HistoricalPriceMap,
   type NetWorthHistoryRow,
@@ -294,5 +295,37 @@ describe('periodOverPeriodBadge', () => {
     expect(periodOverPeriodBadge('quarter')).toBe('QoQ');
     expect(periodOverPeriodBadge('half')).toBe('HoH');
     expect(periodOverPeriodBadge('year')).toBe('FY/FY');
+  });
+});
+
+describe('percentChangeOver (audit M9)', () => {
+  it('is delta as a percentage of a positive base', () => {
+    expect(percentChangeOver(500, 1000)).toBe(50);
+    expect(percentChangeOver(-250, 1000)).toBe(-25);
+    expect(percentChangeOver(0, 1000)).toBe(0); // a genuine 0% move on a real base is still 0
+  });
+
+  it('is null — not 0 — when there is no base to take a percentage of', () => {
+    expect(percentChangeOver(5000, 0)).toBeNull();
+    expect(percentChangeOver(5000, -100)).toBeNull();
+    expect(percentChangeOver(0, 0)).toBeNull();
+  });
+
+  it('is null for non-finite inputs', () => {
+    expect(percentChangeOver(Number.NaN, 1000)).toBeNull();
+    expect(percentChangeOver(100, Number.POSITIVE_INFINITY)).toBeNull();
+  });
+});
+
+describe('buildGrowthComparison with an unavailable period-over-period %', () => {
+  it('carries a null percentage through instead of inventing 0', () => {
+    const result = buildGrowthComparison(
+      'quarter',
+      { prevValue: 800, pct: 25 },
+      { prevLabel: 'Q1 2026-27', prevValue: 0, pct: null },
+      1000,
+    );
+    expect(result?.periodOverPeriodPct).toBeNull();
+    expect(result?.yoyPct).toBe(25);
   });
 });
