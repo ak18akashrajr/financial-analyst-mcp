@@ -18,15 +18,6 @@ Numeric examples are hand-computed unless marked reproduced.
 
 ### High — wrong numbers a decision could rest on
 
-- [ ] **H1. AI tools compute cost basis with the old "subtract sale proceeds" formula; the app uses
-      FIFO.** [`portfolio-data.ts:112-118`](supabase/functions/_shared/portfolio-data.ts)
-      (`computeHoldingsFromTxns`) vs [`costBasis.ts`](src/lib/costBasis.ts), whose header comment
-      documents this exact formula as the bug that was replaced. Feeds `invested`, `avgPrice`,
-      `pnl`, `pnlPercent` in `get_portfolio_summary` / `list_holdings`. Example: buy 10@100, sell
-      5@300, price 300 → app invested ₹500 / P&L +₹1,000; AI invested **−₹500**, P&L +₹2,000,
-      `pnlPercent` **−400%**. Fix: port FIFO into the Deno side (same hand-mirrored pattern as
-      `forecast.ts`) and add a partial-sell case to `portfolio-data.test.ts` (none today). Needs
-      `functions deploy`. `[checked]`
 - [ ] **H2. Forecast compounds cash, PF and credit-card debt at the equity drift/volatility.**
       [`Forecast.tsx:227`](src/pages/Forecast.tsx), [`forecast.ts:292`](src/lib/forecast.ts),
       [`mcp-tools.ts:544-547`](supabase/functions/_shared/mcp-tools.ts),
@@ -45,34 +36,11 @@ Numeric examples are hand-computed unless marked reproduced.
       page shows return 12%, beta 0.60, alpha +2.0%; re-weighted should be 20%, 1.0, +8.0%. Alpha
       can flip sign. Fix: divide by the included weight; add a test with an excluded holding
       (existing test uses two equal holdings only). `[checked]`
-- [ ] **H4. XIRR returns `null` for any annualised loss worse than ~−42%.**
-      [`xirr.ts:38-53`](src/lib/xirr.ts): Newton starts at 10%, first step overshoots below the
-      −0.99 guard, solver gives up. Reproduced: 365d 1000→600 (−40%) OK; 1000→550 (−45%) and
-      1000→500 (−50%) → `null`; 30d 1000→900 and 90d 1000→800 → `null`. Hits dashboard XIRR, USD
-      XIRR, benchmark XIRR, rolling XIRR (shared solver). Fix: retry from several guesses
-      (e.g. −0.5, 0.1, 1) or bracket + bisect. `[reproduced]`
-- [ ] **H5. Category `'Stocks'` gets the wrong tax rules.**
-      [`taxCalculator.ts:53-86`](src/lib/taxCalculator.ts) has no `'Stocks'` case (falls to the
-      24-month / 30% default) while `:99` lists it as exemption-eligible; `'Stocks'` is the first
-      option in [`HoldingsTable.tsx:15`](src/components/HoldingsTable.tsx). Example: gain ₹10,000 on
-      a lot held 400 days → taxed short-term 30% (₹3,000) vs long-term 12.5% fully inside the
-      ₹1.25L exemption (₹0). Other categories also fall to the default ('US Stocks / ETFs', 'Gold &
-      Silver', 'Fixed Deposits', 'NPS', …) — decide intended treatment for each (see Questions).
-      `[checked]`
-- [ ] **H6. Unpaginated reads hit the 1,000-row response cap.**
-      [`usePortfolio.ts:46`](src/hooks/usePortfolio.ts) (all transactions — past 1,000 the oldest
-      are silently dropped, breaking FIFO / XIRR / tax / holdings everywhere),
-      [`RiskMetrics.tsx:77`](src/pages/RiskMetrics.tsx) (keeps ~1000/N days per symbol while
-      labelled "90 trading days"), [`CorrelationHeatmap.tsx:69`](src/components/CorrelationHeatmap.tsx)
-      (keeps the *oldest* 1,000 rows), [`RollingReturns.tsx:174`](src/pages/RollingReturns.tsx)
-      (no order, no range), [`useNetWorthHistory.ts:48`](src/hooks/useNetWorthHistory.ts),
-      [`mcp-tools.ts:504`](supabase/functions/_shared/mcp-tools.ts) (forecast tool keeps the oldest
-      1,000 rows → stale start value), [`portfolio-data.ts:164,342`](supabase/functions/_shared/portfolio-data.ts).
-      `Reports.tsx` and `useDollarReturns.ts` already page correctly — reuse that pattern. Also add
-      `symbol` as a secondary order key in Reports' pagination (ties on `date` can skip/duplicate
-      rows). `[conditional]` — the repo itself states the 1,000-row cap and `supabase/config.toml`
-      has no `max_rows` override, but the live project setting isn't visible: **check current row
-      counts first** (see Questions).
+- [ ] **H5 (remaining). Other categories still fall to the 24-month / 30% default.** `'Stocks'` is
+      fixed (see Archive); the rest — `'US Stocks / ETFs'`, `'Gold & Silver'` / `'Gold'`,
+      `'Fixed Deposits'`, `'NPS'`, `'Crypto'`, … — are unchanged until the intended treatment for
+      each is decided (see Question 4). The default is arguably right for US stocks; Gold's page
+      disclaimer (12 months / 12.5%) disagrees with the code. `[checked]`
 
 ### Medium — misleading or inconsistent numbers
 
@@ -264,7 +232,8 @@ Numeric examples are hand-computed unless marked reproduced.
 
 ### Suggested order
 
-1. H1, H4, H5, and the H6 pagination — small, well-bounded.
+1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, PR pending; only H5's non-`'Stocks'`
+   categories remain, blocked on Question 4).
 2. H2, H3 — shared between client and server, so each is one change in two places.
 3. M1, M2, M4, M7, M10 — the numbers on screen most often.
 4. The rest, after the questions above are answered. Edge-function fixes need
@@ -282,6 +251,43 @@ remains.
 
 <details>
 <summary>Archive (completed)</summary>
+
+- [x] **Calculation audit, batch 1 — H1, H4, H5 (partial), H6** (2026-10-06). One branch, one commit
+      per item: `fix/audit-high-batch-1`, PR pending (number to be filled in on opening). H1 and H6
+      change edge functions, so they need `npx supabase@1.190.0 functions deploy --use-api` to take
+      effect; H4 and H5 are frontend only.
+      - **H1 — AI tools used the old "subtract sale proceeds" cost basis.**
+        `computeHoldingsFromTxns` ([`portfolio-data.ts`](supabase/functions/_shared/portfolio-data.ts))
+        now uses a hand-mirrored FIFO port of [`costBasis.ts`](src/lib/costBasis.ts) (same pattern as
+        `forecast.ts`). Buy 10@100, sell 5@300 now gives invested ₹500 / +200% instead of −₹500 /
+        −400%. Tests: four new cases in `portfolio-data.test.ts` (partial sell, multi-lot FIFO,
+        out-of-order rows, as-of reconstruction), all confirmed to fail against the old formula.
+      - **H4 — XIRR returned `null` for annualised losses worse than ~−42%.**
+        [`xirr.ts`](src/lib/xirr.ts) now retries Newton from several starts (the 10% seed stays
+        first, so every case that already converged is unchanged) and falls back to bracketed
+        bisection. Shared solver, so dashboard / USD / benchmark / rolling XIRR all benefit. Tests:
+        seven new cases in `xirr.test.ts` (−45%, −50%, −90%, 30-day, 90-day, multi-flow); six
+        confirmed to fail before the fix.
+      - **H5 (partial) — category `'Stocks'` got the wrong tax rules.** Added to the holding-period
+        and STCG-rate switches in [`taxCalculator.ts`](src/lib/taxCalculator.ts) (12 months, 20% STCG,
+        12.5% LTCG with the exemption). **Not done:** the other categories that fall to the default —
+        still open above, pending Question 4. Test: one new case in `tax-calculator.test.ts`,
+        confirmed to fail before.
+      - **H6 — unpaginated reads hit PostgREST's silent 1,000-row cap.** New
+        [`fetchAllPages`](src/lib/fetchAllPages.ts) and its Deno copy
+        [`paginate.ts`](supabase/functions/_shared/paginate.ts): range-based, all-or-nothing on error
+        (a half-read list is never returned), page-capped so a query that ignores `.range()` can't
+        loop. Callers add an `id` tie-break to their ordering so rows tying on `date` can't be
+        skipped or duplicated. Applied to `usePortfolio` (transactions), `RiskMetrics`,
+        `CorrelationHeatmap`, `RollingReturns`, `useNetWorthHistory`, `Reports` (client) and
+        `fetchTxns`, `fetchDailyReturnsBySymbol`, `fetchPriceMapAsOf`, `getExposureDrift`, the
+        `forecast_portfolio_value` price read (edge). `useDollarReturns` already paged correctly.
+        The bounded `.limit(days + 1)` reads were left alone. Tests: `fetch-all-pages.test.ts`,
+        `use-portfolio-pagination.test.tsx`, `portfolio-data-pagination.test.ts` — their fakes enforce
+        the 1,000-row cap and fail with paging disabled. Fourteen existing hand-built Supabase mocks (11 frontend, 3 edge-function)
+        gained `.range()` / second-`.order()` support.
+        **Caveat:** the live row counts were never checked (Question 1), so whether the cap was
+        already biting is unknown — the fix is correct either way.
 
 - [x] **Time series forecasting.** Genuine fitted forecasting, distinct from the existing
       assumption-driven Projections/Monte Carlo — drift and volatility are fitted from the

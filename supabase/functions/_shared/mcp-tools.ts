@@ -10,6 +10,7 @@
 //    the MCP protocol itself. Tool *execution* from portfolio-ai always goes
 //    through a real MCP tools/call request, never a direct function call.
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
+import { fetchAllPages } from "./paginate.ts";
 import {
   checkLimitBreaches,
   compareToBenchmark,
@@ -501,11 +502,17 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
 
       let priceRows: { symbol: string; date: string; close: number }[] = [];
       if (symbols.length > 0) {
-        const { data, error } = await sb
-          .from("historical_prices")
-          .select("symbol, date, close")
-          .in("symbol", symbols)
-          .order("date", { ascending: true });
+        // Paged: ascending order + the 1,000-row response cap used to keep the OLDEST rows, so the
+        // forecast's start value came from stale prices once history outgrew one page.
+        const { data, error } = await fetchAllPages<{ symbol: string; date: string; close: number }>((from, to) =>
+          sb
+            .from("historical_prices")
+            .select("symbol, date, close")
+            .in("symbol", symbols)
+            .order("date", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to),
+        );
         if (error) {
           throw new Error("forecast_portfolio_value: a database error occurred");
         }

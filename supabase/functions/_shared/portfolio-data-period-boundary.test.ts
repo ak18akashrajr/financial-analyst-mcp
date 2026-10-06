@@ -38,6 +38,7 @@ function makeBuilder(all: Rows) {
       return builder;
     },
     limit: (n: number) => { rows = rows.slice(0, n); return builder; },
+    range: (from: number, to: number) => { rows = rows.slice(from, to + 1); return builder; },
     single: () => Promise.resolve({ data: rows[0] ?? null, error: rows[0] ? null : { message: "no rows" } }),
     then: (resolve: any) => Promise.resolve({ data: rows, error: null }).then(resolve),
   };

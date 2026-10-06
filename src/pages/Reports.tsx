@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, FileSpreadsheet, Save, Printer, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Sparkles, AlertTriangle, Compass, Activity, Wand2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { PageSkeleton } from '@/components/PageSkeleton';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useNetWorthHistory } from '@/hooks/useNetWorthHistory';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
@@ -63,25 +64,20 @@ const ReportsContent = () => {
   const [backfillingBenchmark, setBackfillingBenchmark] = useState(false);
   const [generatingAI, setGeneratingAI] = useState(false);
 
-  // Page rows in batches — Supabase caps a single response at 1,000 rows.
+  // Page rows in batches — Supabase caps a single response at 1,000 rows. `id` is the secondary
+  // order key: many symbols share a `date`, and ties on a non-unique key can skip or duplicate rows
+  // across a page boundary.
   const fetchAllHistoricalPrices = async () => {
-    const pageSize = 1000;
-    let from = 0;
-    const all: Array<{ symbol: string; date: string; close: number }> = [];
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { data, error } = await supabase
+    const { data, error } = await fetchAllPages((from, to) =>
+      supabase
         .from('historical_prices')
         .select('symbol,date,close')
         .order('date', { ascending: true })
-        .range(from, from + pageSize - 1);
-      if (error) throw error;
-      if (!data || data.length === 0) break;
-      for (const r of data as any[]) all.push({ symbol: r.symbol, date: r.date as string, close: Number(r.close) });
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
-    return all;
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    if (error) throw error;
+    return (data ?? []).map((r: any) => ({ symbol: r.symbol as string, date: r.date as string, close: Number(r.close) }));
   };
 
   const reloadHistoricalPrices = async () => {

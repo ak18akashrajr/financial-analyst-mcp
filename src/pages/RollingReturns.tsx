@@ -3,6 +3,7 @@ import { SiteFooter } from '@/components/SiteFooter';
 import { PrivacyProvider } from '@/contexts/PrivacyContext';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { calculateXIRR } from '@/lib/xirr';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Loader2, RefreshCw, Info } from 'lucide-react';
@@ -171,10 +172,17 @@ const RollingContent = () => {
 
   const loadCachedPrices = async () => {
     if (symbols.length === 0) return;
-    const { data } = await supabase
-      .from('historical_prices')
-      .select('symbol,date,close')
-      .in('symbol', symbols);
+    // Paged and explicitly ordered — previously no order and no range, so past 1,000 rows an
+    // arbitrary subset of the price history was returned.
+    const { data } = await fetchAllPages((from, to) =>
+      supabase
+        .from('historical_prices')
+        .select('symbol,date,close')
+        .in('symbol', symbols)
+        .order('date', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
     if (data) {
       const map: Record<string, PricePoint[]> = {};
       for (const r of data) {

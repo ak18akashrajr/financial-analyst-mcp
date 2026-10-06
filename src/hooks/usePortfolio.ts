@@ -4,6 +4,7 @@ import type { Transaction, DerivedHolding, PortfolioSummary, CashSettings, Curre
 import { toast } from 'sonner';
 import { calculateXIRR } from '@/lib/xirr';
 import { computeFifoPosition } from '@/lib/costBasis';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { getIstYearMonth } from '@/lib/expenseIncomeRatio';
 import { logClientError } from '@/lib/clientErrorLogging';
 import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
@@ -43,8 +44,14 @@ export function usePortfolio() {
     async function loadData() {
       setLoading(true);
       try {
-        let txnQuery = supabase.from('transactions').select('*').order('date', { ascending: false });
-        if (activeMemberId !== 'all') txnQuery = txnQuery.eq('family_member_id', activeMemberId);
+        // Paged: one response is capped at 1,000 rows, and `transactions` is the sole input to FIFO,
+        // XIRR, tax lots and holdings — past the cap the OLDEST rows (newest-first order) would be
+        // silently dropped and every derived figure would be wrong. `id` is the unique tie-break.
+        const txnQuery = fetchAllPages((from, to) => {
+          let q = supabase.from('transactions').select('*').order('date', { ascending: false }).order('id', { ascending: false });
+          if (activeMemberId !== 'all') q = q.eq('family_member_id', activeMemberId);
+          return q.range(from, to);
+        });
 
         let cashQuery = supabase.from('cash_settings').select('*');
         if (activeMemberId !== 'all') cashQuery = cashQuery.eq('family_member_id', activeMemberId);

@@ -31,14 +31,25 @@ vi.mock('@/integrations/supabase/client', () => ({
         return {
           select: () => ({
             order: () => ({
-              range: (from: number, to: number) =>
-                Promise.resolve({ data: historicalPriceRows.slice(from, to + 1), error: null }),
+              order: () => ({
+                range: (from: number, to: number) =>
+                  Promise.resolve({ data: historicalPriceRows.slice(from, to + 1), error: null }),
+              }),
             }),
           }),
         };
       }
       // net_worth_history and period_reports: no rows in any of these tests.
-      return { select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) };
+      // Also serves useNetWorthHistory's paged read (.order().order().range()), hence the
+      // awaitable-and-chainable shape.
+      return {
+        select: () => ({
+          order: () =>
+            Object.assign(Promise.resolve({ data: [], error: null }), {
+              order: () => ({ range: () => Promise.resolve({ data: [], error: null }) }),
+            }),
+        }),
+      };
     },
     functions: { invoke: vi.fn().mockResolvedValue({ data: {}, error: null }) },
     auth: { getSession: vi.fn().mockResolvedValue({ data: { session: null } }) },

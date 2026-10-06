@@ -82,6 +82,31 @@ describe('generateTaxReport', () => {
     expect(report.ltcgExemption).toBe(0);      // Gold gains never feed the equity exemption bucket
   });
 
+  it("treats category 'Stocks' like listed equity: 12-month threshold, 20% STCG, LTCG exemption (audit H5)", () => {
+    // 'Stocks' is the first option in the HoldingsTable category picker but had no case in the
+    // threshold/rate switches, so it fell to the 24-month / 30% default.
+    const transactions: Transaction[] = [
+      txn({ symbol: 'LT', type: 'BUY', quantity: 10, price: 100, date: daysAgo(400) }), // long-term
+      txn({ symbol: 'ST', type: 'BUY', quantity: 10, price: 100, date: daysAgo(100) }), // short-term
+    ];
+    const report = generateTaxReport(
+      transactions,
+      { LT: 1100, ST: 1100 },
+      { LT: { category: 'Stocks' }, ST: { category: 'Stocks' } },
+    );
+    const lt = report.holdings.find(h => h.symbol === 'LT')!.lots[0];
+    const st = report.holdings.find(h => h.symbol === 'ST')!.lots[0];
+
+    expect(lt.isLongTerm).toBe(true); // 400 > 365 (was short-term under the 730-day default)
+    expect(lt.taxRate).toBe(0.125);
+    expect(st.isLongTerm).toBe(false);
+    expect(st.taxRate).toBe(0.20); // not the 30% default
+    // LT gain 10,000 sits fully inside the ₹1.25L exemption → no LTCG tax.
+    expect(report.totalLTCG).toBe(10000);
+    expect(report.ltcgExemption).toBe(10000);
+    expect(report.ltcgTax).toBe(0);
+  });
+
   it('excludes a fully-sold-out symbol from the report', () => {
     const transactions: Transaction[] = [
       txn({ type: 'BUY', quantity: 10, price: 100, date: daysAgo(400) }),

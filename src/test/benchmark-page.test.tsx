@@ -43,8 +43,16 @@ vi.mock('@/integrations/supabase/client', () => ({
         // page itself slices off the last windowDays+1 points client-side.
         return {
           select: () => ({
-            order: (col: string, opts?: { ascending?: boolean }) =>
-              Promise.resolve({ data: sortedAndLimited(netWorthRows, col, opts?.ascending, netWorthRows.length), error: null }),
+            // Paged via fetchAllPages: .order(col).order('id').range(from, to).
+            order: (col: string, opts?: { ascending?: boolean }) => ({
+              order: () => ({
+                range: (from: number, to: number) =>
+                  Promise.resolve({
+                    data: sortedAndLimited(netWorthRows, col, opts?.ascending, netWorthRows.length).slice(from, to + 1),
+                    error: null,
+                  }),
+              }),
+            }),
           }),
         };
       }

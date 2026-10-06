@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Gauge, Activity } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { toast } from 'sonner';
@@ -71,14 +72,20 @@ const RiskMetricsContent = () => {
         setLoading(false);
         return;
       }
-      // Ordered newest-first with no row-count limit, then grouped and sliced to the most recent
-      // LOOKBACK_DAYS+1 per symbol below — the same shape fetchDailyReturnsBySymbol uses
-      // server-side (a single `.in()` query can't express "most recent N rows per symbol" itself).
-      const { data, error } = await supabase
-        .from('historical_prices')
-        .select('symbol, date, close')
-        .in('symbol', symbols)
-        .order('date', { ascending: false });
+      // Ordered newest-first and paged (one response is capped at 1,000 rows — unpaged, each symbol
+      // kept only ~1000/N of its latest days while the page said "90 trading days"), then grouped and
+      // sliced to the most recent LOOKBACK_DAYS+1 per symbol below — the same shape
+      // fetchDailyReturnsBySymbol uses server-side (a single `.in()` query can't express "most recent
+      // N rows per symbol" itself).
+      const { data, error } = await fetchAllPages((from, to) =>
+        supabase
+          .from('historical_prices')
+          .select('symbol, date, close')
+          .in('symbol', symbols)
+          .order('date', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to),
+      );
       if (error) toast.error(`Failed to load historical prices: ${error.message}`);
       setPriceRows((data ?? []).map(r => ({ symbol: r.symbol, date: r.date, close: Number(r.close) })));
       setLoading(false);

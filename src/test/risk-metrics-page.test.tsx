@@ -39,9 +39,14 @@ vi.mock('@/integrations/supabase/client', () => ({
         return {
           select: () => ({
             in: (_col: string, symbols: string[]) => ({
-              order: () => Promise.resolve({
-                data: sortedByDateDescending(historicalPriceRows.filter(r => symbols.includes(r.symbol))),
-                error: null,
+              // Paged via fetchAllPages: .order(date).order('id').range(from, to).
+              order: () => ({
+                order: () => ({
+                  range: (from: number, to: number) => Promise.resolve({
+                    data: sortedByDateDescending(historicalPriceRows.filter(r => symbols.includes(r.symbol))).slice(from, to + 1),
+                    error: null,
+                  }),
+                }),
               }),
             }),
           }),

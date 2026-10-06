@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 import { mergeNetWorthHistories, type NetWorthHistoryRow } from '@/lib/mergeNetWorthHistories';
 import { logClientError } from '@/lib/clientErrorLogging';
@@ -45,10 +46,16 @@ export function useNetWorthHistory(refreshKey: number = 0) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { data: rows, error } = await supabase
-        .from('net_worth_history')
-        .select('recorded_at, net_worth, portfolio_value, liquid_cash, vault_cash, pf_balance, credit_card_debt, family_member_id')
-        .order('recorded_at', { ascending: true });
+      // Paged: a snapshot is written on every transaction/balance edit, so this grows without bound
+      // and a single response (capped at 1,000 rows) would drop the newest snapshots.
+      const { data: rows, error } = await fetchAllPages((from, to) =>
+        supabase
+          .from('net_worth_history')
+          .select('recorded_at, net_worth, portfolio_value, liquid_cash, vault_cash, pf_balance, credit_card_debt, family_member_id')
+          .order('recorded_at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to),
+      );
 
       if (cancelled) return;
       if (error) {

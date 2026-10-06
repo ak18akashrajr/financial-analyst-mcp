@@ -52,6 +52,7 @@ const CESS_RATE = 0.04; // 4% Health & Education Cess
  */
 function getLTThresholdDays(category: Category): number {
   switch (category) {
+    case 'Stocks':
     case 'Equity':
     case 'ETF':
     case 'Index':
@@ -75,6 +76,7 @@ function getLTThresholdDays(category: Category): number {
  */
 function getSTCGRate(category: Category): number {
   switch (category) {
+    case 'Stocks':
     case 'Equity':
     case 'ETF':
     case 'Index':

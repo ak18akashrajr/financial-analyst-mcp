@@ -42,6 +42,11 @@ function makeQueryBuilder(table: FakeTable) {
       rows = rows.slice(0, n);
       return builder;
     },
+    // PostgREST-style inclusive range — fetchAllPages pages every unbounded read through this.
+    range: (from: number, to: number) => {
+      rows = rows.slice(from, to + 1);
+      return builder;
+    },
     single: () => Promise.resolve({ data: rows[0] ?? null, error: rows[0] ? null : { message: "no rows" } }),
     then: (resolve: any) => Promise.resolve({ data: rows, error: null }).then(resolve),
   };

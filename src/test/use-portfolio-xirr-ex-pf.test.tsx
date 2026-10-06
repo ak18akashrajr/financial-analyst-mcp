@@ -16,7 +16,20 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'transactions') {
-        return { select: () => ({ order: () => Promise.resolve({ data: transactionRows, error: null }) }) };
+        // transactions are read via fetchAllPages: .order().order()[.eq()].range(from, to).
+        return {
+          select: () => ({
+            order: () => ({
+              order: () => {
+                const q: any = {
+                  eq: () => q,
+                  range: (from: number, to: number) => Promise.resolve({ data: transactionRows.slice(from, to + 1), error: null }),
+                };
+                return q;
+              },
+            }),
+          }),
+        };
       }
       if (table === 'cash_settings') {
         // No FamilyMemberContext mock here — activeMemberId defaults to 'all', so usePortfolio
