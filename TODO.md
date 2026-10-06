@@ -216,7 +216,7 @@ Numeric examples are hand-computed unless marked reproduced.
 
 1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192); only H5's non-`'Stocks'`
    categories remain, blocked on Question 4).
-2. ~~H2, H3~~ — done (batch 2, PR pending).
+2. ~~H2, H3~~ — done (batch 2, [PR #193](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/193)).
 3. M1, M2, M4, M7, M10 — the numbers on screen most often.
 4. The rest, after the questions above are answered. Edge-function fixes need
    `npx supabase@1.190.0 functions deploy --use-api` to take effect.
@@ -235,7 +235,8 @@ remains.
 <summary>Archive (completed)</summary>
 
 - [x] **Calculation audit, batch 2 — H2, H3, plus a missed H6 sweep** (2026-10-06). Branch
-      `fix/audit-high-batch-2`, PR pending (number to be filled in on opening). H2, H3 and the H6
+      `fix/audit-high-batch-2`, merged via
+      [PR #193](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/193). H2, H3 and the H6
       follow-up all change edge functions or shared code, so the edge-function side needs
       `npx supabase@1.190.0 functions deploy --use-api` to take effect.
       - **H2 — forecast compounded cash, PF and credit-card debt at the equity drift/volatility.**
