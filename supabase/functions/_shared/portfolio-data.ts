@@ -93,7 +93,39 @@ export function endOfIstDay(dateStr: string): string {
 }
 
 /**
- * Replays transactions (optionally only up to `asOfDate`) into net quantity +
+ * FIFO cost basis for one symbol's transactions — the Deno-side mirror of `computeFifoPosition` in
+ * src/lib/costBasis.ts (hand-synced, same pattern as forecast.ts/riskMetrics.ts: the Vite bundle and
+ * the edge function can't import each other). Each SELL consumes the oldest still-open BUY lot(s)
+ * first, so `invested` is the cost of the shares still held. The old formula here reduced `invested`
+ * by the SELL's proceeds instead, which went negative after a profitable partial sell (buy 10@100,
+ * sell 5@300 → −₹500 invested, −400% P&L) while the app showed ₹500. Keep in sync with costBasis.ts.
+ * An oversell simply depletes all open lots to zero, same as the client.
+ */
+export function computeFifoPosition(txns: Txn[]): { quantity: number; invested: number } {
+  const sorted = [...txns].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const lots: Array<{ qty: number; price: number }> = [];
+  for (const t of sorted) {
+    if (t.type === "BUY") {
+      lots.push({ qty: Number(t.quantity), price: Number(t.price) });
+    } else {
+      let remaining = Number(t.quantity);
+      for (const lot of lots) {
+        if (remaining <= 0) break;
+        const used = Math.min(lot.qty, remaining);
+        lot.qty -= used;
+        remaining -= used;
+      }
+    }
+  }
+  const open = lots.filter((l) => l.qty > 1e-9);
+  return {
+    quantity: open.reduce((s, l) => s + l.qty, 0),
+    invested: open.reduce((s, l) => s + l.qty * l.price, 0),
+  };
+}
+
+/**
+ * Replays transactions (optionally only up to `asOfDate`) into FIFO quantity +
  * invested amount per symbol, then prices them at `priceMap`. Used both for
  * "current holdings" (no asOfDate, current price map) and for point-in-time
  * reconstructions (get_exposure_drift).
@@ -105,17 +137,14 @@ export function computeHoldingsFromTxns(
   asOfDate?: string,
 ): Holding[] {
   const relevant = asOfDate ? txns.filter((t) => txnDayIst(t.date) <= asOfDate) : txns;
-  const bySymbol: Record<string, { qty: number; invested: number }> = {};
+  const txnsBySymbol: Record<string, Txn[]> = {};
   for (const t of relevant) {
-    if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { qty: 0, invested: 0 };
-    const entry = bySymbol[t.symbol];
-    if (t.type === "BUY") {
-      entry.qty += Number(t.quantity);
-      entry.invested += Number(t.quantity) * Number(t.price);
-    } else {
-      entry.qty -= Number(t.quantity);
-      entry.invested -= Number(t.quantity) * Number(t.price);
-    }
+    (txnsBySymbol[t.symbol] ||= []).push(t);
+  }
+  const bySymbol: Record<string, { qty: number; invested: number }> = {};
+  for (const [symbol, symbolTxns] of Object.entries(txnsBySymbol)) {
+    const { quantity, invested } = computeFifoPosition(symbolTxns);
+    bySymbol[symbol] = { qty: quantity, invested };
   }
 
   return Object.entries(bySymbol)

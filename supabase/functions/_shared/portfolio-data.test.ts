@@ -46,6 +46,59 @@ describe("computeHoldingsFromTxns", () => {
     expect(aapl.pnl).toBeCloseTo(800); // 3000 - 2200
   });
 
+  it("uses FIFO cost basis after a partial sell, not 'subtract sale proceeds' (audit H1)", () => {
+    // buy 10@100, sell 5@300, price 300 → the app shows invested ₹500 / P&L +₹1,000. The old
+    // formula gave invested −₹500, P&L +₹2,000, pnlPercent −400%.
+    const partial: Txn[] = [
+      { symbol: "AAPL", type: "BUY", quantity: 10, price: 100, date: "2026-01-01" },
+      { symbol: "AAPL", type: "SELL", quantity: 5, price: 300, date: "2026-02-01" },
+    ];
+    const [h] = computeHoldingsFromTxns(partial, { AAPL: 300 }, META);
+    expect(h.quantity).toBe(5);
+    expect(h.invested).toBeCloseTo(500);
+    expect(h.avgPrice).toBeCloseTo(100);
+    expect(h.currentValue).toBeCloseTo(1500);
+    expect(h.pnl).toBeCloseTo(1000);
+    expect(h.pnlPercent).toBeCloseTo(200);
+  });
+
+  it("depletes the oldest lot first across lots bought at different prices", () => {
+    // buy 10@100, buy 10@200, sell 10 → FIFO leaves 10 @ ₹200 (invested ₹2,000, avg ₹200).
+    const lots: Txn[] = [
+      { symbol: "AAPL", type: "BUY", quantity: 10, price: 100, date: "2026-01-01" },
+      { symbol: "AAPL", type: "BUY", quantity: 10, price: 200, date: "2026-02-01" },
+      { symbol: "AAPL", type: "SELL", quantity: 10, price: 250, date: "2026-03-01" },
+    ];
+    const [h] = computeHoldingsFromTxns(lots, { AAPL: 200 }, META);
+    expect(h.quantity).toBe(10);
+    expect(h.invested).toBeCloseTo(2000);
+    expect(h.avgPrice).toBeCloseTo(200);
+    expect(h.pnl).toBeCloseTo(0);
+  });
+
+  it("is order-independent: rows arriving out of date order still FIFO by date", () => {
+    const shuffled: Txn[] = [
+      { symbol: "AAPL", type: "SELL", quantity: 10, price: 250, date: "2026-03-01" },
+      { symbol: "AAPL", type: "BUY", quantity: 10, price: 200, date: "2026-02-01" },
+      { symbol: "AAPL", type: "BUY", quantity: 10, price: 100, date: "2026-01-01" },
+    ];
+    const [h] = computeHoldingsFromTxns(shuffled, { AAPL: 200 }, META);
+    expect(h.invested).toBeCloseTo(2000);
+  });
+
+  it("applies FIFO to an as-of reconstruction too (sell after the as-of date is ignored)", () => {
+    const lots: Txn[] = [
+      { symbol: "AAPL", type: "BUY", quantity: 10, price: 100, date: "2026-01-01" },
+      { symbol: "AAPL", type: "SELL", quantity: 5, price: 300, date: "2026-02-01" },
+    ];
+    const before = computeHoldingsFromTxns(lots, { AAPL: 150 }, META, "2026-01-15")[0];
+    expect(before.quantity).toBe(10);
+    expect(before.invested).toBeCloseTo(1000);
+    const after = computeHoldingsFromTxns(lots, { AAPL: 150 }, META, "2026-02-01")[0];
+    expect(after.quantity).toBe(5);
+    expect(after.invested).toBeCloseTo(500);
+  });
+
   it("drops fully-closed positions", () => {
     const holdings = computeHoldingsFromTxns(txns, prices, META);
     expect(holdings.find((h) => h.symbol === "TCS")).toBeUndefined();
