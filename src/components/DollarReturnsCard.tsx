@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import type { DerivedHolding, PortfolioSummary } from '@/types/portfolio';
 import { attribution, fmtUsd, holdingsInUsd, latestRate, type FxRate } from '@/lib/fx';
@@ -19,18 +20,21 @@ export function DollarReturnsCard({ holdings, summary }: Props) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      // Most recent 3000 daily rates (descending), reversed to ascending for lookups.
-      const { data } = await supabase
-        .from('fx_rates')
-        .select('date, rate, source')
-        .eq('pair', 'USDINR')
-        .order('date', { ascending: false })
-        .limit(3000);
+      // Every USDINR rate, ascending. This used `.limit(3000)` with a "most recent 3000" comment, but
+      // the API's 1,000-row response cap silently overrides any larger limit — so only ~1,000 days
+      // came back and trades older than that had no rate to look up. (pair, date) is unique, so `date`
+      // alone is a total order for the page boundaries.
+      const { data } = await fetchAllPages((from, to) =>
+        supabase
+          .from('fx_rates')
+          .select('date, rate, source')
+          .eq('pair', 'USDINR')
+          .order('date', { ascending: true })
+          .range(from, to),
+      );
       if (!alive) return;
       setRates(
-        (data ?? [])
-          .map((r) => ({ date: r.date as string, rate: Number(r.rate), source: (r.source as string) ?? 'unknown' }))
-          .reverse()
+        (data ?? []).map((r) => ({ date: r.date as string, rate: Number(r.rate), source: (r.source as string) ?? 'unknown' })),
       );
       setLoading(false);
     })();

@@ -14,8 +14,11 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: () => ({
       select: () => ({
+        // Paged via fetchAllPages: .eq().order().range(from, to).
         eq: () => ({
-          order: () => Promise.resolve({ data: [], error: null }),
+          order: () => ({
+            range: () => Promise.resolve({ data: [], error: null }),
+          }),
         }),
       }),
     }),
