@@ -61,6 +61,41 @@ describe('calculateXIRR', () => {
     expect(Math.abs(npvAt(rate!, cfs))).toBeLessThan(0.01);
   });
 
+  // Regression: Newton from the 10% seed overshoots below the -0.99 divergence guard on
+  // steep losses and the solver used to give up with null instead of trying another start.
+  describe('large annualised losses (worse than ~-42%)', () => {
+    const d0 = new Date('2023-01-01T00:00:00Z');
+    const twoFlow = (out: number, back: number, nDays: number): CashFlow[] => [
+      { amount: -out, date: d0 },
+      { amount: back, date: new Date(d0.getTime() + days(nDays)) },
+    ];
+
+    it.each([
+      ['365d 1000→600 (−40%)', 1000, 600, 365, -0.4],
+      ['365d 1000→550 (−45%)', 1000, 550, 365, -0.45],
+      ['365d 1000→500 (−50%)', 1000, 500, 365, -0.5],
+      ['365d 1000→100 (−90%)', 1000, 100, 365, -0.9],
+      ['30d 1000→900', 1000, 900, 30, Math.pow(0.9, 365 / 30) - 1],
+      ['90d 1000→800', 1000, 800, 90, Math.pow(0.8, 365 / 90) - 1],
+    ])('%s solves to the closed-form rate', (_label, out, back, nDays, expected) => {
+      const rate = calculateXIRR(twoFlow(out, back, nDays));
+      expect(rate).not.toBeNull();
+      expect(rate!).toBeCloseTo(expected, 5);
+    });
+
+    it('solves a steep loss with an intermediate contribution', () => {
+      const cfs: CashFlow[] = [
+        { amount: -1000, date: d0 },
+        { amount: -1000, date: new Date(d0.getTime() + days(180)) },
+        { amount: 700, date: new Date(d0.getTime() + days(365)) },
+      ];
+      const rate = calculateXIRR(cfs);
+      expect(rate).not.toBeNull();
+      expect(rate!).toBeLessThan(-0.5);
+      expect(Math.abs(npvAt(rate!, cfs))).toBeLessThan(0.01);
+    });
+  });
+
   it('converges (NPV ≈ 0 at the solved rate) for irregular multi-flow cash flows', () => {
     const d0 = new Date('2023-01-01T00:00:00Z');
     const cfs: CashFlow[] = [
