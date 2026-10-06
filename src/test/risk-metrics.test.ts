@@ -158,3 +158,63 @@ describe('computeRiskMetrics — riskPerRupeeOfReturn ("unit economics" statemen
     expect(h.riskPerRupeeOfReturn).toBe(0);
   });
 });
+
+describe('computeRiskMetrics: re-weights after dropping holdings with no price history (audit H3)', () => {
+  // The audit's example. A: 60% of value, 20% annualized return, beta 1.0 against a 10%-return benchmark.
+  // B: 40% of value but no usable history. Alternating +/-1% swings around the mean give A and the
+  // benchmark identical shapes (beta exactly 1) with annualized means of 20% and 10%.
+  const swing = (annualMean: number) =>
+    Array.from({ length: 20 }, (_, i) => annualMean / 252 + (i % 2 === 0 ? 0.01 : -0.01));
+  const a = swing(0.2);
+  const bench = swing(0.1);
+  const holdings = [
+    { symbol: 'A', currentValue: 600 },
+    { symbol: 'B', currentValue: 400 },
+  ];
+
+  it('reports the included holding own return, beta and alpha, not 60% of them', () => {
+    const result = computeRiskMetrics(holdings, { A: a }, bench);
+    const rf = result.riskFreeRatePercent;
+
+    expect(result.portfolioAnnualizedReturnPercent).toBeCloseTo(20, 1); // was 12.0
+    expect(result.portfolioBetaVsNifty50).toBeCloseTo(1, 2); // was 0.60
+    // Jensen's alpha = 20 - (rf + 1.0 x (10 - rf)) = 10.0 (was ~3.2 under the old weighting).
+    expect(result.portfolioAlphaPercent).toBeCloseTo(10, 1);
+    expect(rf).toBeGreaterThan(0);
+  });
+
+  it('matches the per-holding figures exactly when only one holding has data', () => {
+    const result = computeRiskMetrics(holdings, { A: a }, bench);
+    const aRow = result.perHolding.find((h) => h.symbol === 'A')!;
+    expect(result.portfolioAnnualizedVolatilityPercent).toBeCloseTo(aRow.annualizedVolatilityPercent!, 1);
+    expect(result.portfolioAnnualizedReturnPercent).toBeCloseTo(aRow.annualizedReturnPercent!, 1);
+    expect(result.portfolioBetaVsNifty50).toBeCloseTo(aRow.beta!, 2);
+    expect(result.portfolioAlphaPercent).toBeCloseTo(aRow.alpha!, 1);
+  });
+
+  it('does not change anything when every holding has data (weights already sum to 1)', () => {
+    const both = computeRiskMetrics(holdings, { A: a, B: a }, bench);
+    expect(both.portfolioAnnualizedReturnPercent).toBeCloseTo(20, 1);
+    expect(both.portfolioBetaVsNifty50).toBeCloseTo(1, 2);
+  });
+
+  it('weights the included holdings by their relative value, ignoring the excluded one', () => {
+    // A (20% return) 300, C (0% return, flat) 300, B excluded 400 -> included weights 50/50 -> 10%.
+    const three = [
+      { symbol: 'A', currentValue: 300 },
+      { symbol: 'C', currentValue: 300 },
+      { symbol: 'B', currentValue: 400 },
+    ];
+    const flat = Array.from({ length: 20 }, () => 0);
+    const result = computeRiskMetrics(three, { A: a, C: flat }, bench);
+    expect(result.portfolioAnnualizedReturnPercent).toBeCloseTo(10, 1);
+  });
+
+  it('stays zero (not NaN) when no holding has data at all', () => {
+    const result = computeRiskMetrics(holdings, {}, bench);
+    expect(result.portfolioAnnualizedVolatilityPercent).toBe(0);
+    expect(result.portfolioAnnualizedReturnPercent).toBe(0);
+    expect(result.portfolioBetaVsNifty50).toBe(0);
+    expect(Number.isNaN(result.portfolioAlphaPercent as number)).toBe(false);
+  });
+});

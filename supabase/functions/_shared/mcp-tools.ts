@@ -237,7 +237,8 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       "Per-holding and portfolio-level annualized volatility, beta vs. NIFTY 50, Jensen's Alpha (CAPM, " +
       "vs. the 10Y India G-Sec risk-free rate — see riskFreeRatePercent), and Sharpe ratio, estimated " +
       "from historical prices. A holding with no current price is left out of the portfolio-level " +
-      "weighted figures entirely (see missingPriceSymbols) rather than weighted at a fabricated ₹0. " +
+      "weighted figures entirely (see missingPriceSymbols) rather than weighted at a fabricated ₹0, and " +
+      "one with too little price history is left out too, with the rest re-weighted to sum to 100%. " +
       "Note: this Alpha is the statistical CAPM risk ratio, unrelated to the plain P&L figure the app " +
       "elsewhere also calls \"Alpha\" (e.g. dashboard/USD-view) — don't conflate the two if asked.",
     complexity: "complex",
