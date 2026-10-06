@@ -69,17 +69,17 @@ describe('generateTaxReport', () => {
     expect(report.totalTaxWithCess).toBeCloseTo(9750, 5);
   });
 
-  it('does not apply the LTCG exemption to a non-equity category (e.g. Gold), and uses its 24-month threshold', () => {
+  it('does not apply the LTCG exemption to a non-equity category (e.g. Real Estate), and uses its 24-month threshold', () => {
     const transactions: Transaction[] = [
-      // 400 days: long-term for equity (>365d) but still short-term for Gold (<730d).
-      txn({ symbol: 'GOLDBEES', type: 'BUY', quantity: 10, price: 5000, date: daysAgo(400) }),
+      // 400 days: long-term for equity (>365d) but still short-term for Real Estate (<730d).
+      txn({ symbol: 'PLOT', type: 'BUY', quantity: 10, price: 5000, date: daysAgo(400) }),
     ];
-    const report = generateTaxReport(transactions, { GOLDBEES: 6000 }, { GOLDBEES: { category: 'Gold' } });
+    const report = generateTaxReport(transactions, { PLOT: 6000 }, { PLOT: { category: 'Real Estate' } });
     const [h] = report.holdings;
 
-    expect(h.lots[0].isLongTerm).toBe(false); // 400 < 730-day threshold for Gold
+    expect(h.lots[0].isLongTerm).toBe(false); // 400 < 730-day threshold for Real Estate
     expect(h.lots[0].taxRate).toBe(0.30);      // slab-rate STCG for non-equity
-    expect(report.ltcgExemption).toBe(0);      // Gold gains never feed the equity exemption bucket
+    expect(report.ltcgExemption).toBe(0);      // non-equity gains never feed the equity exemption bucket
   });
 
   it("treats category 'Stocks' like listed equity: 12-month threshold, 20% STCG, LTCG exemption (audit H5)", () => {
@@ -208,5 +208,108 @@ describe('hasSameDayReentry', () => {
     ];
     expect(hasSameDayReentry('TCS', transactions)).toBe(false);
     expect(hasSameDayReentry('INFY', transactions)).toBe(false);
+  });
+});
+
+// Per-category rules (audit H5, remaining categories) — decided from the owner's tax table: listed Gold/Silver
+// ETFs and listed bonds are 12 months; US stocks / real estate / custom assets 24 months; crypto a flat 30%
+// with no long-term class; FDs / PF / NPS have no capital-gains treatment and are excluded with a note.
+describe('generateTaxReport — category rules (audit H5)', () => {
+  const one = (category: Category, ageDays: number, price = 100, current = 150) => {
+    const report = generateTaxReport(
+      [txn({ symbol: 'X', type: 'BUY', quantity: 10, price, date: daysAgo(ageDays) })],
+      { X: current },
+      { X: { category } },
+    );
+    return { report, lot: report.holdings[0]?.lots[0] };
+  };
+
+  it.each<[Category]>([['Gold'], ['Gold & Silver'], ['Bonds']])(
+    '%s is long-term after 12 months at 12.5%, with no LTCG exemption',
+    (category) => {
+      const lt = one(category, 400);
+      expect(lt.lot.isLongTerm).toBe(true);
+      expect(lt.lot.taxRate).toBe(0.125);
+      expect(lt.report.ltcgExemption).toBe(0);
+
+      const st = one(category, 300);
+      expect(st.lot.isLongTerm).toBe(false);
+      expect(st.lot.taxRate).toBe(0.30); // slab-rate estimate
+    },
+  );
+
+  it.each<[Category]>([['US Stocks / ETFs'], ['Real Estate'], ['Custom Assets']])(
+    '%s stays on the 24-month rule (long-term only after 730 days, 12.5%, no exemption)',
+    (category) => {
+      expect(one(category, 400).lot.isLongTerm).toBe(false);
+      expect(one(category, 400).lot.taxRate).toBe(0.30);
+      const lt = one(category, 800);
+      expect(lt.lot.isLongTerm).toBe(true);
+      expect(lt.lot.taxRate).toBe(0.125);
+      expect(lt.report.ltcgExemption).toBe(0);
+    },
+  );
+
+  it('taxes crypto at a flat 30% no matter how long it was held (a 3-year-old lot is not 12.5%)', () => {
+    // 10 units bought at 100,000, now 120,000: gain 200,000 held ~3 years.
+    const { report, lot } = one('Crypto', 1100, 100_000, 120_000);
+
+    expect(lot.isLongTerm).toBe(false); // there is no long-term class
+    expect(lot.taxRate).toBe(0.30);
+    expect(lot.taxAmount).toBeCloseTo(60_000, 6); // not 25,000
+    expect(report.totalLTCG).toBe(0);
+    expect(report.ltcgTax).toBe(0);
+    expect(report.stcgTax).toBeCloseTo(60_000, 6);
+  });
+
+  it("never lets a crypto loss reduce another asset's tax (no set-off)", () => {
+    const report = generateTaxReport(
+      [
+        txn({ symbol: 'COIN', type: 'BUY', quantity: 10, price: 100, date: daysAgo(500) }), // −500 loss
+        txn({ symbol: 'ETF', type: 'BUY', quantity: 10, price: 100, date: daysAgo(100) }), // +500 gain, short-term
+      ],
+      { COIN: 50, ETF: 150 },
+      { COIN: { category: 'Crypto' }, ETF: { category: 'Equity' } },
+    );
+    expect(report.stcgTax).toBeCloseTo(500 * 0.2, 6); // only the equity gain, untouched by the crypto loss
+  });
+
+  it.each<[Category]>([['Fixed Deposits'], ['FDs'], ['PPF / EPF'], ['NPS']])(
+    '%s has no capital-gains treatment: left out of the report and listed with a reason',
+    (category) => {
+      const { report } = one(category, 800, 100, 150);
+
+      expect(report.holdings).toHaveLength(0);
+      expect(report.totalTaxWithCess).toBe(0);
+      expect(report.excluded).toHaveLength(1);
+      expect(report.excluded[0]).toMatchObject({ symbol: 'X', category });
+      expect(report.excluded[0].reason.length).toBeGreaterThan(10);
+    },
+  );
+
+  it('keeps taxable holdings in the totals while excluding an FD held alongside them', () => {
+    const report = generateTaxReport(
+      [
+        txn({ symbol: 'EQ', type: 'BUY', quantity: 10, price: 100, date: daysAgo(100) }),
+        txn({ symbol: 'FD1', type: 'BUY', quantity: 1, price: 100_000, date: daysAgo(100) }),
+      ],
+      { EQ: 150, FD1: 108_000 },
+      { EQ: { category: 'Equity' }, FD1: { category: 'Fixed Deposits' } },
+    );
+    expect(report.holdings.map(h => h.symbol)).toEqual(['EQ']);
+    expect(report.totalSTCG).toBe(500); // the FD's ₹8,000 is not counted as a capital gain
+    expect(report.excluded.map(e => e.symbol)).toEqual(['FD1']);
+  });
+
+  it('does not list a fully-sold excluded holding as a current holding', () => {
+    const report = generateTaxReport(
+      [
+        txn({ symbol: 'FD1', type: 'BUY', quantity: 1, price: 100, date: daysAgo(500) }),
+        txn({ symbol: 'FD1', type: 'SELL', quantity: 1, price: 108, date: daysAgo(10) }),
+      ],
+      { FD1: 108 },
+      { FD1: { category: 'Fixed Deposits' } },
+    );
+    expect(report.excluded).toEqual([]);
   });
 });
