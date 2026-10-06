@@ -32,9 +32,6 @@ Numeric examples are hand-computed unless marked reproduced.
       sell 10@150 → card shows ₹0 / 0.00%, not ₹500. Also the AUM sub-label "Holdings + Cash −
       Debt" omits PF, which `totalPortfolioValue` adds. Needs an owner decision (Question 2).
       `[checked]`
-- [ ] **M2. "Top Gainers" includes losing holdings; same holding can be in both lists.**
-      [`usePortfolio.ts:576-581`](src/hooks/usePortfolio.ts): no `pnlPercent > 0` filter on
-      `gainers`. Three holdings at +10% / −3% / −12% → all three are "Top Gainers". `[checked]`
 - [ ] **M3. Tax: no loss set-off, and "Total Gains" / "Post-Tax Profit" ignore losses.**
       [`taxCalculator.ts:205-206`](src/lib/taxCalculator.ts) (`Math.max(0, gain)` per lot),
       [`Taxes.tsx:207-209`](src/pages/Taxes.tsx). LT gain ₹3,00,000 + ST loss ₹1,00,000 → tax
@@ -43,11 +40,6 @@ Numeric examples are hand-computed unless marked reproduced.
       Decide scope first (Question 4). `[checked]`
 
 **Returns / benchmarks / charts**
-- [ ] **M4. Dollar-adjusted returns mix FIFO cost (INR) with average cost (USD).**
-      [`fx.ts:115-129`](src/lib/fx.ts) vs `usePortfolio.ts:467` / `useDollarReturns.ts:124`. After a
-      partial sell across different buy prices a fake "currency effect" appears: buy 10@100 +
-      10@200, sell 10, price ₹200, FX flat at 80 → shows +33% currency effect and avg entry rate
-      ₹106.67 (should be 0% / 80). `[checked]`
 - [ ] **M5. "Portfolio Return" on Benchmark / `compare_to_benchmark` includes new contributions;
       window is N snapshots, not N days.** [`Benchmark.tsx:162-171`](src/pages/Benchmark.tsx),
       [`portfolio-data.ts:647-671`](supabase/functions/_shared/portfolio-data.ts). Holdings ₹1L +
@@ -60,12 +52,14 @@ Numeric examples are hand-computed unless marked reproduced.
       (the portfolio-level function returns `null` here — inconsistent). `hasFullTrailingWindow`
       gates only the chart, so a 122-day-old position shows the same +33% under 1Y/3Y/5Y.
       Asymmetry `[checked]`; ungated columns `[agent-traced]`.
-- [ ] **M7. PortfolioCharts reduces "invested" by sell *proceeds*.**
-      [`PortfolioCharts.tsx:82-88`](src/components/PortfolioCharts.tsx) — the old bug
-      `costBasis.ts` documents. Buy 10@100, sell 9@500 → invested −₹3,500; a full exit erases the
-      realised gain from the P&L line. Also: every past date valued at today's price; unpriced
-      symbol valued at cost (table shows ₹0); `t.date.split('T')[0]` keys on the UTC date;
-      drag-select XIRR badge uses these hypothetical values. `[checked]`
+- [ ] **M7 (remaining). PortfolioCharts valuation model.** The "invested" line is fixed (see
+      Archive). Still open, all `[checked]`: every past date is valued at *today's* price (so the
+      "Current Value" line is hypothetical, not a record — fixing it needs `historical_prices` per date);
+      a symbol with no current price falls back to its last trade price while the holdings table shows ₹0;
+      `t.date.split('T')[0]` keys a point on the UTC date; a full exit drops the position from both lines,
+      so the realised gain never appears in the P&L-over-time chart (by design — it's unrealised-only);
+      and the drag-select XIRR badge runs on these hypothetical values. Decide whether any of these should
+      change before touching them. Code: [`portfolioTimeline.ts`](src/lib/portfolioTimeline.ts).
 - [ ] **M8. Drag-select range keeps following the cursor after mouse-up.**
       [`useChartRangeSelection.ts:58-63`](src/hooks/useChartRangeSelection.ts): `onMouseMove`
       updates the cursor regardless of `isDragging`. Affects the range badge on Reports, NetWorth,
@@ -76,13 +70,6 @@ Numeric examples are hand-computed unless marked reproduced.
       feeds the AI-narrative prompt). `[checked]`
 
 **Goals / projections**
-- [ ] **M10. Projections "currently allocated" differs from GoalTrack.**
-      [`Projections.tsx:254-268`](src/pages/Projections.tsx) uses the stored `quantity` snapshot
-      (stale for `track_max`) and doesn't clamp over-allocations;
-      [`GoalTrack.tsx:119-219`](src/pages/GoalTrack.tsx) uses `resolveSymbolRequestQty` +
-      `buildScaleMap`. Example: `track_max` row with stored qty 10, 20 units held @₹1,500 →
-      Projections ₹15,000 vs GoalTrack ₹30,000. Monte Carlo start corpus and P(goal met) inherit
-      it. Fix: share the GoalTrack resolver. `[checked]`
 - [ ] **M11. "Step-up SIP equivalent" matches total rupees contributed, not future value.**
       [`monteCarloAdvanced.ts:102-106`](src/lib/monteCarloAdvanced.ts). Flat ₹10,000/mo × 10y @10%
       → ₹20.48L; suggested ₹6,275 step-up reaches ₹18.95L (7.5% short). Also `years < 1` returns
@@ -217,7 +204,8 @@ Numeric examples are hand-computed unless marked reproduced.
 1. ~~H1, H4, H5, and the H6 pagination~~ — done (batch 1, [PR #192](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/192); only H5's non-`'Stocks'`
    categories remain, blocked on Question 4).
 2. ~~H2, H3~~ — done (batch 2, [PR #193](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/193)).
-3. M1, M2, M4, M7, M10 — the numbers on screen most often.
+3. ~~M2, M4, M7, M10~~ — done (batch 3, PR pending; M7's valuation-model follow-ups remain). **M1 is
+   still open, waiting on Question 2.**
 4. The rest, after the questions above are answered. Edge-function fixes need
    `npx supabase@1.190.0 functions deploy --use-api` to take effect.
 
@@ -233,6 +221,34 @@ remains.
 
 <details>
 <summary>Archive (completed)</summary>
+
+- [x] **Calculation audit, batch 3 — M2, M4, M7 (partial), M10** (2026-10-06). Branch
+      `fix/audit-medium-batch-3`, PR pending (number to be filled in on opening). All frontend only —
+      nothing here needs an edge-function deploy. **M1 was deliberately not started:** it needs an owner
+      decision first (Question 2 — should "Realized & Unrealized Alpha" include realized gains, or be
+      relabelled "Unrealized").
+      - **M2 — "Top Gainers" included losing holdings.** `topMovers` in
+        [`usePortfolio.ts`](src/hooks/usePortfolio.ts) now filters each list to its own side of zero
+        before taking three (a flat holding is neither), so a holding can't be in both. There were no
+        tests for it; the new file uses the audit's +10% / −3% / −12% example, and four of its five cases
+        fail against the old code.
+      - **M4 — dollar-adjusted returns mixed FIFO cost (INR) with average cost (USD).**
+        `holdingsInUsd` ([`fx.ts`](src/lib/fx.ts)) now tracks FIFO lots in USD too, each at its own
+        trade-date rate, so both currencies describe the same shares. The audit's example (buy 10@100 +
+        10@200, sell 10, FX flat at 80) now shows 0% currency effect and an 80 entry rate instead of
+        +33% and ~106.67. Tests include a cross-check against `computeFifoPosition` on a messy sequence.
+      - **M7 (partial) — PortfolioCharts reduced "invested" by sale proceeds.** The series moved into a
+        pure [`buildPortfolioTimeline`](src/lib/portfolioTimeline.ts) with FIFO lots (buy 10@100, sell
+        9@500 now gives invested ₹100, not −₹3,500). **Not done** — the valuation-model points are an
+        open item above; they are design choices, not arithmetic errors. Confirmed by swapping the old
+        algorithm back in: four of the new tests fail against it.
+      - **M10 — Projections "currently allocated" differed from GoalTrack.** `Allocation`,
+        `resolveSymbolRequestQty` and `buildScaleMap` moved to
+        [`goalAllocations.ts`](src/lib/goalAllocations.ts) (re-exported from `GoalTrack`, so existing
+        imports are unchanged) and a shared `computeGoalMarketValues` is now used by Projections. The
+        audit's example (track_max row, stored qty 10, 20 held @ ₹1,500) shows ₹30,000 on both pages
+        instead of ₹15,000 vs ₹30,000; the goal Monte Carlo's start corpus follows. A test cross-checks it
+        against GoalTrack's own `computeAllocTax` totals, and a page-level test drives the real Goals tab.
 
 - [x] **Calculation audit, batch 2 — H2, H3, plus a missed H6 sweep** (2026-10-06). Branch
       `fix/audit-high-batch-2`, merged via
