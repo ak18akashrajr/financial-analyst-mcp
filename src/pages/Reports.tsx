@@ -10,7 +10,7 @@ import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
-  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge, nearestSnapshot, periodOpeningAsOf, periodClosingAsOf,
+  buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge, percentChangeOver, nearestSnapshot, periodOpeningAsOf, periodClosingAsOf,
   type PeriodDef, type PeriodType, type HistoricalPriceMap,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
@@ -35,8 +35,8 @@ function fmt(n: number, hidden = false) {
   if (!Number.isFinite(n)) return '—';
   return '₹' + Math.round(n).toLocaleString('en-IN');
 }
-function fmtPct(n: number) {
-  if (!Number.isFinite(n)) return '—';
+function fmtPct(n: number | null) {
+  if (n === null || !Number.isFinite(n)) return '—';
   return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
 }
 
@@ -238,7 +238,8 @@ const ReportsContent = () => {
     const prevEnd = periodClosingAsOf(prev, prevSt);
     const prevSnap = buildSnapshot(prevEnd, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
     const delta = endSnap.netWorth - prevSnap.netWorth;
-    const pct = prevSnap.netWorth > 0 ? (delta / prevSnap.netWorth) * 100 : 0;
+    // Null (shown as "—"), not 0, when the previous period had no AUM: a % off a zero base is undefined.
+    const pct = percentChangeOver(delta, prevSnap.netWorth);
     return { prevLabel: prev.shortLabel, prevValue: prevSnap.netWorth, delta, pct };
   }, [periods, active, transactions, currentPrices, symbolMetaLite, history, cash, endSnap, historicalPrices, fyStartYear, earliestFYStartYear, type]);
 
@@ -370,7 +371,7 @@ const ReportsContent = () => {
       const prompt = `Generate a board-style earnings narrative for **${active.label}** (${active.fy}, status: ${status}).
 
 PERIOD-END DATA:
-- AUM: ₹${Math.round(endSnap.netWorth).toLocaleString('en-IN')} (${periodOverPeriod ? `${periodOverPeriod.pct >= 0 ? '+' : ''}${periodOverPeriod.pct.toFixed(2)}% vs ${periodOverPeriod.prevLabel}` : 'first period'}${yoy ? `, ${yoy.pct >= 0 ? '+' : ''}${yoy.pct.toFixed(2)}% YoY` : ''})
+- AUM: ₹${Math.round(endSnap.netWorth).toLocaleString('en-IN')} (${periodOverPeriod ? (periodOverPeriod.pct === null ? `no % change vs ${periodOverPeriod.prevLabel} (its AUM was zero)` : `${periodOverPeriod.pct >= 0 ? '+' : ''}${periodOverPeriod.pct.toFixed(2)}% vs ${periodOverPeriod.prevLabel}`) : 'first period'}${yoy ? `, ${yoy.pct >= 0 ? '+' : ''}${yoy.pct.toFixed(2)}% YoY` : ''})
 - Principal Capital Allocated: ₹${Math.round(endSnap.invested).toLocaleString('en-IN')}
 - Current Value: ₹${Math.round(endSnap.currentValue).toLocaleString('en-IN')}
 - Unrealized P&L: ₹${Math.round(endSnap.pnl).toLocaleString('en-IN')} (${endSnap.pnlPercent.toFixed(2)}%)
@@ -572,7 +573,7 @@ One concise paragraph (3-4 sentences) summarising the period.
                 }>{audits.aum}</AuditPopover>
                 {periodOverPeriod && (
                   <AuditPopover title={`Period-over-period (${periodOverPeriodBadge(type)})`} trigger={
-                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${periodOverPeriod.pct >= 0 ? 'text-gain' : 'text-loss'}`}>
+                    <span className={`text-xs font-medium cursor-help hover:underline decoration-dotted underline-offset-2 ${periodOverPeriod.pct === null ? 'text-muted-foreground' : periodOverPeriod.pct >= 0 ? 'text-gain' : 'text-loss'}`}>
                       {fmtPct(periodOverPeriod.pct)} {periodOverPeriodBadge(type)}
                     </span>
                   }>{audits.aum}</AuditPopover>
@@ -642,7 +643,7 @@ One concise paragraph (3-4 sentences) summarising the period.
 
         {/* Executive KPI grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <KPI label="AUM" value={fmt(endSnap.netWorth, hidden)} sub={periodOverPeriod ? `${fmtPct(periodOverPeriod.pct)} vs ${periodOverPeriod.prevLabel}` : 'First period'} positive={(periodOverPeriod?.delta ?? 0) >= 0} audit={audits.aum} />
+          <KPI label="AUM" value={fmt(endSnap.netWorth, hidden)} sub={periodOverPeriod ? `${fmtPct(periodOverPeriod.pct)} vs ${periodOverPeriod.prevLabel}` : 'First period'} positive={periodOverPeriod && periodOverPeriod.pct !== null ? periodOverPeriod.delta >= 0 : undefined} audit={audits.aum} />
           <KPI label="Principal Capital Allocated" value={fmt(endSnap.invested, hidden)} sub={`Portfolio cost basis`} audit={audits.invested} />
           <KPI label="Current Value" value={fmt(endSnap.currentValue, hidden)} sub={`${endSnap.holdings.length} holdings`} audit={audits.currentValue} />
           <KPI label="Unrealized P&L" value={fmt(endSnap.pnl, hidden)} sub={fmtPct(endSnap.pnlPercent)} positive={endSnap.pnl >= 0} audit={audits.pnl} />
@@ -972,7 +973,7 @@ interface BuildAuditsArgs {
   status: 'completed' | 'in-progress' | 'upcoming';
   projection: { baseEndValue: number; conservativeEndValue: number; baseRate: number; conservativeRate: number; monthsAhead: number } | null;
   monthlySIPTarget: number;
-  periodOverPeriod: { prevLabel: string; prevValue: number; delta: number; pct: number } | null;
+  periodOverPeriod: { prevLabel: string; prevValue: number; delta: number; pct: number | null } | null;
   yoy: { asOf: Date; prevValue: number; delta: number; pct: number } | null;
   transactions: Transaction[];
   hidden: boolean;
@@ -1071,7 +1072,7 @@ function buildAudits(a: BuildAuditsArgs) {
                   [`Prev (${periodOverPeriod.prevLabel})`, fmt(periodOverPeriod.prevValue, hidden)],
                   ['Current', fmt(endSnap.netWorth, hidden)],
                   ['Δ', fmt(periodOverPeriod.delta, hidden)],
-                  ['%', `${periodOverPeriod.pct >= 0 ? '+' : ''}${periodOverPeriod.pct.toFixed(2)}%`],
+                  ['%', periodOverPeriod.pct === null ? '— (previous period AUM was zero)' : `${periodOverPeriod.pct >= 0 ? '+' : ''}${periodOverPeriod.pct.toFixed(2)}%`],
                 ]}
               />
             </div>

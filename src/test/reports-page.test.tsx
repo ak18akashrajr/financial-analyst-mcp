@@ -351,3 +351,42 @@ describe('Reports page', () => {
     expect(screen.queryByText(/QoQ/)).not.toBeInTheDocument();
   });
 });
+
+// Audit M9: the AUM KPI used to fall back to a 0 percentage when the previous period's AUM was zero, showing a
+// green "+0.00% vs <previous period>" for a portfolio that had just gone from ₹0 to something.
+describe('Reports page — period-over-period against an empty previous period (audit M9)', () => {
+  beforeEach(() => {
+    historicalPriceRows.length = 0;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-22T00:00:00Z')); // inside Q2 (Jul–Sep) of FY2026-27
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('shows "—", not a green +0.00%, when the portfolio did not exist in the previous quarter', async () => {
+    // First (and only) trade is on 2026-07-10, inside Q2, so Q1 (Apr–Jun) closed with ₹0 of AUM.
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-07-10' }],
+      currentPrices: { TCS: 150 },
+    }));
+    renderReports();
+
+    await waitFor(() => expect(screen.getByText('— vs Q1 2026-27')).toBeInTheDocument());
+    expect(screen.queryByText(/\+0\.00% vs/)).not.toBeInTheDocument();
+    // The KPI's sub-label is neutral grey, not the green/red of a real gain or loss.
+    expect(screen.getByText('— vs Q1 2026-27').className).toContain('text-muted-foreground');
+  });
+
+  it('still shows a real, coloured percentage when the previous quarter had AUM', async () => {
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2026-04-15' }],
+      currentPrices: { TCS: 150 },
+    }));
+    renderReports();
+
+    await waitFor(() => expect(screen.getByText(/% vs Q1 2026-27/)).toBeInTheDocument());
+    expect(screen.queryByText('— vs Q1 2026-27')).not.toBeInTheDocument();
+    expect(screen.getByText(/% vs Q1 2026-27/).className).toContain('text-gain');
+  });
+});
