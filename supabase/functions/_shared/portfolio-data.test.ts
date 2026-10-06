@@ -274,6 +274,7 @@ function makeQueryBuilder(table: FakeTable) {
       gte: () => builder,
       order: () => builder,
       limit: () => builder,
+      range: () => builder,
       single: () => Promise.resolve(err),
       then: (resolve: any) => Promise.resolve(err).then(resolve),
     };
@@ -308,6 +309,11 @@ function makeQueryBuilder(table: FakeTable) {
     },
     limit: (n: number) => {
       rows = rows.slice(0, n);
+      return builder;
+    },
+    // PostgREST-style inclusive range — fetchAllPages pages every unbounded read through this.
+    range: (from: number, to: number) => {
+      rows = rows.slice(from, to + 1);
       return builder;
     },
     single: () => Promise.resolve({ data: rows[0] ?? null, error: rows[0] ? null : { message: "no rows" } }),

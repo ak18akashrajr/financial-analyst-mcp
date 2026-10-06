@@ -24,7 +24,12 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: () => ({
       select: () => ({
-        order: () => Promise.resolve({ data: historyRows, error: null }),
+        // Paged via useNetWorthHistory → fetchAllPages: .order().order().range(from, to).
+        order: () => ({
+          order: () => ({
+            range: (from: number, to: number) => Promise.resolve({ data: historyRows.slice(from, to + 1), error: null }),
+          }),
+        }),
       }),
     }),
   },

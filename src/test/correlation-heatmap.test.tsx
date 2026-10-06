@@ -26,10 +26,15 @@ function setup(rows: typeof historicalPriceRows) {
   historicalPriceRows.push(...rows);
   fromMock.mockReset();
   inMock.mockReset();
+  // Paged via fetchAllPages: .in().order(date).order('id').range(from, to).
   inMock.mockImplementation((_col: string, symbols: string[]) => ({
-    order: () => Promise.resolve({
-      data: historicalPriceRows.filter(r => symbols.includes(r.symbol)),
-      error: null,
+    order: () => ({
+      order: () => ({
+        range: (from: number, to: number) => Promise.resolve({
+          data: historicalPriceRows.filter(r => symbols.includes(r.symbol)).slice(from, to + 1),
+          error: null,
+        }),
+      }),
     }),
   }));
   fromMock.mockImplementation((table: string) => {

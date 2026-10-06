@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { Activity } from 'lucide-react';
 import type { Transaction } from '@/types/portfolio';
 
@@ -66,11 +67,17 @@ export function CorrelationHeatmap({ transactions }: { transactions: Transaction
         setLoading(false);
         return;
       }
-      const { data } = await supabase
-        .from('historical_prices')
-        .select('symbol,date,close')
-        .in('symbol', symbols)
-        .order('date', { ascending: true });
+      // Paged: oldest-first order + the 1,000-row response cap used to keep the OLDEST 1,000 rows, so
+      // the matrix was built from stale history and ignored recent days.
+      const { data } = await fetchAllPages((from, to) =>
+        supabase
+          .from('historical_prices')
+          .select('symbol,date,close')
+          .in('symbol', symbols)
+          .order('date', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, to),
+      );
       setRows((data as any[] | null)?.map(r => ({ symbol: r.symbol, date: r.date, close: Number(r.close) })) ?? []);
       setLoading(false);
     })();

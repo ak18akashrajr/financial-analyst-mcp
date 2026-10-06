@@ -58,7 +58,20 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'transactions') {
-        return { select: () => ({ order: () => ({ eq: () => Promise.resolve({ data: [], error: null }) }) }) };
+        // transactions are read via fetchAllPages: .order().order()[.eq()].range(from, to).
+        return {
+          select: () => ({
+            order: () => ({
+              order: () => {
+                const q: any = {
+                  eq: () => q,
+                  range: (from: number, to: number) => Promise.resolve({ data: [] as unknown[], error: null }),
+                };
+                return q;
+              },
+            }),
+          }),
+        };
       }
       if (table === 'cash_settings') {
         return { select: () => ({ eq: () => Promise.resolve({ data: [cashState], error: null }) }) };

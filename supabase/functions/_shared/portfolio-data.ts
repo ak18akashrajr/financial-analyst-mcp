@@ -4,6 +4,7 @@
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.100.1";
 import { createLogger } from "./logger.ts";
+import { fetchAllPages } from "./paginate.ts";
 
 const logger = createLogger("portfolio-data");
 
@@ -190,7 +191,11 @@ export function splitByPriceAvailability(
 }
 
 export async function fetchTxns(sb: SupabaseClient): Promise<Txn[]> {
-  const { data, error } = await sb.from("transactions").select("*").order("date", { ascending: true });
+  // Paged: a single response is capped at 1,000 rows, which would silently drop the newest
+  // transactions here (ascending order) and corrupt every holding/FIFO figure built from them.
+  const { data, error } = await fetchAllPages<Txn>((from, to) =>
+    sb.from("transactions").select("*").order("date", { ascending: true }).order("id", { ascending: true }).range(from, to),
+  );
   assertNoError(error, "fetchTxns");
   return (data || []) as Txn[];
 }
@@ -368,11 +373,17 @@ async function fetchDailyReturnsBySymbol(
   days: number,
 ): Promise<Record<string, number[]>> {
   if (symbols.length === 0) return {};
-  const { data, error } = await sb
-    .from("historical_prices")
-    .select("symbol, date, close")
-    .in("symbol", symbols)
-    .order("date", { ascending: false });
+  // Paged — a single response is capped at 1,000 rows, so with many symbols the unpaged newest-first
+  // read kept only ~1000/N of the most recent days per symbol.
+  const { data, error } = await fetchAllPages<{ symbol: string; date: string; close: number }>((from, to) =>
+    sb
+      .from("historical_prices")
+      .select("symbol, date, close")
+      .in("symbol", symbols)
+      .order("date", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to),
+  );
   // Logged, not thrown — matches the sibling benchmark_history query's degrade-gracefully
   // contract a few lines below in getRiskMetrics (this table is also allowed to be
   // incompletely backfilled), rather than the throwing behavior used for the core
@@ -812,12 +823,16 @@ function dayBefore(dateStr: string): string {
  */
 async function fetchPriceMapAsOf(sb: SupabaseClient, asOf: string, symbols: string[]): Promise<Record<string, number>> {
   if (symbols.length === 0) return {};
-  const { data, error } = await sb
-    .from("historical_prices")
-    .select("symbol, date, close")
-    .in("symbol", symbols)
-    .lte("date", asOf)
-    .order("date", { ascending: false });
+  const { data, error } = await fetchAllPages<{ symbol: string; date: string; close: number }>((from, to) =>
+    sb
+      .from("historical_prices")
+      .select("symbol, date, close")
+      .in("symbol", symbols)
+      .lte("date", asOf)
+      .order("date", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to),
+  );
   assertNoError(error, "fetchPriceMapAsOf");
   const map: Record<string, number> = {};
   for (const row of (data || []) as { symbol: string; date: string; close: number }[]) {
@@ -1064,12 +1079,16 @@ export async function getExposureDrift(sb: SupabaseClient, asOfDate: string) {
   // same way) when there's no transaction history at all yet.
   let histRows: { symbol: string; date: string; close: number }[] = [];
   if (everTradedSymbols.length > 0) {
-    const { data, error: histError } = await sb
-      .from("historical_prices")
-      .select("symbol, date, close")
-      .in("symbol", everTradedSymbols)
-      .lte("date", asOfDate)
-      .order("date", { ascending: false });
+    const { data, error: histError } = await fetchAllPages<{ symbol: string; date: string; close: number }>((from, to) =>
+      sb
+        .from("historical_prices")
+        .select("symbol, date, close")
+        .in("symbol", everTradedSymbols)
+        .lte("date", asOfDate)
+        .order("date", { ascending: false })
+        .order("id", { ascending: false })
+        .range(from, to),
+    );
     assertNoError(histError, "getExposureDrift");
     histRows = data || [];
   }
