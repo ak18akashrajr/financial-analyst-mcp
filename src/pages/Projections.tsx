@@ -4,6 +4,7 @@ import { ArrowLeft, Eye, EyeOff, Play, TrendingDown, Shuffle, ArrowDownUp, Perce
 import { PageSkeleton } from '@/components/PageSkeleton';
 import { PrivacyProvider, usePrivacy } from '@/contexts/PrivacyContext';
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { computeGoalMarketValues, type Allocation } from '@/lib/goalAllocations';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -251,21 +252,14 @@ const ProjectionsContent = () => {
     })();
   }, []);
 
-  const goalCurrentValues = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const goal of goals) map[goal.id] = 0;
-    for (const a of goalAllocs) {
-      if (!map[a.goal_id] && map[a.goal_id] !== 0) continue;
-      if (a.source_type === 'symbol' && a.symbol) {
-        const qty = Number(a.quantity) || 0;
-        const p = currentPrices[a.symbol] || 0;
-        map[a.goal_id] += qty * p;
-      } else {
-        map[a.goal_id] += Number(a.amount) || 0;
-      }
-    }
-    return map;
-  }, [goals, goalAllocs, currentPrices]);
+  // Resolved exactly like the Goal Tracker page (live `track_max` quantities, over-allocations scaled
+  // down) so a goal's "currently allocated" here always matches there — this used to read the stored
+  // quantity snapshot and ignore clamping, so a track_max row (stored qty 10, 20 units held @ ₹1,500)
+  // read ₹15,000 here vs ₹30,000 on Goal Tracker, and the Monte Carlo start corpus inherited it (audit M10).
+  const goalCurrentValues = useMemo(
+    () => computeGoalMarketValues(goals.map((g) => g.id), goalAllocs as Allocation[], holdings, cash),
+    [goals, goalAllocs, holdings, cash],
+  );
 
   const runAll = () => {
     const inp = { ...inputs, initialInvestment: inputs.initialInvestment || summary.currentValue };

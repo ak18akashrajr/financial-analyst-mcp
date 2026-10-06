@@ -16,6 +16,7 @@ import { useChartRangeSelection } from '@/hooks/useChartRangeSelection';
 import { computeRangeReturn, computeRangeXIRR } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 import { todayLocalDateString } from '@/lib/dateUtils';
+import { buildPortfolioTimeline } from '@/lib/portfolioTimeline';
 
 import { Card } from '@/components/ui/card';
 
@@ -40,101 +41,20 @@ interface Props {
   currentPrices: Record<string, number>;
 }
 
-interface TimelinePoint {
-  date: string;
-  dateLabel: string;
-  invested: number;
-  currentValue: number;
-  pnl: number;
-}
-
 export function PortfolioCharts({ transactions, currentPrices }: Props) {
   const { hidden, mask } = usePrivacy();
   const investedVsCurrent = useChartRangeSelection();
   const pnlOverTime = useChartRangeSelection();
 
-  const timelineData = useMemo(() => {
-    if (transactions.length === 0) return [];
-
-    const sorted = [...transactions].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-
-    const holdings: Record<
-      string,
-      { quantity: number; totalInvested: number; lastPrice: number }
-    > = {};
-
-    const points: TimelinePoint[] = [];
-    const byDate: Record<string, Transaction[]> = {};
-    for (const t of sorted) {
-      const dateKey = t.date.split('T')[0];
-      if (!byDate[dateKey]) byDate[dateKey] = [];
-      byDate[dateKey].push(t);
-    }
-
-    for (const [dateKey, txns] of Object.entries(byDate)) {
-      for (const t of txns) {
-        if (!holdings[t.symbol]) {
-          holdings[t.symbol] = { quantity: 0, totalInvested: 0, lastPrice: t.price };
-        }
-        const h = holdings[t.symbol];
-        if (t.type === 'BUY') {
-          h.quantity += t.quantity;
-          h.totalInvested += t.quantity * t.price;
-        } else {
-          h.quantity -= t.quantity;
-          h.totalInvested -= t.quantity * t.price;
-        }
-        h.lastPrice = t.price;
-      }
-
-      let invested = 0;
-      let currentValue = 0;
-      for (const [symbol, h] of Object.entries(holdings)) {
-        if (h.quantity > 0) {
-          invested += h.totalInvested;
-          const price = currentPrices[symbol] || h.lastPrice;
-          currentValue += price * h.quantity;
-        }
-      }
-
-      points.push({
-        date: dateKey,
-        dateLabel: formatDate(dateKey),
-        invested,
-        currentValue,
-        pnl: currentValue - invested,
-      });
-    }
-
-    // Local calendar date, not new Date().toISOString()'s UTC one — timeline points above are
-    // keyed by t.date.split('T')[0] (the transaction's own, locally-meant calendar date), so
-    // comparing against the UTC date would misjudge "is today already a point?" for the first
-    // few hours after local midnight (see dateUtils.ts#todayLocalDateString).
-    const today = todayLocalDateString();
-    const lastPoint = points[points.length - 1];
-    if (lastPoint && lastPoint.date !== today) {
-      let invested = 0;
-      let currentValue = 0;
-      for (const [symbol, h] of Object.entries(holdings)) {
-        if (h.quantity > 0) {
-          invested += h.totalInvested;
-          const price = currentPrices[symbol] || h.lastPrice;
-          currentValue += price * h.quantity;
-        }
-      }
-      points.push({
-        date: today,
-        dateLabel: formatDate(today),
-        invested,
-        currentValue,
-        pnl: currentValue - invested,
-      });
-    }
-
-    return points;
-  }, [transactions, currentPrices]);
+  // Local calendar date, not new Date().toISOString()'s UTC one — timeline points are keyed by
+  // t.date.split('T')[0] (the transaction's own, locally-meant calendar date), so comparing against the
+  // UTC date would misjudge "is today already a point?" for the first few hours after local midnight
+  // (see dateUtils.ts#todayLocalDateString). The series itself (FIFO cost basis) lives in
+  // src/lib/portfolioTimeline.ts.
+  const timelineData = useMemo(
+    () => buildPortfolioTimeline(transactions, currentPrices, todayLocalDateString(), formatDate),
+    [transactions, currentPrices],
+  );
 
   if (timelineData.length < 2) {
     return null;

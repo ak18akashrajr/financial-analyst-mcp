@@ -15,6 +15,12 @@ import { getMemberDisplayName } from '@/lib/familyMemberDisplay';
 import { getOpenLots, getMemberUnitShares } from '@/lib/lotAttribution';
 import { EmptyState } from '@/components/EmptyState';
 import type { DerivedHolding, FamilyMember } from '@/types/portfolio';
+import { buildScaleMap, resolveSymbolRequestQty, type Allocation } from '@/lib/goalAllocations';
+
+// The allocation-resolution helpers live in src/lib/goalAllocations.ts so Projections resolves a goal's
+// allocated value exactly the same way; re-exported here so existing imports from this page keep working.
+export { buildScaleMap, resolveSymbolRequestQty };
+export type { Allocation };
 
 import { Card } from '@/components/ui/card';
 
@@ -45,17 +51,6 @@ interface Goal {
   icon: string;
   notes: string | null;
   created_at: string;
-}
-
-export interface Allocation {
-  id: string;
-  goal_id: string;
-  source_type: 'symbol' | 'liquid_cash' | 'vault_cash';
-  symbol: string | null;
-  amount: number;      // rupees (used for cash sources)
-  quantity: number | null; // units (used for symbol sources) — a snapshot; ignored when track_max is true
-  track_max: boolean;  // symbol allocations only: always claim 100% of the current holding (minus other
-                        // goals' fixed claims on the same symbol), so buying more units flows in automatically
 }
 
 function fmt(n: number) {
@@ -107,28 +102,6 @@ interface AllocTax {
   taxST: number;
   tax: number;
   postTax: number;
-}
-
-// For a symbol allocation, resolve the *live* unit count it's actually claiming right now.
-// - A fixed allocation (track_max = false) always claims exactly its stored `quantity` snapshot.
-// - A track_max allocation claims "whatever's left" of the current holding after every fixed
-//   allocation on the same symbol is subtracted — so a new BUY grows this automatically. If more
-//   than one goal auto-tracks the same symbol (a conflict — they can't both own the remainder),
-//   the remainder is split between them proportionally by their last stored quantity (equally if
-//   none has one), rather than double-counting the same units into two goals.
-export function resolveSymbolRequestQty(a: Allocation, holdings: DerivedHolding[], allAllocations: Allocation[]): number {
-  if (a.source_type !== 'symbol' || !a.symbol) return 0;
-  if (!a.track_max) return Number(a.quantity) || 0;
-  const h = holdings.find((x) => x.symbol === a.symbol);
-  const capacity = h ? h.totalQuantity : 0;
-  const sameSymbol = allAllocations.filter((x) => x.source_type === 'symbol' && x.symbol === a.symbol);
-  const fixedTotal = sameSymbol.filter((x) => !x.track_max).reduce((s, x) => s + (Number(x.quantity) || 0), 0);
-  const remaining = Math.max(0, capacity - fixedTotal);
-  const maxRows = sameSymbol.filter((x) => x.track_max);
-  if (maxRows.length <= 1) return remaining;
-  const weightSum = maxRows.reduce((s, x) => s + (Number(x.quantity) || 0), 0);
-  const myWeight = weightSum > 0 ? (Number(a.quantity) || 0) / weightSum : 1 / maxRows.length;
-  return remaining * myWeight;
 }
 
 // scaleMap: for each key ("cash:liquid" | "cash:vault" | `sym:${symbol}`) — factor <=1 to shrink over-allocations
@@ -184,38 +157,6 @@ export function computeAllocTax(
     clamped: scale < 1, trackMax: a.track_max,
     invested, market, gainLT, gainST, taxLT, taxST, tax, postTax: market - tax,
   };
-}
-
-// Build a scale-map so per-source over-allocations shrink pro-rata to available.
-export function buildScaleMap(
-  allocations: Allocation[],
-  holdings: DerivedHolding[],
-  cash: { liquidCash: number; vaultCash: number },
-): Record<string, number> {
-  const totals: Record<string, number> = {};
-  const capacity: Record<string, number> = {
-    'cash:liquid': cash.liquidCash,
-    'cash:vault': cash.vaultCash,
-  };
-  for (const a of allocations) {
-    if (a.source_type === 'liquid_cash') totals['cash:liquid'] = (totals['cash:liquid'] || 0) + (Number(a.amount) || 0);
-    else if (a.source_type === 'vault_cash') totals['cash:vault'] = (totals['cash:vault'] || 0) + (Number(a.amount) || 0);
-    else if (a.symbol) {
-      const key = `sym:${a.symbol}`;
-      totals[key] = (totals[key] || 0) + resolveSymbolRequestQty(a, holdings, allocations);
-      if (!(key in capacity)) {
-        const h = holdings.find((x) => x.symbol === a.symbol);
-        capacity[key] = h ? h.totalQuantity : 0;
-      }
-    }
-  }
-  const map: Record<string, number> = {};
-  for (const key of Object.keys(totals)) {
-    const t = totals[key];
-    const c = capacity[key] ?? 0;
-    map[key] = t > 0 && t > c ? Math.max(0, c / t) : 1;
-  }
-  return map;
 }
 
 export interface MemberContribution {

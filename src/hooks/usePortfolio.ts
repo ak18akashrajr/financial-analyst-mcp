@@ -583,9 +583,12 @@ export function usePortfolio() {
   const topMovers = useMemo(() => {
     const valid = holdings.filter(h => h.totalQuantity > 0 && h.avgPrice > 0 && h.currentPrice > 0);
     const sorted = [...valid].sort((a, b) => b.pnlPercent - a.pnlPercent);
+    // Each list only holds holdings on the right side of zero: previously `gainers` was just the top 3 by
+    // P&L%, so with few holdings (or a bad market) it listed losers as "Top Gainers", and the same holding
+    // could land in both lists. A flat (0%) holding is neither.
     return {
-      gainers: sorted.slice(0, 3),
-      losers: sorted.slice(-3).reverse().filter(h => h.pnlPercent < 0),
+      gainers: sorted.filter(h => h.pnlPercent > 0).slice(0, 3),
+      losers: sorted.filter(h => h.pnlPercent < 0).reverse().slice(0, 3),
     };
   }, [holdings]);
 
