@@ -282,10 +282,13 @@ export function usePortfolio() {
   // use-portfolio-cashflow-tracking.test.tsx), so the Cash Reserve deduction
   // at settlement time is the only point real money actually leaves — it must
   // count, or the spend never shows up in the Expense-to-Income ratio at all.
-  const updateCash = useCallback(async (newCash: Partial<CashSettings>, options?: { excludeFromCashflow?: boolean }) => {
+  //
+  // Resolves to whether the balance actually saved, so callers that follow up with a success
+  // message (payCreditCardBill) don't announce a write that was refused or failed.
+  const updateCash = useCallback(async (newCash: Partial<CashSettings>, options?: { excludeFromCashflow?: boolean }): Promise<boolean> => {
     if (activeMemberId === 'all') {
       toast.error('Select a specific family member before editing cash balances');
-      return;
+      return false;
     }
 
     // Full row, not a partial update: a member may not have a cash_settings row yet (e.g. a
@@ -316,7 +319,7 @@ export function usePortfolio() {
       toast.error('Failed to update cash');
       console.error(error);
       logClientError('usePortfolio.updateCash', 'Failed to update cash_settings', { error, dbRow });
-      return;
+      return false;
     }
 
     const merged = { ...cash, ...newCash };
@@ -326,6 +329,7 @@ export function usePortfolio() {
     if (totals) {
       setMonthlyCashflow({ totalIncome: Number(totals.total_income), totalExpense: Number(totals.total_expense) });
     }
+    return true;
   }, [cash, activeMemberId]);
 
   const payCreditCardBill = useCallback(async () => {
@@ -342,7 +346,8 @@ export function usePortfolio() {
     // Counted as an expense (see the comment on updateCash above): charging
     // the card is never tracked, so this Cash Reserve deduction is the only
     // moment the spend becomes visible to the Expense-to-Income ratio.
-    await updateCash({ vaultCash: newVault, creditCardDebt: 0 });
+    const saved = await updateCash({ vaultCash: newVault, creditCardDebt: 0 });
+    if (!saved) return; // updateCash already toasted why (All Family view, or the write failed)
     toast.success(`Liability settled — ₹${debt.toLocaleString('en-IN')} deducted from Cash Reserve`);
   }, [cash, updateCash]);
 
