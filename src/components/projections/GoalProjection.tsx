@@ -210,7 +210,7 @@ export function GoalProjection({
         {solverResult && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <StatBox label={<LabelWithHint label="Flat monthly SIP" title="Flat SIP required" side="top" formula="bisection search on SIP until P(target met) ≥ confidence">The smallest constant monthly contribution that gets the goal to your chosen confidence level.</LabelWithHint>} value={hidden ? '••••' : fmt(solverResult.flatSIP)} color="text-gain" />
-            <StatBox label={<LabelWithHint label="Step-up SIP (yr 1, +10%/yr)" title="Step-up SIP" side="top">Starting amount if you increase the SIP 10% every year — usually a much lower year-1 outflow than the flat plan.</LabelWithHint>} value={hidden ? '••••' : fmt(solverResult.stepUpSIP)} color="text-blue-500" />
+            <StatBox label={<LabelWithHint label="Step-up SIP (yr 1, +10%/yr)" title="Step-up SIP" side="top">Starting amount if you increase the SIP 10% every year — reaches the same expected corpus as the flat plan, with a lower year-1 outflow.</LabelWithHint>} value={hidden ? '••••' : fmt(solverResult.stepUpSIP)} color="text-blue-500" />
             <StatBox label={<LabelWithHint label="Achieved probability" title="Achieved probability" side="top">The success rate the solved SIP actually delivers — it can slightly exceed your target confidence because the search steps in discrete amounts.</LabelWithHint>} value={`${(solverResult.achievedProb * 100).toFixed(0)}%`} />
 
           </div>

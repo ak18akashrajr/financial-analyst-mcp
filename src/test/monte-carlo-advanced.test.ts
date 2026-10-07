@@ -3,7 +3,7 @@
 // so they're tested for statistical invariants; replayCrisis replays a fixed historical-return
 // table with no randomness, so it's tested against exact precomputed numbers.
 import { describe, expect, it } from 'vitest';
-import { runGoalMonteCarlo, solveRequiredSIP, simulateFire, replayCrisis, type GoalMCInputs, type FireInputs } from '@/lib/monteCarloAdvanced';
+import { runGoalMonteCarlo, solveRequiredSIP, stepUpEquivalentSIP, simulateFire, replayCrisis, type GoalMCInputs, type FireInputs } from '@/lib/monteCarloAdvanced';
 
 describe('runGoalMonteCarlo', () => {
   const inputs: GoalMCInputs = {
@@ -97,5 +97,81 @@ describe('replayCrisis', () => {
     const result = replayCrisis(100000, 0, 'covid2020');
     expect(result.endValue).toBe(100000);
     expect(result.recoveryMonths).toBe(0);
+  });
+});
+
+// ---- Audit M11 --------------------------------------------------------------------------------------------
+
+/**
+ * Expected corpus of a monthly SIP schedule under the goal simulation's own growth: each month the balance
+ * grows by annualReturn/12 and the SIP is added at month end. Written independently of stepUpEquivalentSIP so
+ * the test is not circular.
+ */
+function expectedCorpus(sipForMonth: (m: number) => number, months: number, annualReturn: number): number {
+  let v = 0;
+  for (let m = 1; m <= months; m++) v = v * (1 + annualReturn / 12) + sipForMonth(m);
+  return v;
+}
+
+describe('stepUpEquivalentSIP — equal future value, not equal rupees (audit M11)', () => {
+  const years = 10;
+  const months = years * 12;
+  const r = 0.1;
+  const flat = 10_000;
+  const stepUpSchedule = (first: number) => (m: number) => first * 1.1 ** Math.floor((m - 1) / 12);
+
+  it('reaches exactly the same expected corpus as the flat plan', () => {
+    const flatCorpus = expectedCorpus(() => flat, months, r);
+    const stepUp = stepUpEquivalentSIP(flat, years, r);
+
+    expect(expectedCorpus(stepUpSchedule(stepUp), months, r)).toBeCloseTo(flatCorpus, 4);
+  });
+
+  it('asks for more in year 1 than the old equal-rupees formula, which fell short of the flat corpus', () => {
+    // The audit's example: the old formula's ₹6,275 reached only ~₹18.95L against ₹20.48L for the flat plan.
+    const flatCorpus = expectedCorpus(() => flat, months, r);
+    expect(flatCorpus).toBeGreaterThan(2_040_000);
+    expect(flatCorpus).toBeLessThan(2_060_000);
+
+    const oldFactor = (1 - 1.1 ** years) / (1 - 1.1);
+    const oldStepUp = (flat * years) / oldFactor; // ~6,275
+    expect(oldStepUp).toBeCloseTo(6275, -1);
+    expect(expectedCorpus(stepUpSchedule(oldStepUp), months, r)).toBeLessThan(flatCorpus * 0.95); // ~7.5% short
+
+    const fixed = stepUpEquivalentSIP(flat, years, r);
+    expect(fixed).toBeGreaterThan(oldStepUp);
+    expect(fixed).toBeLessThan(flat); // still a lower year-1 outflow than the flat plan
+  });
+
+  it('is just the flat SIP for a horizon under a year, where no step-up ever happens', () => {
+    expect(stepUpEquivalentSIP(10_000, 0.5, 0.1)).toBeCloseTo(10_000, 6); // old formula returned 5,000
+    expect(stepUpEquivalentSIP(10_000, 1, 0.1)).toBeCloseTo(10_000, 6); // exactly one year: one block, no step
+  });
+
+  it('with a 0% step-up the equivalent is the flat SIP itself', () => {
+    expect(stepUpEquivalentSIP(10_000, 10, 0.1, 0)).toBeCloseTo(10_000, 6);
+  });
+
+  it('with a 0% return it falls back to equal rupees contributed', () => {
+    // No growth: future value is just the sum, so matching corpus == matching total rupees.
+    const stepUp = stepUpEquivalentSIP(10_000, 10, 0, 0.1);
+    const oldFactor = (1 - 1.1 ** 10) / (1 - 1.1);
+    expect(stepUp).toBeCloseTo((10_000 * 10) / oldFactor, 6);
+  });
+
+  it('handles a fractional horizon by month rather than throwing or going negative', () => {
+    const stepUp = stepUpEquivalentSIP(10_000, 2.5, 0.12);
+    expect(Number.isFinite(stepUp)).toBe(true);
+    expect(stepUp).toBeGreaterThan(0);
+    expect(stepUp).toBeLessThanOrEqual(10_000);
+    const flatCorpus = expectedCorpus(() => 10_000, 30, 0.12);
+    expect(expectedCorpus((m) => stepUp * 1.1 ** Math.floor((m - 1) / 12), 30, 0.12)).toBeCloseTo(flatCorpus, 4);
+  });
+
+  it('is what solveRequiredSIP reports as stepUpSIP', () => {
+    const base = { currentAllocated: 0, yearsToTarget: 10, targetAmount: 2_000_000, expectedReturn: 0.1, volatility: 0.15 };
+    const { flatSIP, stepUpSIP } = solveRequiredSIP(base, 0.8, 200);
+    expect(stepUpSIP).toBe(Math.round(stepUpEquivalentSIP(flatSIP, 10, 0.1, 0.1)));
+    expect(stepUpSIP).toBeLessThan(flatSIP);
   });
 });
