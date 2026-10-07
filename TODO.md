@@ -42,12 +42,6 @@ _No High items open — H1–H6 are all done (see Archive)._
       another ₹1L bought, prices flat → +100% (outperformance +98% vs NIFTY +2%). S&P benchmark is
       in USD points vs an INR portfolio, no FX (also `benchmarkXirr.ts:79,94`, `[agent-traced]`).
       `[checked]`
-- [ ] **M6. Rolling Returns: missing start price makes pre-window units "free money"; summary
-      columns aren't window-gated.** [`RollingReturns.tsx:53-67`](src/pages/RollingReturns.tsx):
-      opening outflow only `if (qtyAtStart > 0 && startPrice)` but terminal value uses full qty
-      (the portfolio-level function returns `null` here — inconsistent). `hasFullTrailingWindow`
-      gates only the chart, so a 122-day-old position shows the same +33% under 1Y/3Y/5Y.
-      Asymmetry `[checked]`; ungated columns `[agent-traced]`.
 - [ ] **M7 (remaining). PortfolioCharts valuation model.** The "invested" line is fixed (see
       Archive). Still open, all `[checked]`: every past date is valued at *today's* price (so the
       "Current Value" line is hypothetical, not a record — fixing it needs `historical_prices` per date);
@@ -82,12 +76,11 @@ _No High items open — H1–H6 are all done (see Archive)._
       portfolio return series or relabel as an upper bound. `[checked]`
 
 **Data integrity**
-- [ ] **M16. Editing a trade resets its timestamp to date-only midnight (00:00Z).**
-      [`TransactionHistory.tsx:58-65`](src/components/TransactionHistory.tsx) always sends
-      `date: editDate`; `update_transaction_and_snapshot` does `COALESCE(p_date, date)`. A
-      price-only edit of a 15:00 SELL can move it before its 10:00 BUY → FIFO drops the SELL and
-      shows a phantom holding. Fix: only send `date` when changed. UI side `[checked]`, SQL side
-      `[agent-traced]`.
+- [ ] **M16 (remaining). Changing a trade's date still resets its time of day.** The price/quantity-only
+      path is fixed (see Archive). When the user *does* change the date, the bare `YYYY-MM-DD` still
+      becomes 00:00 UTC, so a trade moved onto a day that already has trades can sort ahead of an
+      earlier same-day one. Fix would keep the original time-of-day (or add a time field); not done —
+      needs a decision on the UX. `[checked]`
 - [ ] **M17. No oversell guard; FIFO vs net-quantity disagree once the ledger is impossible.**
       [`AddTransactionForm.tsx:57-69`](src/components/AddTransactionForm.tsx), edit path, and
       `add_transaction_and_snapshot` only check `quantity > 0`. Buy 10, sell 15, buy 10 → holdings
@@ -112,11 +105,6 @@ _No High items open — H1–H6 are all done (see Archive)._
       [`portfolio-data.ts:299-310`](supabase/functions/_shared/portfolio-data.ts) vs
       `usePortfolio.ts:603-626`. India 75% (AI) vs 80% (UI). Intent is a question (Question 5).
       `[agent-traced]`
-- [ ] **M22. IST fix leftover: UTC "today" in the edge functions.**
-      [`portfolio-data.ts:196,851`](supabase/functions/_shared/portfolio-data.ts)
-      (`now.toISOString().slice(0,10)`). Between 00:00–05:30 IST, `list_transactions` with no dates
-      returns the previous month and `get_period_performance` can resolve the wrong period. Use the
-      IST day helper already in this file. `[checked]`
 - [ ] **M23. Monthly bars can overwrite daily rows.**
       [`fetch-historical-prices/index.ts:28,51,62`](supabase/functions/fetch-historical-prices/index.ts):
       upsert key `(symbol, date)`; a monthly bar is dated the 1st but carries the month-end close →
@@ -198,6 +186,7 @@ _No High items open — H1–H6 are all done (see Archive)._
 2. ~~H2, H3~~ — done (batch 2, [PR #193](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/193)).
 3. ~~M2, M4, M7, M10~~ — done (batch 3, [PR #194](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/194); M7's valuation-model follow-ups remain). **M1 is
    still open, waiting on Question 2.**
+3b. ~~M6, M16, M22~~ — done (batch 5, PR pending; M16's date-change follow-up remains).
 4. The rest, after the questions above are answered. Edge-function fixes need
    `npx supabase@1.190.0 functions deploy --use-api` to take effect.
 
@@ -213,6 +202,32 @@ remains.
 
 <details>
 <summary>Archive (completed)</summary>
+
+- [x] **Calculation audit, batch 5 — M6, M16 (partial), M22** (2026-10-07). Branch `fix/audit-batch-5`, PR
+      pending (number to be filled in on opening). M22 changes an edge function, which the
+      `deploy-edge-functions.yml` workflow deploys automatically on merge; M6 and M16 are frontend only.
+      Not started, deliberately: **M1** (still waiting on a go-ahead for the realized+unrealized design).
+      - **M22 — edge functions used the UTC date for "today".** New `istDayString(now)` in
+        [`portfolio-data.ts`](supabase/functions/_shared/portfolio-data.ts), used by `listTransactions`
+        and `getPeriodPerformance`. At 01:30 IST on 1 Nov the UTC date still says 31 Oct, so
+        `list_transactions` with no dates returned October and `get_period_performance` resolved (and marked
+        "completed") the previous quarter. A sweep of the other `toISOString().slice(0, 10)` uses in the edge
+        functions found only deliberate ones (market bar dates, the UTC quota day, bare-date arithmetic).
+        Four of the new tests fail when the helper returns the UTC date.
+      - **M16 (partial) — editing a trade reset its time of day.** `saveEdit` in
+        [`TransactionHistory.tsx`](src/components/TransactionHistory.tsx) now sends `date` only when the
+        user changed it; a bare date reads as 00:00 UTC, so a price-only edit of a 15:00 SELL used to move it
+        ahead of its 10:00 BUY. The SQL side was read and confirmed: `COALESCE(p_date, date)` keeps the
+        stored timestamp when `date` is omitted, so no migration. **Not done:** changing the date still
+        resets the time of day — open item above.
+      - **M6 — Rolling Returns.** (a) `computeWindowXIRR` ([`RollingReturns.tsx`](src/pages/RollingReturns.tsx))
+        now returns null when units were held at window start but no start price exists, matching
+        `computePortfolioWindowXIRR`, instead of treating them as free. (b) The summary table's 1Y/3Y/5Y
+        columns, including the "Overall Portfolio" row, now go through new `gatedWindowXIRR` /
+        `gatedPortfolioWindowXIRR` (null unless a full trailing window exists — the gate the chart already
+        used), so a ~4-month position no longer prints the same figure under all three. The ungated
+        functions keep their documented contract of returning a value for a partial window. The page test
+        reproduced the audit's symptom against the old code (32.81% under 1Y, 3Y and 5Y).
 
 - [x] **Calculation audit, batch 4 — H5 (remaining categories), M8, M9** (2026-10-06). Branch
       `fix/audit-batch-4`, merged via
