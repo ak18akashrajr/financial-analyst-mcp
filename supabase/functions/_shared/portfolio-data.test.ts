@@ -932,7 +932,7 @@ describe("getPeriodPerformance", () => {
     expect(result.note).toContain("hasn't started yet");
   });
 
-  it("flags a symbol with no historical_prices row on/before the period start instead of pricing it at ₹0", async () => {
+  it("flags a symbol with no historical_prices row on/before the period start and values it at cost, not ₹0 (audit M20)", async () => {
     const txns = {
       rows: [{ symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-06-01" }],
     };
@@ -951,9 +951,14 @@ describe("getPeriodPerformance", () => {
       2,
       new Date("2026-08-23T00:00:00Z"),
     );
-    expect(result.startPortfolioValue).toBe(0); // TCS excluded, not counted at ₹0 loss
+    // Still never priced at ₹0 (which would book a fake loss) — but no longer DROPPED from the start while the
+    // end counts it at ₹1,200, which read the entire holding as growth. It is valued at its ₹1,000 cost at the
+    // start, the same fallback the Reports page uses, so the period shows its real +20%.
+    expect(result.startPortfolioValue).toBe(1000);
+    expect(result.endPortfolioValue).toBe(1200);
+    expect(result.totalChangePercent).toBe(20);
     expect(result.note).toContain("TCS");
-    expect(result.note).toContain("excluded from startPortfolioValue");
+    expect(result.note).toContain("valued at cost in startPortfolioValue");
   });
 });
 
