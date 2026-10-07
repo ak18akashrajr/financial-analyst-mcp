@@ -15,6 +15,7 @@ import {
   endOfIstDay,
   getPeriodPerformance,
   getPortfolioValueAsOf,
+  istDayString,
   listTransactions,
   txnDayIst,
   type Holding,
@@ -205,5 +206,68 @@ describe("getPortfolioValueAsOf — whole as-of day", () => {
     });
     const result = await getPortfolioValueAsOf(sb, "2026-09-30");
     expect(result.vaultCash).toBe(90000);
+  });
+});
+
+// Audit M22: "today" must be the IST day. The UTC date lags IST by a day between 00:00 and 05:30 IST.
+describe("istDayString — today is the IST calendar day (audit M22)", () => {
+  it("rolls to the next day at 18:30 UTC (midnight IST), not at 00:00 UTC", () => {
+    expect(istDayString(new Date("2026-10-31T18:29:59.999Z"))).toBe("2026-10-31"); // 23:59:59 IST
+    expect(istDayString(new Date("2026-10-31T18:30:00.000Z"))).toBe("2026-11-01"); // 00:00:00 IST
+  });
+
+  it("agrees with the UTC date for the rest of the IST day", () => {
+    expect(istDayString(new Date("2026-11-01T00:00:00Z"))).toBe("2026-11-01"); // 05:30 IST
+    expect(istDayString(new Date("2026-11-01T12:00:00Z"))).toBe("2026-11-01");
+  });
+
+  it("handles month, year and leap-day boundaries", () => {
+    expect(istDayString(new Date("2026-12-31T20:00:00Z"))).toBe("2027-01-01");
+    expect(istDayString(new Date("2028-02-28T19:00:00Z"))).toBe("2028-02-29");
+  });
+});
+
+describe("listTransactions — default range uses the IST month (audit M22)", () => {
+  const transactions: Rows = [
+    { symbol: "TCS", type: "BUY", quantity: 1, price: 100, date: "2026-10-15T10:00:00+00:00" },
+    { symbol: "TCS", type: "BUY", quantity: 3, price: 100, date: "2026-10-31T19:00:00+00:00" }, // 00:30 IST Nov 1
+  ];
+  // 01:30 IST on 1 Nov 2026 is still 20:00 UTC on 31 Oct.
+  const justAfterIstMidnight = new Date("2026-10-31T20:00:00Z");
+
+  it("with no dates, at 01:30 IST on 1 Nov, returns November — not the previous month", async () => {
+    const r = await listTransactions(fakeSb({ transactions }), undefined, undefined, undefined, justAfterIstMidnight);
+    expect(r.endDate).toBe("2026-11-01");
+    expect(r.startDate).toBe("2026-11-01"); // 1st of November, not 2026-10-01
+    expect(r.transactions.map((t) => t.quantity)).toEqual([3]); // the 00:30 IST trade; October's is out
+  });
+
+  it("is unchanged once UTC has caught up to the same IST day", async () => {
+    const r = await listTransactions(fakeSb({ transactions }), undefined, undefined, undefined, new Date("2026-11-01T06:00:00Z"));
+    expect(r.endDate).toBe("2026-11-01");
+    expect(r.transactions.map((t) => t.quantity)).toEqual([3]);
+  });
+});
+
+describe("getPeriodPerformance — resolves the period from the IST day (audit M22)", () => {
+  const transactions: Rows = [{ symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-06-01" }];
+  const historical: Rows = [{ symbol: "TCS", date: "2026-06-30", close: 100 }];
+  const run = (now: Date) =>
+    getPeriodPerformance(
+      fakeSb({ transactions, symbol_metadata: SYMBOL_META, historical_prices: historical, net_worth_history: [] }),
+      [], CASH0, "quarter", undefined, undefined, now,
+    );
+
+  it("at 01:30 IST on 1 Oct, resolves Q3 (in progress) rather than the completed Q2", async () => {
+    // 20:00 UTC on 30 Sep is 01:30 IST on 1 Oct. UTC "today" said 30 Sep, i.e. Q2, already marked completed.
+    const r = await run(new Date("2026-09-30T20:00:00Z"));
+    expect(r.periodKey).toContain("Q3");
+    expect(r.status).toBe("in-progress");
+  });
+
+  it("still resolves Q2 earlier on the same UTC date, before IST midnight", async () => {
+    const r = await run(new Date("2026-09-30T10:00:00Z")); // 15:30 IST on 30 Sep
+    expect(r.periodKey).toContain("Q2");
+    expect(r.status).toBe("in-progress");
   });
 });

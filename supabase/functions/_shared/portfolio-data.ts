@@ -88,6 +88,17 @@ export function txnDayIst(dateStr: string): string {
   return new Date(t + IST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/**
+ * The IST calendar day ("YYYY-MM-DD") that `now` falls in — what "today" means everywhere on the server.
+ *
+ * `now.toISOString().slice(0, 10)` is the UTC date, which lags IST by a day between 00:00 and 05:30 IST: at
+ * 01:30 IST on 1 Nov it still says 31 Oct. That made `list_transactions` with no dates return the previous
+ * month and let `get_period_performance` resolve (and label "completed") the wrong period for those hours.
+ */
+export function istDayString(now: Date): string {
+  return new Date(now.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
 /** Last instant of an IST calendar day, as a UTC ISO string (23:59:59.999 IST = 18:29:59.999Z the same date). */
 export function endOfIstDay(dateStr: string): string {
   return `${dateStr}T18:29:59.999Z`;
@@ -227,7 +238,7 @@ export async function listTransactions(
   endDate?: string,
   now: Date = new Date(),
 ): Promise<TransactionActivity> {
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = istDayString(now);
   const effectiveEnd = endDate ?? todayStr;
   const effectiveStart = startDate ?? `${effectiveEnd.slice(0, 7)}-01`; // 1st of endDate's calendar month
 
@@ -906,7 +917,7 @@ export async function getPeriodPerformance(
   now: Date = new Date(),
   currentMissingPriceSymbols: string[] = [],
 ) {
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = istDayString(now);
   const period = resolveFYPeriod(todayStr, periodType, fyStartYear, periodIndex);
   const status: "upcoming" | "in-progress" | "completed" =
     todayStr < period.start ? "upcoming" : todayStr >= period.end ? "completed" : "in-progress";
