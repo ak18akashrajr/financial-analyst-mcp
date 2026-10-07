@@ -17,7 +17,13 @@ vi.mock('@/integrations/supabase/client', () => ({
   supabase: { from: () => ({ select: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) }) },
 }));
 
-const { computeWindowXIRR, computePortfolioWindowXIRR, hasFullTrailingWindow } = await import('@/pages/RollingReturns');
+const {
+  computeWindowXIRR,
+  computePortfolioWindowXIRR,
+  hasFullTrailingWindow,
+  gatedWindowXIRR,
+  gatedPortfolioWindowXIRR,
+} = await import('@/pages/RollingReturns');
 
 function txn(overrides: Partial<Transaction>): Transaction {
   return { id: 'x', symbol: 'AAPL', type: 'BUY', quantity: 1, price: 100, date: '2023-01-01', ...overrides };
@@ -134,5 +140,99 @@ describe('hasFullTrailingWindow', () => {
   it('is true when the earliest transaction predates the window start', () => {
     const txns = [{ date: '2020-01-01' }, { date: '2023-06-01' }];
     expect(hasFullTrailingWindow(txns, new Date(2024, 0, 1), 1)).toBe(true);
+  });
+});
+
+// Audit M6a: units already held at window start need a start price to be costed. With none, computeWindowXIRR
+// used to skip the opening outflow but still count ALL units at the end, so pre-window units looked free.
+describe('computeWindowXIRR — missing start price (audit M6)', () => {
+  const windowEnd = new Date(2024, 0, 1); // 1Y window starts 2023-01-01
+
+  it('returns null instead of treating units held before the window as free', () => {
+    const txns: Transaction[] = [
+      txn({ type: 'BUY', date: '2022-01-01', quantity: 10, price: 100 }), // held at window start
+      txn({ type: 'BUY', date: '2023-07-01', quantity: 5, price: 120 }), // in-window buy: the only outflow
+    ];
+    // Price history only begins mid-window, so there is no price on or before the 2023-01-01 start.
+    const prices = [
+      { date: '2023-07-01', close: 120 },
+      { date: '2024-01-01', close: 130 },
+    ];
+    // Old behaviour: flows were just -600 (the in-window buy) and +1950 (all 15 units) -> a ~500% annualised
+    // "return", because the 10 pre-window units cost nothing.
+    expect(computeWindowXIRR('AAPL', txns, prices, windowEnd, 1)).toBeNull();
+  });
+
+  it('still computes normally when a start price exists', () => {
+    const txns: Transaction[] = [txn({ type: 'BUY', date: '2022-01-01', quantity: 10, price: 100 })];
+    const prices = [
+      { date: '2022-12-30', close: 100 },
+      { date: '2024-01-01', close: 110 },
+    ];
+    const r = computeWindowXIRR('AAPL', txns, prices, windowEnd, 1);
+    expect(r).not.toBeNull();
+    expect(r!).toBeCloseTo(0.1, 2);
+  });
+
+  it('is unaffected when nothing was held at window start (no start price needed)', () => {
+    const txns: Transaction[] = [txn({ type: 'BUY', date: '2023-06-01', quantity: 10, price: 100 })];
+    const prices = [
+      { date: '2023-06-01', close: 100 },
+      { date: '2024-01-01', close: 110 },
+    ];
+    expect(computeWindowXIRR('AAPL', txns, prices, windowEnd, 1)).not.toBeNull();
+  });
+});
+
+// Audit M6b: the summary table's 1Y/3Y/5Y columns must not report a partial window's XIRR as a 1Y/3Y/5Y figure.
+describe('gated window XIRR for the summary table (audit M6)', () => {
+  const windowEnd = new Date(2024, 0, 1);
+  // A position only ~4 months old (2023-09-01 .. 2024-01-01 = 122 days), up 10%.
+  const young: Transaction[] = [txn({ type: 'BUY', date: '2023-09-01', quantity: 10, price: 100 })];
+  const prices = [
+    { date: '2023-09-01', close: 100 },
+    { date: '2024-01-01', close: 110 },
+  ];
+
+  it('shows a number for the ungated function but null for 1Y/3Y/5Y once gated', () => {
+    // The ungated function annualises the real 122-day holding period into a big, meaningless figure ...
+    expect(computeWindowXIRR('AAPL', young, prices, windowEnd, 1)).not.toBeNull();
+    // ... which the table used to print under every column. Gated, none of the trailing windows is available.
+    for (const years of [1, 3, 5]) {
+      expect(gatedWindowXIRR('AAPL', young, prices, windowEnd, years)).toBeNull();
+    }
+  });
+
+  it('returns the real figure once the position has a full window of history', () => {
+    const old: Transaction[] = [txn({ type: 'BUY', date: '2022-12-01', quantity: 10, price: 100 })];
+    const p = [
+      { date: '2022-12-01', close: 100 },
+      { date: '2023-01-01', close: 100 },
+      { date: '2024-01-01', close: 110 },
+    ];
+    const r = gatedWindowXIRR('AAPL', old, p, windowEnd, 1);
+    expect(r).not.toBeNull();
+    expect(r!).toBeCloseTo(0.1, 2);
+    // ... but 3Y still isn't available: only ~13 months of history.
+    expect(gatedWindowXIRR('AAPL', old, p, windowEnd, 3)).toBeNull();
+  });
+
+  it('gates the portfolio row on the earliest transaction across all symbols', () => {
+    const txns: Transaction[] = [
+      txn({ symbol: 'AAA', type: 'BUY', date: '2023-09-01', quantity: 10, price: 100 }),
+      txn({ symbol: 'BBB', type: 'BUY', date: '2021-01-01', quantity: 10, price: 100 }), // pushes history back
+    ];
+    const pbs = {
+      AAA: [{ date: '2023-01-01', close: 100 }, { date: '2024-01-01', close: 110 }],
+      BBB: [{ date: '2023-01-01', close: 100 }, { date: '2024-01-01', close: 110 }],
+    };
+    expect(gatedPortfolioWindowXIRR(txns, pbs, windowEnd, 1)).not.toBeNull(); // BBB gives >1Y of history
+    expect(gatedPortfolioWindowXIRR(txns, pbs, windowEnd, 5)).toBeNull(); // but not 5Y
+    expect(gatedPortfolioWindowXIRR(young, { AAPL: prices }, windowEnd, 1)).toBeNull(); // a young portfolio: none
+  });
+
+  it('is null with no transactions', () => {
+    expect(gatedPortfolioWindowXIRR([], {}, windowEnd, 1)).toBeNull();
+    expect(gatedWindowXIRR('AAPL', [], [], windowEnd, 1)).toBeNull();
   });
 });

@@ -59,7 +59,14 @@ export function TransactionHistory({ transactions, onUpdate, onDelete }: Props) 
     const qty = parseFloat(editQty);
     const price = parseFloat(editPrice);
     if (!isNaN(qty) && qty > 0 && !isNaN(price) && price > 0 && editDate) {
-      onUpdate(id, { quantity: qty, price, date: editDate });
+      // Only send `date` when the user actually changed it. The date input holds a bare YYYY-MM-DD, which
+      // Postgres reads as 00:00 UTC, so always sending it silently reset the time of day of every edited
+      // trade: a price-only edit of a 15:00 SELL moved it before its 10:00 BUY of the same day, FIFO then
+      // dropped the SELL and showed a phantom holding (audit M16). Omitting it leaves the stored timestamp
+      // alone — update_transaction_and_snapshot keeps it via COALESCE(p_date, date).
+      const original = transactions.find((t) => t.id === id);
+      const dateChanged = !original || editDate !== toDateInputValue(original.date);
+      onUpdate(id, { quantity: qty, price, ...(dateChanged ? { date: editDate } : {}) });
     }
     setEditingId(null);
   };

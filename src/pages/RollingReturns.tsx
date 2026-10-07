@@ -48,6 +48,12 @@ export function computeWindowXIRR(
   const endPrice = sortedPrices.filter(p => parseLocalDate(p.date) <= windowEnd).slice(-1)[0]?.close;
   if (!endPrice) return null;
 
+  // Units already held at window start need a start price to be costed. Without one, the opening outflow
+  // used to be skipped while the terminal value still counted ALL units, so the pre-window units looked
+  // free and any in-window buy produced an inflated return. computePortfolioWindowXIRR already returns null
+  // here; this matches it (audit M6).
+  if (qtyAtStart > 0 && !startPrice) return null;
+
   const cashFlows: { amount: number; date: Date }[] = [];
 
   // Open position synthetic outflow at start
@@ -155,6 +161,34 @@ export function hasFullTrailingWindow(
   return earliest !== null && earliest <= start;
 }
 
+/**
+ * `computeWindowXIRR`, but null unless the symbol has a full `yearsBack` of history by `windowEnd` — the same
+ * gate the chart applies (see hasFullTrailingWindow). The summary table's 1Y/3Y/5Y columns used to call the
+ * ungated function, so a position held for 122 days showed its ~4-month XIRR under 1Y, 3Y and 5Y alike
+ * (audit M6). The ungated function keeps returning a value for a partial window; skipping it is the caller's job.
+ */
+export function gatedWindowXIRR(
+  symbol: string,
+  txns: Transaction[],
+  prices: PricePoint[],
+  windowEnd: Date,
+  yearsBack: number,
+): number | null {
+  if (!hasFullTrailingWindow(txns, windowEnd, yearsBack)) return null;
+  return computeWindowXIRR(symbol, txns, prices, windowEnd, yearsBack);
+}
+
+/** Portfolio-wide counterpart of `gatedWindowXIRR`, gated on the earliest transaction of ANY symbol. */
+export function gatedPortfolioWindowXIRR(
+  transactions: Transaction[],
+  pricesBySymbol: Record<string, PricePoint[]>,
+  windowEnd: Date,
+  yearsBack: number,
+): number | null {
+  if (!hasFullTrailingWindow(transactions, windowEnd, yearsBack)) return null;
+  return computePortfolioWindowXIRR(transactions, pricesBySymbol, windowEnd, yearsBack);
+}
+
 const WINDOW_OPTIONS = [
   { id: '1y', label: '1Y', years: 1 },
   { id: '3y', label: '3Y', years: 3 },
@@ -247,15 +281,19 @@ const RollingContent = () => {
     return holdings.map(h => {
       const txns = txnsBySymbol[h.symbol] || [];
       const prices = pricesBySymbol[h.symbol] || [];
-      const r1 = computeWindowXIRR(h.symbol, txns, prices, today, 1);
-      const r3 = computeWindowXIRR(h.symbol, txns, prices, today, 3);
-      const r5 = computeWindowXIRR(h.symbol, txns, prices, today, 5);
+      const r1 = gatedWindowXIRR(h.symbol, txns, prices, today, 1);
+      const r3 = gatedWindowXIRR(h.symbol, txns, prices, today, 3);
+      const r5 = gatedWindowXIRR(h.symbol, txns, prices, today, 5);
       return { symbol: h.symbol, r1, r3, r5 };
     });
   }, [holdings, txnsBySymbol, pricesBySymbol]);
 
   const portfolioWindowXIRR = (windowEnd: Date, yearsBack: number): number | null =>
     computePortfolioWindowXIRR(transactions, pricesBySymbol, windowEnd, yearsBack);
+
+  // The summary table's "Overall Portfolio" row, gated like the per-holding rows (the chart gates inline).
+  const portfolioTableXIRR = (yearsBack: number): number | null =>
+    gatedPortfolioWindowXIRR(transactions, pricesBySymbol, new Date(), yearsBack);
 
   // Rolling chart data for selected
   const chartData = useMemo(() => {
@@ -344,9 +382,9 @@ const RollingContent = () => {
                         </InfoHint>
                       </span>
                     </td>
-                    <td className="px-4 py-2 font-mono">{fmtPct(portfolioWindowXIRR(new Date(), 1))}</td>
-                    <td className="px-4 py-2 font-mono">{fmtPct(portfolioWindowXIRR(new Date(), 3))}</td>
-                    <td className="px-4 py-2 font-mono">{fmtPct(portfolioWindowXIRR(new Date(), 5))}</td>
+                    <td className="px-4 py-2 font-mono">{fmtPct(portfolioTableXIRR(1))}</td>
+                    <td className="px-4 py-2 font-mono">{fmtPct(portfolioTableXIRR(3))}</td>
+                    <td className="px-4 py-2 font-mono">{fmtPct(portfolioTableXIRR(5))}</td>
                   </tr>
                   {holdingRows.map(r => (
                     <tr key={r.symbol} className="border-b border-border last:border-0">

@@ -54,6 +54,66 @@ describe('TransactionHistory date editing', () => {
     expect(onUpdate).toHaveBeenCalledWith('txn-1', { quantity: 10, price: 100, date: '2024-02-20' });
   });
 
+  // Audit M16: the date input holds a bare date, which Postgres reads as 00:00 UTC, so always sending it reset
+  // the time of day of every edited trade and could reorder it ahead of a same-day earlier trade.
+  it('does not send a date when only quantity or price was edited, so the stored timestamp is kept', () => {
+    const onUpdate = vi.fn();
+    render(
+      <TransactionHistory
+        transactions={[makeTransaction({ date: '2024-01-15T15:00:00.000Z' })]}
+        onUpdate={onUpdate}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    const [editButton] = screen.getAllByRole('button');
+    fireEvent.click(editButton);
+    const [, priceInput] = Array.from(document.querySelectorAll('input[type="number"]')) as HTMLInputElement[];
+    fireEvent.change(priceInput, { target: { value: '105' } });
+
+    const [checkButton] = screen.getAllByRole('button');
+    fireEvent.click(checkButton);
+
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    const [id, updates] = onUpdate.mock.calls[0];
+    expect(id).toBe('txn-1');
+    expect(updates).toEqual({ quantity: 10, price: 105 });
+    expect('date' in updates).toBe(false);
+  });
+
+  it('does not send a date when the edit is saved with nothing changed', () => {
+    const onUpdate = vi.fn();
+    render(
+      <TransactionHistory transactions={[makeTransaction()]} onUpdate={onUpdate} onDelete={vi.fn()} />,
+    );
+
+    const [editButton] = screen.getAllByRole('button');
+    fireEvent.click(editButton);
+    const [checkButton] = screen.getAllByRole('button');
+    fireEvent.click(checkButton);
+
+    expect(onUpdate).toHaveBeenCalledWith('txn-1', { quantity: 10, price: 100 });
+  });
+
+  it('still sends the new date when the user does change it, even alongside a price edit', () => {
+    const onUpdate = vi.fn();
+    render(
+      <TransactionHistory transactions={[makeTransaction()]} onUpdate={onUpdate} onDelete={vi.fn()} />,
+    );
+
+    const [editButton] = screen.getAllByRole('button');
+    fireEvent.click(editButton);
+    const dateInput = document.querySelector('input[type="date"]') as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: '2024-03-01' } });
+    const [, priceInput] = Array.from(document.querySelectorAll('input[type="number"]')) as HTMLInputElement[];
+    fireEvent.change(priceInput, { target: { value: '110' } });
+
+    const [checkButton] = screen.getAllByRole('button');
+    fireEvent.click(checkButton);
+
+    expect(onUpdate).toHaveBeenCalledWith('txn-1', { quantity: 10, price: 110, date: '2024-03-01' });
+  });
+
   it('does not save when the date is cleared out', () => {
     const onUpdate = vi.fn();
     render(
