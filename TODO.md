@@ -186,7 +186,7 @@ _No High items open — H1–H6 are all done (see Archive)._
 2. ~~H2, H3~~ — done (batch 2, [PR #193](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/193)).
 3. ~~M2, M4, M7, M10~~ — done (batch 3, [PR #194](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/194); M7's valuation-model follow-ups remain). **M1 is
    still open, waiting on Question 2.**
-3b. ~~M6, M16, M22~~ — done (batch 5, PR pending; M16's date-change follow-up remains).
+3b. ~~M6, M16, M22~~ — done (batch 5, [PR #197](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/197); M16's date-change follow-up remains).
 4. The rest, after the questions above are answered. Edge-function fixes need
    `npx supabase@1.190.0 functions deploy --use-api` to take effect.
 
@@ -203,8 +203,8 @@ remains.
 <details>
 <summary>Archive (completed)</summary>
 
-- [x] **Calculation audit, batch 5 — M6, M16 (partial), M22** (2026-10-07). Branch `fix/audit-batch-5`, PR
-      pending (number to be filled in on opening). M22 changes an edge function, which the
+- [x] **Calculation audit, batch 5 — M6, M16 (partial), M22** (2026-10-07). Branch `fix/audit-batch-5`, merged via
+      [PR #197](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/197). M22 changes an edge function, which the
       `deploy-edge-functions.yml` workflow deploys automatically on merge; M6 and M16 are frontend only.
       Not started, deliberately: **M1** (still waiting on a go-ahead for the realized+unrealized design).
       - **M22 — edge functions used the UTC date for "today".** New `istDayString(now)` in
