@@ -51,10 +51,6 @@ _No High items open — H1–H6 are all done (see Archive)._
       and the drag-select XIRR badge runs on these hypothetical values. Decide whether any of these should
       change before touching them. Code: [`portfolioTimeline.ts`](src/lib/portfolioTimeline.ts).
 **Goals / projections**
-- [ ] **M11. "Step-up SIP equivalent" matches total rupees contributed, not future value.**
-      [`monteCarloAdvanced.ts:102-106`](src/lib/monteCarloAdvanced.ts). Flat ₹10,000/mo × 10y @10%
-      → ₹20.48L; suggested ₹6,275 step-up reaches ₹18.95L (7.5% short). Also `years < 1` returns
-      `flat × years`. Code `[checked]`; figures `[agent-traced]`.
 - [ ] **M12. Two monthly-rate conventions.** Exact `(1+r)^(1/12)−1` in `projectXIRR` /
       `simulateCrash` / `replayCrisis`; nominal `r/12` in
       [`projectionEngine.ts:128`](src/lib/projectionEngine.ts),
@@ -64,11 +60,6 @@ _No High items open — H1–H6 are all done (see Archive)._
       [`monteCarloAdvanced.ts:160-169,210-213`](src/lib/monteCarloAdvanced.ts). At a 60.6% reach
       rate the page shows 45; counting non-reachers gives 48. Already-FI at m=0 is never detected.
       UI copy ("earliest age the median path can sustain") doesn't match. `[agent-traced]`
-- [ ] **M14. Forecast backtest and bootstrap.** (a) [`forecast.ts:456-458`](src/lib/forecast.ts):
-      backtest compares a no-contribution forecast with an actual value that includes new buys →
-      coverage biased for anyone still investing. (b) [`Forecast.tsx:241-246`](src/pages/Forecast.tsx):
-      bootstrap ignores the ±50% drift clamp while the page shows the clamped "Fitted Drift". (c)
-      Backtest always uses plain-vol parametric even when Bootstrap/EWMA is selected. `[checked]`
 - [ ] **M15. "Portfolio volatility" is a weighted average of per-holding volatilities (no
       diversification).** [`riskMetrics.ts:129,160`](src/lib/riskMetrics.ts),
       [`portfolio-data.ts:488`](supabase/functions/_shared/portfolio-data.ts). Two uncorrelated 20%
@@ -96,11 +87,6 @@ _No High items open — H1–H6 are all done (see Archive)._
       `[agent-traced]` — dormant if only one member exists (Question 3).
 
 **AI tools vs app**
-- [ ] **M20. `get_period_performance` drops a holding with no price at one end only, then reports
-      the difference as the return** (app falls back to cost).
-      [`portfolio-data.ts:883-929`](supabase/functions/_shared/portfolio-data.ts) vs
-      [`periodReports.ts:143-159`](src/lib/periodReports.ts). Agent example: +40.0% vs +7.7%.
-      `[agent-traced]`
 - [ ] **M21. AI exposure / limit tools exclude cash and PF; the app includes them.**
       [`portfolio-data.ts:299-310`](supabase/functions/_shared/portfolio-data.ts) vs
       `usePortfolio.ts:603-626`. India 75% (AI) vs 80% (UI). Intent is a question (Question 5).
@@ -186,7 +172,9 @@ _No High items open — H1–H6 are all done (see Archive)._
 2. ~~H2, H3~~ — done (batch 2, [PR #193](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/193)).
 3. ~~M2, M4, M7, M10~~ — done (batch 3, [PR #194](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/194); M7's valuation-model follow-ups remain). **M1 is
    still open, waiting on Question 2.**
-3b. ~~M6, M16, M22~~ — done (batch 5, PR pending; M16's date-change follow-up remains).
+3b. ~~M6, M16, M22~~ — done (batch 5, [PR #197](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/197); M16's date-change follow-up remains).
+3c. ~~M11, M14, M20~~ — done (batch 6, PR pending). M5 and M13 are not started: from the audit's own
+   description both need a design decision first (re-verify before touching either).
 4. The rest, after the questions above are answered. Edge-function fixes need
    `npx supabase@1.190.0 functions deploy --use-api` to take effect.
 
@@ -203,8 +191,35 @@ remains.
 <details>
 <summary>Archive (completed)</summary>
 
-- [x] **Calculation audit, batch 5 — M6, M16 (partial), M22** (2026-10-07). Branch `fix/audit-batch-5`, PR
-      pending (number to be filled in on opening). M22 changes an edge function, which the
+- [x] **Calculation audit, batch 6 — M11, M14, M20** (2026-10-07). Branch `fix/audit-batch-6`, PR pending
+      (number to be filled in on opening). M20 changes an edge function (auto-deployed on merge); M11 and M14
+      are frontend only. Nothing in this batch depended on the owner's open questions.
+      - **M11 — "Step-up SIP equivalent" matched total rupees, not future value.** New
+        `stepUpEquivalentSIP` ([`monteCarloAdvanced.ts`](src/lib/monteCarloAdvanced.ts)) equates the expected
+        corpus under the goal simulation's own growth (monthly r/12, SIP at month end, step-up each 12-month
+        block). The audit's example (₹10,000/mo × 10y @10%): flat ₹20.48L; the old ₹6,275 step-up reached only
+        ~₹18.95L, the fix asks for more in year 1 and lands exactly on the flat corpus. Under a year there is no
+        step, so it returns the flat SIP (the old formula returned `flat × years`). Five of the new tests fail
+        against the old formula.
+      - **M14 — forecast backtest and bootstrap.** (a) The backtest now compares the forecast with the cutoff
+        value compounded by the realized flow-adjusted returns (market growth alone), not the raw later value
+        that includes every buy made meanwhile; the raw figure is kept as `actualRaw` and the table header reads
+        "Actual (ex new money)". (b) `forecastBootstrap` takes `targetDriftAnnual` and shifts every observed
+        return equally so the fan honours the ±50% drift clamp the "Fitted Drift" card shows; the page passes
+        the fitted drift. (c) `backtestForecast` takes `method` / `useEwma` and the page passes its selection, so
+        the coverage panel validates the model actually on screen. Library tests fail against the old code;
+        page tests for the clamp and the header fail against the old page.
+      - **M20 — `get_period_performance` dropped an unpriced holding from one end only.**
+        [`getPeriodPerformance`](supabase/functions/_shared/portfolio-data.ts) now values a holding with no
+        price at that end at its FIFO cost (the Reports page's fallback), for a missing start price, a missing
+        end price and an in-progress period's missing live price, and says so in the note.
+        `getPortfolioValueAsOf` (a single-date valuation) still excludes unpriced symbols, which is correct
+        there. **Deliberate behaviour change:** the existing "no price at period start" test asserted the old
+        drop-from-the-start result (start ₹0 against a live ₹1,200 end) and was updated to the corrected one
+        (start ₹1,000 at cost, +20%).
+
+- [x] **Calculation audit, batch 5 — M6, M16 (partial), M22** (2026-10-07). Branch `fix/audit-batch-5`, merged via
+      [PR #197](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/197). M22 changes an edge function, which the
       `deploy-edge-functions.yml` workflow deploys automatically on merge; M6 and M16 are frontend only.
       Not started, deliberately: **M1** (still waiting on a go-ahead for the realized+unrealized design).
       - **M22 — edge functions used the UTC date for "today".** New `istDayString(now)` in

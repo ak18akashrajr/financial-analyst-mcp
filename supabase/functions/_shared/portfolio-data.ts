@@ -949,18 +949,32 @@ export async function getPeriodPerformance(
     useLiveForEnd ? Promise.resolve({}) : fetchPriceMapAsOf(sb, endAsOf, everTradedSymbols),
   ]);
 
-  const { priced: startHoldings, missingSymbols: missingStartPrice } = splitByPriceAvailability(
-    computeHoldingsFromTxns(txns, startPriceMap, meta, openingAsOf),
-  );
+  // A holding with no price at one end is valued at its FIFO cost at that end — NOT dropped from that end only.
+  // Dropping it from one side while the other side still counts it made the whole position read as growth (or as
+  // a loss): a holding priced at the period end but with no price history at the start looked like +100% of its
+  // value, the audit's +40.0% vs +7.7% example. Falling back to cost on both sides is what the Reports page does
+  // (periodReports.ts resolvePrice), so the AI and the app agree.
+  const startSplit = splitByPriceAvailability(computeHoldingsFromTxns(txns, startPriceMap, meta, openingAsOf));
+  const startHoldings = startSplit.priced;
+  const missingStartPrice = startSplit.missingSymbols;
+  const startAtCost = costOfUnpriced(computeHoldingsFromTxns(txns, startPriceMap, meta, openingAsOf));
+
   let endHoldings: Holding[];
   let missingEndPrice: string[];
+  let endAtCost: number;
   if (useLiveForEnd) {
     endHoldings = currentHoldings; // already live-priced and pre-filtered by getCurrentPortfolio
     missingEndPrice = currentMissingPriceSymbols;
+    // currentHoldings left the unpriced symbols out entirely; recover their cost from the ledger.
+    endAtCost = computeHoldingsFromTxns(txns, {}, meta, endAsOf)
+      .filter((h) => currentMissingPriceSymbols.includes(h.symbol))
+      .reduce((s, h) => s + h.invested, 0);
   } else {
-    const split = splitByPriceAvailability(computeHoldingsFromTxns(txns, endPriceMap, meta, endAsOf));
+    const all = computeHoldingsFromTxns(txns, endPriceMap, meta, endAsOf);
+    const split = splitByPriceAvailability(all);
     endHoldings = split.priced;
     missingEndPrice = split.missingSymbols;
+    endAtCost = costOfUnpriced(all);
   }
 
   const [{ cash: startCash, source: startCashSource }, { cash: endCash }] = await Promise.all([
@@ -969,8 +983,8 @@ export async function getPeriodPerformance(
     fetchCashAsOf(sb, useLiveForEnd ? now.toISOString() : endOfIstDay(endAsOf), currentCash, useLiveForEnd),
   ]);
 
-  const startEquity = startHoldings.reduce((s, h) => s + h.currentValue, 0);
-  const endEquity = endHoldings.reduce((s, h) => s + h.currentValue, 0);
+  const startEquity = startHoldings.reduce((s, h) => s + h.currentValue, 0) + startAtCost;
+  const endEquity = endHoldings.reduce((s, h) => s + h.currentValue, 0) + endAtCost;
   const startPortfolioValue = startEquity + startCash.liquid + startCash.vault + startCash.pf - startCash.creditCardDebt;
   const endPortfolioValue = endEquity + endCash.liquid + endCash.vault + endCash.pf - endCash.creditCardDebt;
 
@@ -1010,10 +1024,10 @@ export async function getPeriodPerformance(
       "'redeployed existing cash' since no such distinction is tracked in the underlying data.",
   ];
   if (missingStartPrice.length > 0) {
-    notes.push(`No historical_prices row on or before ${openingAsOf} for ${missingStartPrice.join(", ")} — excluded from startPortfolioValue, not counted as ₹0.`);
+    notes.push(`No historical_prices row on or before ${openingAsOf} for ${missingStartPrice.join(", ")} — valued at cost in startPortfolioValue (not ₹0, and not dropped from one end only, which would show the whole position as growth).`);
   }
   if (missingEndPrice.length > 0) {
-    notes.push(`No price available as of ${endAsOf} for ${missingEndPrice.join(", ")} — excluded from endPortfolioValue, not counted as ₹0.`);
+    notes.push(`No price available as of ${endAsOf} for ${missingEndPrice.join(", ")} — valued at cost in endPortfolioValue (not ₹0, and not dropped from one end only).`);
   }
   if (startCashSource === "none") {
     notes.push("No net_worth_history snapshot on or before the end of the day before the period start — start-of-period cash/PF/credit-card-debt assumed ₹0 rather than today's live values.");
@@ -1030,6 +1044,11 @@ export async function getPeriodPerformance(
     totalChangePercent,
     note: notes.join(" "),
   };
+}
+
+/** Total FIFO cost of the holdings in `all` that have no price — what getPeriodPerformance values them at. */
+function costOfUnpriced(all: Holding[]): number {
+  return all.filter((h) => !h.hasPriceData).reduce((s, h) => s + h.invested, 0);
 }
 
 /**

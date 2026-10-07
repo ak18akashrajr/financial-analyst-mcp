@@ -183,6 +183,14 @@ export interface BootstrapOptions extends ForecastOptions {
   blockSize?: number;
   /** Spacing of the observed returns — `ValueSeries.periodsPerYear`. Default 252. */
   periodsPerYear?: number;
+  /**
+   * Annualized drift the resampled returns should average to, decimal. Every observed return is shifted by the
+   * same amount so their mean matches it; the shape (fat tails, clustering) is untouched. Pass the FITTED,
+   * clamped drift (`FitResult.driftAnnual`): a raw bootstrap carries whatever drift the window happened to
+   * contain, so it ignored the ±`MAX_ABS_DRIFT` clamp that the page shows as "Fitted Drift" and compounded a
+   * lucky 200%/yr window straight into the fan. Omit to resample the returns as observed.
+   */
+  targetDriftAnnual?: number;
 }
 
 export interface FanPoint {
@@ -337,6 +345,14 @@ export function forecastBootstrap(
   const perYear = opts.periodsPerYear ?? 252;
   const blockSize = Math.max(1, opts.blockSize ?? 20);
 
+  // Re-centre the observed returns on the requested (clamped) drift, if one was given.
+  let observed = returns;
+  if (opts.targetDriftAnnual !== undefined && Number.isFinite(opts.targetDriftAnnual) && returns.length > 0) {
+    const mean = returns.reduce((s, v) => s + v, 0) / returns.length;
+    const shift = opts.targetDriftAnnual / perYear - mean;
+    if (shift !== 0) observed = returns.map((r) => r + shift);
+  }
+
   if (returns.length === 0) {
     const flat = [Array.from({ length: months + 1 }, (_, m) => startValue + contribution * m)];
     return summarize('bootstrap', startValue, months, flat, opts.flatOffset);
@@ -354,8 +370,8 @@ export function forecastBootstrap(
     for (let m = 1; m <= months; m++) {
       for (let p = 0; p < periodsPerMonth; p++) {
         if (blockPos >= blockSize) {
-          const start = Math.floor(rng() * returns.length);
-          block = Array.from({ length: blockSize }, (_, i) => returns[(start + i) % returns.length]);
+          const start = Math.floor(rng() * observed.length);
+          block = Array.from({ length: blockSize }, (_, i) => observed[(start + i) % observed.length]);
           blockPos = 0;
         }
         v *= 1 + block[blockPos];
@@ -375,8 +391,14 @@ export interface BacktestFold {
   /** Grid index the fit was cut off at. */
   cutoffIndex: number;
   cutoffDate: string;
-  /** Value actually observed `horizonMonths` later. */
+  /**
+   * What the cutoff value grew to over the horizon from MARKET returns alone — the cutoff value compounded by
+   * the realized flow-adjusted returns, i.e. what it would be had no money been added or withdrawn. This is the
+   * like-for-like target for the forecast, which assumes no contributions; `actualRaw` includes them.
+   */
   actual: number;
+  /** The portfolio's raw value `horizonMonths` later, including any buys/sells made in the meantime. */
+  actualRaw: number;
   predictedP10: number;
   predictedP50: number;
   predictedP90: number;
@@ -446,7 +468,13 @@ export function backtestForecast(
   points: ValuePoint[],
   horizonMonths: number,
   periodsPerYear: number,
-  opts: ForecastOptions & { folds?: number } = {},
+  opts: ForecastOptions & {
+    folds?: number;
+    /** Forecast method to validate — pass whatever the page is currently showing. Default 'parametric'. */
+    method?: ForecastMethod;
+    /** Parametric only: use the EWMA volatility instead of the plain sample one, as the page can. */
+    useEwma?: boolean;
+  } = {},
 ): BacktestResult {
   const foldCount = Math.max(1, opts.folds ?? 4);
   const periodsPerMonth = Math.max(1, Math.round(periodsPerYear / 12));
@@ -465,14 +493,36 @@ export function backtestForecast(
       if (fitReturns.length < MIN_OBSERVATIONS) continue;
 
       const fit = fitParameters(fitReturns, periodsPerYear);
-      const fan = forecastParametric(usable[cutoffIndex].value, fit, horizonMonths, opts);
+      // Validate the SAME model the page is showing, not always the plain parametric one — otherwise the
+      // coverage panel describes a different forecast than the one on screen when Bootstrap or EWMA is selected.
+      const { method, useEwma, ...simOpts } = opts;
+      const fan =
+        method === 'bootstrap'
+          ? forecastBootstrap(usable[cutoffIndex].value, fitReturns, horizonMonths, {
+              ...simOpts,
+              periodsPerYear,
+              targetDriftAnnual: fit.driftAnnual,
+            })
+          : forecastParametric(
+              usable[cutoffIndex].value,
+              { driftAnnual: fit.driftAnnual, volAnnual: useEwma ? fit.ewmaVolAnnual : fit.volAnnual },
+              horizonMonths,
+              simOpts,
+            );
       const terminal = fan.terminal;
-      const actual = usable[cutoffIndex + horizonPeriods].value;
+      const actualRaw = usable[cutoffIndex + horizonPeriods].value;
+      // The forecast assumes no new money, so compare it with what the cutoff value would have become with
+      // none: compound it by the realized flow-adjusted returns over the horizon. Comparing against the raw
+      // value counted every buy made during the horizon as market growth, biasing coverage for anyone still
+      // investing (the band looked too narrow / too low).
+      let actual = usable[cutoffIndex].value;
+      for (let i = cutoffIndex; i < cutoffIndex + horizonPeriods; i++) actual *= 1 + (returns[i] ?? 0);
 
       folds.push({
         cutoffIndex,
         cutoffDate: usable[cutoffIndex].date,
         actual,
+        actualRaw,
         predictedP10: terminal.p10,
         predictedP50: terminal.p50,
         predictedP90: terminal.p90,

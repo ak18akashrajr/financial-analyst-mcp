@@ -77,12 +77,12 @@ function renderPage() {
 }
 
 /** `count` consecutive daily closes for AAPL starting 2026-01-01, drifting gently upward. */
-function seedDailyPrices(count: number) {
+function seedDailyPrices(count: number, dailyGrowth = 1.001) {
   const start = new Date(Date.UTC(2026, 0, 1));
   for (let i = 0; i < count; i++) {
     const d = new Date(start);
     d.setUTCDate(d.getUTCDate() + i);
-    historicalPriceRows.push({ symbol: 'AAPL', date: d.toISOString().slice(0, 10), close: 100 * 1.001 ** i });
+    historicalPriceRows.push({ symbol: 'AAPL', date: d.toISOString().slice(0, 10), close: 100 * dailyGrowth ** i });
   }
 }
 
@@ -235,8 +235,36 @@ describe('Forecast page', () => {
     expect(screen.getByText('Median Error')).toBeInTheDocument();
     expect(screen.getByText('Cutoff')).toBeInTheDocument();
     expect(screen.getByText('Predicted p10–p90')).toBeInTheDocument();
-    expect(screen.getByText('Actual')).toBeInTheDocument();
+    // The backtest compares against the value excluding new money (audit M14), and the header says so.
+    expect(screen.getByText('Actual (ex new money)')).toBeInTheDocument();
     expect(screen.getByText('Covered')).toBeInTheDocument();
+  });
+
+  it('applies the clamped drift to the bootstrap fan, not the raw window drift (audit M14)', async () => {
+    // +0.3%/day for 90 days = a raw drift of 0.003 x 252 = 75.6%/yr, above the 50% clamp the "Fitted Drift"
+    // card shows. Every observed return is identical, so the bootstrap is deterministic: at 24 months the
+    // median is equity x (1 + 0.5/252)^(21 x 24) with the clamp (~2.72x), versus (1.003)^504 (~4.53x) raw.
+    seedDailyPrices(90, 1.003);
+    mockPortfolio({ transactions: [txn({ date: '2026-01-01' })] });
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Fitted Drift')).toBeInTheDocument());
+    const driftCard = screen.getByText('Fitted Drift').closest('.rounded-xl') as HTMLElement;
+    expect(within(driftCard).getByText('+50.0%')).toBeInTheDocument(); // clamped from 75.6%
+
+    // Radix Tabs activates on mousedown, not click.
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Bootstrap' }), { button: 0 });
+
+    const equity = 10 * 100 * 1.003 ** 89;
+    const k = (n: number) => `₹${(n / 1000).toFixed(1)}K`;
+    const clampedMedian = equity * (1 + 0.5 / 252) ** (21 * 24);
+    const rawMedian = equity * 1.003 ** (21 * 24);
+    await waitFor(() => {
+      const card = screen.getByText('Median in 2y').closest('.rounded-xl') as HTMLElement;
+      expect(within(card).getByText(k(clampedMedian))).toBeInTheDocument();
+    });
+    const card = screen.getByText('Median in 2y').closest('.rounded-xl') as HTMLElement;
+    expect(within(card).queryByText(k(rawMedian))).not.toBeInTheDocument();
   });
 
   it('adds cash/PF as a flat offset after simulating instead of compounding it (audit H2)', async () => {

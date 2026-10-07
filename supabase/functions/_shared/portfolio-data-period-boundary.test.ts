@@ -271,3 +271,99 @@ describe("getPeriodPerformance — resolves the period from the IST day (audit M
     expect(r.status).toBe("in-progress");
   });
 });
+
+// Audit M20: a holding with no price at one end used to be dropped from that end only, so the difference between
+// the two ends reported the whole position as growth (or as a phantom loss). The app falls back to cost.
+describe("getPeriodPerformance — unpriced holdings are costed, not dropped from one end (audit M20)", () => {
+  const holding = (symbol: string, quantity: number, price: number): Holding => ({
+    symbol,
+    quantity,
+    avgPrice: price,
+    currentPrice: price,
+    invested: quantity * price,
+    currentValue: quantity * price,
+    pnl: 0,
+    pnlPercent: 0,
+    geography: "India",
+    category: "Equity",
+    hasPriceData: true,
+  });
+  const transactions: Rows = [
+    { symbol: "TCS", type: "BUY", quantity: 10, price: 100, date: "2026-06-01" },
+    { symbol: "INFY", type: "BUY", quantity: 10, price: 100, date: "2026-06-01" },
+  ];
+
+  it("a holding with no price at the START is valued at cost, not counted as +100% growth", async () => {
+    // Completed Q2 (Jul–Sep). INFY has closes at both ends (₹100 -> ₹100: flat). TCS only has a Sep-30 close
+    // (₹110): nothing on or before Jun 30. Old: start 1,000 (INFY only), end 2,100 -> +110%.
+    const historical: Rows = [
+      { symbol: "INFY", date: "2026-06-30", close: 100 },
+      { symbol: "INFY", date: "2026-09-30", close: 100 },
+      { symbol: "TCS", date: "2026-09-30", close: 110 },
+    ];
+    const r = await getPeriodPerformance(
+      fakeSb({ transactions, symbol_metadata: [], historical_prices: historical, net_worth_history: [] }),
+      [], CASH0, "quarter", 2026, 2, new Date("2027-01-15T00:00:00Z"),
+    );
+
+    expect(r.startPortfolioValue).toBe(2000); // INFY 1,000 + TCS at cost 1,000
+    expect(r.endPortfolioValue).toBe(2100); // INFY 1,000 + TCS 10 x ₹110
+    expect(r.totalChangePercent).toBe(5); // TCS's real +10% on its half of the portfolio, not +110%
+    expect(r.note).toContain("valued at cost in startPortfolioValue");
+    expect(r.note).toContain("TCS");
+  });
+
+  it("a holding with no price at EITHER end is costed at both, so the symmetric case stays flat", async () => {
+    // TCS's only close is dated after Q2 ends, so there is nothing on or before Jun 30 OR Sep 30. It must be
+    // costed at both ends (1,000 + 1,000), not distort the result by being dropped from one side.
+    const historical: Rows = [
+      { symbol: "INFY", date: "2026-06-30", close: 100 },
+      { symbol: "INFY", date: "2026-09-30", close: 100 },
+      { symbol: "TCS", date: "2026-10-05", close: 150 }, // after Q2's end -> no price on or before Sep 30
+    ];
+    const r = await getPeriodPerformance(
+      fakeSb({ transactions, symbol_metadata: [], historical_prices: historical, net_worth_history: [] }),
+      [], CASH0, "quarter", 2026, 2, new Date("2027-01-15T00:00:00Z"),
+    );
+    // Old: dropped at both ends -> also flat, so this pins that the fallback does not distort the symmetric case.
+    expect(r.startPortfolioValue).toBe(2000);
+    expect(r.endPortfolioValue).toBe(2000);
+    expect(r.totalChangePercent).toBe(0);
+  });
+
+  it("an in-progress period costs a holding with no live price instead of dropping it from the end", async () => {
+    // Q2 in progress (now = Aug 22). TCS is priced at the start (Jun 30: ₹100) but has no live price, so
+    // getCurrentPortfolio left it out and reports it in currentMissingPriceSymbols. Old: start 2,000 (both
+    // priced), end 1,000 (INFY only) -> a phantom -50%.
+    const historical: Rows = [
+      { symbol: "INFY", date: "2026-06-30", close: 100 },
+      { symbol: "TCS", date: "2026-06-30", close: 100 },
+    ];
+    const r = await getPeriodPerformance(
+      fakeSb({ transactions, symbol_metadata: [], historical_prices: historical, net_worth_history: [] }),
+      [holding("INFY", 10, 100)], CASH0, "quarter", 2026, 2, new Date("2026-08-22T06:00:00Z"), ["TCS"],
+    );
+
+    expect(r.status).toBe("in-progress");
+    expect(r.startPortfolioValue).toBe(2000);
+    expect(r.endPortfolioValue).toBe(2000); // INFY live 1,000 + TCS at cost 1,000
+    expect(r.totalChangePercent).toBe(0);
+    expect(r.note).toContain("valued at cost in endPortfolioValue");
+  });
+
+  it("leaves fully-priced periods exactly as before", async () => {
+    const historical: Rows = [
+      { symbol: "INFY", date: "2026-06-30", close: 100 },
+      { symbol: "INFY", date: "2026-09-30", close: 110 },
+      { symbol: "TCS", date: "2026-06-30", close: 100 },
+      { symbol: "TCS", date: "2026-09-30", close: 120 },
+    ];
+    const r = await getPeriodPerformance(
+      fakeSb({ transactions, symbol_metadata: [], historical_prices: historical, net_worth_history: [] }),
+      [], CASH0, "quarter", 2026, 2, new Date("2027-01-15T00:00:00Z"),
+    );
+    expect(r.startPortfolioValue).toBe(2000);
+    expect(r.endPortfolioValue).toBe(2300); // 10 x 110 + 10 x 120
+    expect(r.note).not.toContain("valued at cost");
+  });
+});

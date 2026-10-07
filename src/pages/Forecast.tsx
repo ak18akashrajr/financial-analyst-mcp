@@ -255,6 +255,8 @@ const ForecastContent = () => {
         simulations: 1000,
         periodsPerYear: series.periodsPerYear,
         flatOffset: cashOffset,
+        // The same clamped drift the "Fitted Drift" card shows — a raw bootstrap ignored the ±50% clamp.
+        targetDriftAnnual: fit.driftAnnual,
       });
     }
     return forecastParametric(equityStartValue, { driftAnnual: fit.driftAnnual, volAnnual: vol }, horizonMonths, {
@@ -272,9 +274,17 @@ const ForecastContent = () => {
   // `completePoints`/`returns`) since backtestForecast derives its own internally consistent
   // (usable points, returns) pair per fold — see its doc comment for why reusing this page's own
   // `returns` array would silently misalign whenever an incomplete stretch exists.
+  // Backtest the model that is actually selected: bootstrap, or parametric with plain/EWMA volatility. (EWMA
+  // only applies to the parametric method — the checkbox is hidden for bootstrap.)
   const backtest = useMemo(
-    () => backtestForecast(series.points, horizonMonths, series.periodsPerYear, { simulations: 150, folds: 4 }),
-    [series.points, horizonMonths, series.periodsPerYear],
+    () =>
+      backtestForecast(series.points, horizonMonths, series.periodsPerYear, {
+        simulations: 150,
+        folds: 4,
+        method,
+        useEwma: method === 'parametric' && useEwma,
+      }),
+    [series.points, horizonMonths, series.periodsPerYear, method, useEwma],
   );
 
   const chartData: ChartPoint[] = useMemo(() => {
@@ -559,10 +569,11 @@ const ForecastContent = () => {
                   formula="fit on history up to a cutoff → forecast horizonMonths ahead → compare to what actually happened"
                   caveat="A short or thin price history produces too few cutoffs to backtest at all — this isn't a sign the forecast itself is wrong, just that there isn't enough history yet to check it."
                 >
-                  Re-fits this same model at a few earlier points in time, projects forward exactly
+                  Re-fits this same model ({method === 'bootstrap' ? 'bootstrap' : useEwma ? 'parametric, EWMA volatility' : 'parametric'}) at a few earlier points in time, projects forward exactly
                   {' '}{horizonMonths} month{horizonMonths === 1 ? '' : 's'} from each, and checks whether what
                   actually happened next fell inside the predicted p10–p90 band — the honest answer to "why should I
-                  believe this band" rather than just asserting it.
+                  believe this band" rather than just asserting it. The "actual" excludes money you added or withdrew
+                  in the meantime, since the forecast assumes none.
                 </InfoHint>
               </div>
 
@@ -606,7 +617,7 @@ const ForecastContent = () => {
                         <tr className="text-left">
                           <th className="font-medium px-2 py-1.5">Cutoff</th>
                           <th className="font-medium px-2 py-1.5">Predicted p10–p90</th>
-                          <th className="font-medium px-2 py-1.5">Actual</th>
+                          <th className="font-medium px-2 py-1.5">Actual (ex new money)</th>
                           <th className="font-medium px-2 py-1.5">Covered</th>
                         </tr>
                       </thead>

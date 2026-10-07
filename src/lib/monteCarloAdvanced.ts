@@ -75,8 +75,37 @@ export function runGoalMonteCarlo(inp: GoalMCInputs, sims = 1000): GoalMCResult 
 }
 
 /**
+ * First-year monthly SIP that, stepping up by `stepUpRate` every year, reaches the SAME corpus as a flat
+ * `flatSIP` — i.e. equal future value at `annualReturn`, not merely equal rupees contributed.
+ *
+ * Uses the goal simulation's own growth: each month the balance grows by `annualReturn / 12` and the SIP is
+ * added at month end, and the step-up applies from the start of every 12-month block. Money contributed later
+ * has less time to grow, so a step-up plan needs a higher year-1 amount than "same total rupees" suggests: the
+ * old rupee-matching formula (`flat × years ÷ Σ1.1^y`) left its suggestion ~7.5% short of the flat corpus
+ * (₹10,000/mo × 10y @10% → ₹20.48L flat, ₹6,275 step-up reached only ₹18.95L). Under a year there is no
+ * step yet, so the step-up equivalent is just the flat SIP (the old formula returned `flat × years`).
+ */
+export function stepUpEquivalentSIP(
+  flatSIP: number,
+  yearsToTarget: number,
+  annualReturn: number,
+  stepUpRate = 0.1,
+): number {
+  const months = Math.max(1, Math.round(yearsToTarget * 12));
+  const g = 1 + annualReturn / 12;
+  let flatUnits = 0; // future value of ₹1/month, flat
+  let stepUnits = 0; // future value of ₹1/month in year 1, growing by stepUpRate each year
+  for (let m = 1; m <= months; m++) {
+    const growth = g ** (months - m);
+    flatUnits += growth;
+    stepUnits += (1 + stepUpRate) ** Math.floor((m - 1) / 12) * growth;
+  }
+  return stepUnits > 0 ? (flatSIP * flatUnits) / stepUnits : flatSIP;
+}
+
+/**
  * Inverse solver: minimum monthly SIP such that P(target met) ≥ confidence.
- * Uses bisection on SIP amount. Also returns step-up (10%/yr) equivalent.
+ * Uses bisection on SIP amount. Also returns the step-up (10%/yr) equivalent — see `stepUpEquivalentSIP`.
  */
 export function solveRequiredSIP(
   base: Omit<GoalMCInputs, 'monthlySIP'>,
@@ -99,11 +128,8 @@ export function solveRequiredSIP(
   const flatSIP = Math.round(hi);
   const achievedProb = test(flatSIP);
 
-  // Step-up equivalent: first-year SIP that with 10%/yr step-up reaches same total contribution
-  // approximated as flatSIP * (yearsToTarget / sum_{y=0..n-1} 1.1^y)
-  const years = base.yearsToTarget;
-  const factor = years > 0 ? (1 - Math.pow(1.1, years)) / (1 - 1.1) : years;
-  const stepUpSIP = Math.round(flatSIP * years / Math.max(1, factor));
+  // Step-up equivalent: first-year SIP that, rising 10%/yr, reaches the same corpus as the flat plan.
+  const stepUpSIP = Math.round(stepUpEquivalentSIP(flatSIP, base.yearsToTarget, base.expectedReturn, 0.1));
 
   return { flatSIP, stepUpSIP, achievedProb };
 }
