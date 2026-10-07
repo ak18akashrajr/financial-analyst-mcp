@@ -9,15 +9,18 @@
 // supabase-mocking pattern as use-portfolio-net-worth-snapshot.test.tsx.
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toast } from 'sonner';
 import { usePortfolio } from '@/hooks/usePortfolio';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 // updateCash/resetAll require a specific family member selected (not the combined 'all' view) —
-// stand in for the default FamilyMemberProvider with one fixed member, same convention CLAUDE.md
-// documents for context/hook consumers (mock the hook directly rather than wrapping a provider).
+// stand in for the default FamilyMemberProvider with one fixed member by default, same convention
+// CLAUDE.md documents for context/hook consumers (mock the hook directly rather than wrapping a
+// provider). `memberState.activeMemberId` is switchable so a test can exercise the 'all' view.
+const { memberState } = vi.hoisted(() => ({ memberState: { activeMemberId: 'member-1' } }));
 vi.mock('@/contexts/FamilyMemberContext', () => ({
-  useFamilyMemberSelection: () => ({ activeMemberId: 'member-1', setActiveMemberId: vi.fn() }),
+  useFamilyMemberSelection: () => ({ activeMemberId: memberState.activeMemberId, setActiveMemberId: vi.fn() }),
 }));
 
 // updateCash and resetAll now run as single atomic RPCs (see
@@ -26,11 +29,13 @@ vi.mock('@/contexts/FamilyMemberContext', () => ({
 // accumulation that update_cash_settings_tracked does server-side (compare previous vault/liquid
 // cash to the new values, classify the delta, accumulate into the month's running total) — that
 // SQL logic itself isn't exercised by this test file; it can only run against a real Postgres.
-const { cashState, cashflowState, rpcMock } = vi.hoisted(() => ({
+const { cashState, cashflowState, rpcFailure, rpcMock } = vi.hoisted(() => ({
   cashState: { liquid_cash: 1000, vault_cash: 2000, pf_balance: 0, credit_card_debt: 500 },
   cashflowState: { totalIncome: 0, totalExpense: 0 },
+  rpcFailure: { updateCash: false },
   rpcMock: vi.fn((fn: string, args: any) => {
     if (fn === 'update_cash_settings_tracked') {
+      if (rpcFailure.updateCash) return Promise.resolve({ data: null, error: { message: 'boom' } });
       if (!args.p_exclude_from_cashflow) {
         const deltaLiquid = args.p_liquid_cash - cashState.liquid_cash;
         const deltaVault = args.p_vault_cash - cashState.vault_cash;
@@ -74,7 +79,14 @@ vi.mock('@/integrations/supabase/client', () => ({
         };
       }
       if (table === 'cash_settings') {
-        return { select: () => ({ eq: () => Promise.resolve({ data: [cashState], error: null }) }) };
+        // Awaitable with or without .eq(): the 'all' view queries every member's row unfiltered.
+        return {
+          select: () => {
+            const q: any = Promise.resolve({ data: [cashState], error: null });
+            q.eq = () => q;
+            return q;
+          },
+        };
       }
       if (table === 'current_prices') {
         return { select: () => Promise.resolve({ data: [], error: null }) };
@@ -94,6 +106,10 @@ vi.mock('@/integrations/supabase/client', () => ({
 describe('usePortfolio income/expense tracking', () => {
   beforeEach(() => {
     rpcMock.mockClear();
+    vi.mocked(toast.success).mockClear();
+    vi.mocked(toast.error).mockClear();
+    memberState.activeMemberId = 'member-1';
+    rpcFailure.updateCash = false;
     cashState.liquid_cash = 1000;
     cashState.vault_cash = 2000;
     cashState.pf_balance = 0;
@@ -180,6 +196,37 @@ describe('usePortfolio income/expense tracking', () => {
     });
 
     expect(result.current.monthlyCashflow).toEqual({ totalIncome: 0, totalExpense: 500 });
+    expect(toast.success).toHaveBeenCalledTimes(1);
+  });
+
+  it("payCreditCardBill doesn't claim success in the combined 'All Family' view", async () => {
+    memberState.activeMemberId = 'all';
+    const { result } = renderHook(() => usePortfolio());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.payCreditCardBill();
+    });
+
+    expect(rpcMock).not.toHaveBeenCalledWith('update_cash_settings_tracked', expect.anything());
+    expect(toast.error).toHaveBeenCalledWith('Select a specific family member before editing cash balances');
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(result.current.cash.creditCardDebt).toBe(500);
+  });
+
+  it("payCreditCardBill doesn't claim success when the cash update fails", async () => {
+    const { result } = renderHook(() => usePortfolio());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    rpcFailure.updateCash = true;
+
+    await act(async () => {
+      await result.current.payCreditCardBill();
+    });
+
+    expect(toast.error).toHaveBeenCalledWith('Failed to update cash');
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(result.current.cash.creditCardDebt).toBe(500);
+    expect(result.current.cash.vaultCash).toBe(2000);
   });
 
   it('resetAll clears monthly_cashflow along with everything else', async () => {
