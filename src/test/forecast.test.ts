@@ -516,3 +516,114 @@ describe('fitCaveats', () => {
     expect(fitCaveats(fit, 'mixed').some((c) => c.includes('irregular'))).toBe(true);
   });
 });
+
+// ---- Audit M14 --------------------------------------------------------------------------------------------
+
+describe('forecastBootstrap — targetDriftAnnual honours the drift clamp (audit M14b)', () => {
+  // Monthly rows (12/yr) of a constant +5% return: raw drift 5% x 12 = 60%, above the 50% clamp.
+  const returns = repeat(0.05, 100);
+  const opts = { simulations: 10, rng: seeded(41), periodsPerYear: 12 } as const;
+
+  it('compounds the clamped drift instead of the raw one', () => {
+    const clamped = forecastBootstrap(100_000, returns, 6, { ...opts, targetDriftAnnual: 0.5 });
+    const unclamped = forecastBootstrap(100_000, returns, 6, opts);
+
+    expect(clamped.terminal.p50).toBeCloseTo(100_000 * (1 + 0.5 / 12) ** 6, 4); // 4.1667%/month
+    expect(unclamped.terminal.p50).toBeCloseTo(100_000 * 1.05 ** 6, 4); // the raw 60%/yr window
+    expect(clamped.terminal.p50).toBeLessThan(unclamped.terminal.p50);
+  });
+
+  it('is a no-op when the target equals the observed drift', () => {
+    const rawDrift = 0.05 * 12;
+    const same = forecastBootstrap(100_000, returns, 6, { ...opts, targetDriftAnnual: rawDrift });
+    const none = forecastBootstrap(100_000, returns, 6, opts);
+    expect(same.terminal.p50).toBeCloseTo(none.terminal.p50, 6);
+  });
+
+  it('shifts every return by the same amount, so the spread of a varying series is preserved', () => {
+    const varying = Array.from({ length: 200 }, (_, i) => (i % 2 === 0 ? 0.03 : -0.01)); // mean +1%/period
+    const spread = (f: ReturnType<typeof forecastBootstrap>) => f.terminal.p90 - f.terminal.p10;
+    const base = forecastBootstrap(100_000, varying, 12, { simulations: 300, rng: seeded(42), periodsPerYear: 12 });
+    const shifted = forecastBootstrap(100_000, varying, 12, {
+      simulations: 300,
+      rng: seeded(42),
+      periodsPerYear: 12,
+      targetDriftAnnual: 0.05, // far below the observed 12%/yr
+    });
+    expect(shifted.terminal.p50).toBeLessThan(base.terminal.p50);
+    expect(spread(shifted)).toBeGreaterThan(0); // still a distribution, not collapsed
+  });
+
+  it('ignores a non-finite target rather than poisoning the fan with NaN', () => {
+    const fan = forecastBootstrap(100_000, returns, 6, { ...opts, targetDriftAnnual: Number.NaN });
+    expect(Number.isFinite(fan.terminal.p50)).toBe(true);
+    expect(fan.terminal.p50).toBeCloseTo(100_000 * 1.05 ** 6, 4);
+  });
+});
+
+describe('backtestForecast — like-for-like actual and matching method (audit M14a, M14c)', () => {
+  type P = { date: string; value: number; netFlow: number; complete: boolean };
+  /** A series that earns exactly `r` per period and receives `flow` of new money every period. */
+  const withContributions = (n: number, r: number, flow: number): P[] => {
+    const pts: P[] = [];
+    for (let i = 0; i < n; i++) {
+      const prev = i === 0 ? 100_000 : pts[i - 1].value;
+      const f = i === 0 ? 0 : flow;
+      pts.push({ date: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`, value: prev * (1 + r) + f, netFlow: f, complete: true });
+    }
+    return pts;
+  };
+
+  it('compares the forecast with the actual value excluding new money, not the raw value', () => {
+    // 0.1%/day market return plus ₹5,000 of new money every day. Raw value grows by the contributions as well;
+    // the no-contribution forecast should be judged against market growth alone.
+    const points = withContributions(220, 0.001, 5000);
+    const result = backtestForecast(points, 1, 252, { simulations: 50, rng: seeded(51), folds: 3 });
+
+    expect(result.folds.length).toBeGreaterThan(0);
+    for (const f of result.folds) {
+      expect(f.actualRaw).toBeGreaterThan(f.actual); // the raw value carries ~21 days of new money
+      // With zero fitted volatility the parametric median is the deterministic market-only growth, so the
+      // like-for-like actual lands on it (the old raw comparison missed by the whole contribution stream).
+      expect(Math.abs(f.predictedP50 - f.actual) / f.actual).toBeLessThan(1e-4);
+      expect(f.medianAbsErrorPercent).toBeLessThan(0.01);
+    }
+    expect(result.medianAbsErrorPercent).toBeLessThan(0.01);
+  });
+
+  it('leaves a series with no new money unchanged (actual equals the raw value)', () => {
+    const points = withContributions(220, 0.001, 0);
+    const result = backtestForecast(points, 1, 252, { simulations: 20, rng: seeded(52), folds: 2 });
+    for (const f of result.folds) {
+      expect(f.actual).toBeCloseTo(f.actualRaw, 4);
+    }
+  });
+
+  it('validates the method that is selected: bootstrap and EWMA give different bands from the default', () => {
+    // A volatile first half and a calm second half, so plain and EWMA volatility genuinely differ.
+    const n = 400;
+    const pts: P[] = [];
+    for (let i = 0; i < n; i++) {
+      const swing = i < n / 2 ? 0.02 : 0.002;
+      const r = 0.0004 + (i % 2 === 0 ? swing : -swing);
+      const prev = i === 0 ? 100_000 : pts[i - 1].value;
+      pts.push({ date: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`, value: prev * (1 + r), netFlow: 0, complete: true });
+    }
+    const run = (extra: Record<string, unknown>) =>
+      backtestForecast(pts, 1, 252, { simulations: 400, rng: seeded(53), folds: 2, ...extra });
+
+    const plain = run({});
+    const explicitPlain = run({ method: 'parametric', useEwma: false });
+    const ewma = run({ method: 'parametric', useEwma: true });
+    const boot = run({ method: 'bootstrap' });
+
+    // Backwards compatible: no method == plain parametric.
+    expect(plain.folds.map((f) => f.predictedP10)).toEqual(explicitPlain.folds.map((f) => f.predictedP10));
+    // EWMA weights the calm recent regime, so its band is narrower than the whole-sample one.
+    const width = (r: typeof plain) => r.folds[r.folds.length - 1].predictedP90 - r.folds[r.folds.length - 1].predictedP10;
+    expect(width(ewma)).toBeLessThan(width(plain));
+    // Bootstrap is a different model: it does not reproduce the parametric band.
+    expect(boot.folds.map((f) => f.predictedP10)).not.toEqual(plain.folds.map((f) => f.predictedP10));
+    expect(boot.folds.length).toBeGreaterThan(0);
+  });
+});
