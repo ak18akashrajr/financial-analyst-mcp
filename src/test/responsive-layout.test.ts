@@ -17,8 +17,12 @@ describe('tablet-width layout', () => {
     expect(src).not.toMatch(/max-w-lg md:hidden/);
   });
 
-  it('cash mini-stats use 3 columns until xl so labels are not truncated to one letter', () => {
-    expect(read('src/components/SummaryBar.tsx')).toContain('grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5');
+  it('cash mini-stats: 3 columns on tablet widths, but all five in one row from lg (laptops)', () => {
+    // 3 columns between sm and lg keep labels from truncating at 768-1023px (sidebar leaves ~480-760px);
+    // from lg up all five boxes sit side by side as they always did on a laptop.
+    const src = read('src/components/SummaryBar.tsx');
+    expect(src).toContain('grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5');
+    expect(src).not.toContain('xl:grid-cols-5');
   });
 
   it('market regime tiles stay at 2 columns until lg so "Expensive" is not clipped', () => {
