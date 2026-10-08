@@ -12,6 +12,101 @@ interface Update {
 
 const UPDATES: Update[] = [
   {
+    date: '2026-10-08',
+    version: 'v4.3',
+    title: 'A more polished interface',
+    type: 'improvement',
+    items: [
+      'Smoother loading everywhere — shimmering placeholders shaped like the content that is coming (heatmaps, FX card, Taxes) instead of bare "Loading..." text, and one branded splash while the app signs you in',
+      'Pages now fade in as you move between them, and the sidebar stays put while a page loads instead of the whole screen blanking',
+      'Your AUM and P&L count up on load and glide to new values after a price refresh, with a brief green/red flash on AUM when it moves',
+      'Overview sections cascade in one after another instead of all appearing at once',
+      'AI answers now type out at a readable pace instead of popping in, with a livelier "thinking" indicator while it works',
+      'Everything respects your device\'s "reduce motion" setting — animations are skipped entirely if you have it on',
+    ],
+  },
+  {
+    date: '2026-10-08',
+    title: 'Navigation, tables and look-and-feel',
+    type: 'improvement',
+    items: [
+      'The sidebar highlight now glides to the page you open, and icon-only sidebar buttons show proper tooltips instead of slow browser ones',
+      'Clear keyboard focus ring on every button and link, so tabbing through the app always shows where you are',
+      'Long tables (Holdings, tax breakdown, Rolling Returns) keep their header row pinned while you scroll, and numbers in tables line up in neat columns',
+      'Cards have a softer surface with a gentle lift on the clickable ones; empty sections now explain what to do next, with a shortcut where one makes sense',
+      'Each page sets its own browser-tab title (e.g. "Tax Report · Blackcrest"), so several open tabs are easy to tell apart',
+      'Landing, login and 404 pages share a new look, the landing page lists what is inside, and shared links show a proper preview card',
+    ],
+  },
+  {
+    date: '2026-10-08',
+    title: 'Dark mode and tablet-layout fixes',
+    type: 'fix',
+    items: [
+      'Dark mode no longer flashes white on every reload, and toast notifications now follow your chosen theme',
+      'Chart and gain/loss colors are now consistent across every page and adapt properly to dark mode',
+      'AI chat, the cash-balance row and the market-regime tile no longer get squeezed or clipped on tablet-width screens',
+      'Fixed the sidebar highlight disappearing after resizing the window',
+    ],
+  },
+  {
+    date: '2026-10-07',
+    title: 'Calculation accuracy, round two',
+    type: 'fix',
+    items: [
+      'Rolling Returns no longer shows partial windows or impossible "free money" positions',
+      'Editing a trade no longer resets its time of day, and the assistant now uses the Indian date for "today"',
+      'The step-up SIP equivalent now reaches the same corpus, not just the same rupees',
+      'The forecast backtest now compares like with like and validates the model actually shown',
+      'The assistant\'s period performance now values holdings without a price instead of silently dropping one end',
+      'Settle Now no longer reports success when nothing was actually saved',
+    ],
+  },
+  {
+    date: '2026-10-06',
+    version: 'v4.2',
+    title: 'Calculation accuracy audit',
+    type: 'fix',
+    items: [
+      'XIRR now returns a result for steep annualised losses instead of going blank, and every figure reading a large table now pages through all of it rather than stopping at 1,000 rows',
+      'Cost basis is now FIFO everywhere — the assistant, dollar-adjusted returns and the Charts "invested" line all agree with the rest of the app',
+      'Tax rules are now applied per category, including Gold, Bonds, Crypto and assets with no gain',
+      'Forecasts no longer grow cash, PF and debt at the equity rate, and risk metrics are re-weighted over the holdings that have price history',
+      'Projections resolve goal allocations the same way as Goal Tracker',
+      'Smaller fixes: Top Gainers lists only holdings that are up, Reports shows "—" rather than a green +0.00% off a zero base, and range-selecting on a chart stops following your cursor once you let go',
+    ],
+  },
+  {
+    date: '2026-10-01',
+    title: 'Click-to-audit net-worth movement',
+    type: 'feature',
+    items: [
+      'Click any cell on the Seasonality heatmap or Reports to see what moved net worth that month — balance updates versus stock holdings',
+      'A new register documents known, deliberately accepted trade-offs in how numbers are calculated',
+      'Every day now falls into exactly one reporting period, in Reports and in the assistant',
+    ],
+  },
+  {
+    date: '2026-09-30',
+    title: 'Reports upgrades and mobile polish',
+    type: 'improvement',
+    items: [
+      'New AUM growth comparison chart on Periodic Reports, and Q1/H1 now compare against the prior fiscal year instead of showing "First period"',
+      'The period-over-period badge is labelled for the view you are on rather than always saying "QoQ"',
+      'Reports, audit popovers, the Benchmark header and XIRR breakdown, and the Dev Zone tab strip are all properly responsive on mobile',
+    ],
+  },
+  {
+    date: '2026-09-25',
+    title: 'Design consistency pass',
+    type: 'improvement',
+    items: [
+      'Loading states across the app now use skeleton placeholders, and empty sections share one consistent look',
+      'Cards, headings and gain/loss colors normalized across pages; the 404 page is now on-brand',
+      'IBM Plex now loads reliably, and a duplicate theme toggle and an unused notification system were removed',
+    ],
+  },
+  {
     date: '2026-09-21',
     version: 'v4.1',
     title: "\"Who's Watching\" profile picker",
