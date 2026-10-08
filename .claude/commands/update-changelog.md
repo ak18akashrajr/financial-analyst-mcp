@@ -16,8 +16,9 @@ change, on its own branch through the normal PR workflow (see CLAUDE.md's repo w
    match the density and voice of the existing entries: outcome-focused bullets a user would
    actually care about, skip commits that are pure chores, internal docs/TODO housekeeping, or
    test-only changes unless they're genuinely user-visible.
-4. **Security rule — this page is public with no login required** (per the existing 2026-05-05
-   "Changelog page is now publicly accessible" entry). For anything touching
+4. **Security rule — write as if the page were public.** It was made public on 2026-05-05 and is now
+   behind the app's sign-in like every other route (see `src/App.tsx`), but it is a changelog people
+   may screenshot or share, so keep the rule either way. For anything touching
    authentication/session security/prompt-injection/a closed vulnerability: confirm generically
    that it shipped ("hardened authentication and session security") — never name the mechanism,
    the vulnerability, or how it worked.

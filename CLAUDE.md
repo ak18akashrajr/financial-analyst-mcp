@@ -101,6 +101,34 @@ line per call: timestamp/level/fn/message/context) instead of raw `console.log`/
 failures are filterable in Supabase's log explorer. New edge function code should use this, not bare
 console calls — see [docs/logging-monitoring.md](docs/logging-monitoring.md) for what prompted it.
 
+### UI conventions
+
+Conventions that exist because breaking them caused a real bug or inconsistency; keep to them when
+adding UI.
+
+- **No inline `<script>`, ever.** [vercel.json](vercel.json) sets `script-src 'self'`, which silently
+  blocks inline scripts in production (dev and tests don't enforce it, so it fails only after
+  deploy). The pre-paint theme script is the external file
+  [public/theme-init.js](public/theme-init.js); [src/test/theme-init-script.test.ts](src/test/theme-init-script.test.ts)
+  checks `index.html` against the real CSP.
+- **Colors come from tokens, not literals.** Chart series use `CHART_COLORS`
+  ([src/lib/chartColors.ts](src/lib/chartColors.ts), tokens in `src/index.css`); gain/loss text uses
+  `text-gain`/`text-loss`. No `hsl(…)`/hex in chart files (a test guards this). The CAPE heat scales,
+  categorical palettes and DevZone status colors are deliberate exceptions.
+- **Hide-numbers state lives in [src/lib/privacyStore.ts](src/lib/privacyStore.ts)**, persisted in
+  `sessionStorage` and reset on sign-out. Read it through `usePrivacy()`; the page-level
+  `<PrivacyProvider>` wrappers are pass-throughs. Any new place that renders a ₹ amount (including
+  chart axes) must go through `mask`/`hidden`. The AI chat's free-text answers are not masked; the AI
+  page says so instead.
+- **Motion respects reduce-motion.** CSS animations are covered by the global
+  `prefers-reduced-motion` rule in `src/index.css`; JS-driven animation (count-up, typewriter) must
+  gate on `canAnimate()` from [src/lib/motion.ts](src/lib/motion.ts).
+- **Tablet width (768-1023px) is the tight one.** The 244px sidebar shows from `md`, leaving only
+  ~480-760px, so breakpoints that assume the viewport is the content width (grids, side panels)
+  should switch at `lg`, not `md`.
+- **Long tables** scroll in a `max-h` wrapper with the `sticky-thead` class; **clickable cards** use
+  `card-interactive`; **icon-only sidebar controls** use `SideTip`, not the native `title` attribute.
+
 ### Test conventions
 
 - Context/hook consumers are unit-tested by mocking the hook directly with `vi.mock`
@@ -111,3 +139,8 @@ console calls — see [docs/logging-monitoring.md](docs/logging-monitoring.md) f
   recharts' `ResponsiveContainer`-based charts (Treemap, Area, etc.) get a real size to lay out
   against under jsdom — without it, chart content silently renders as zero-size and tests see
   nothing. Reuse this for any new chart component's tests rather than re-solving it.
+- The same setup file makes `window.matchMedia` report `prefers-reduced-motion: reduce`, so count-ups
+  and the AI typewriter show their final state immediately and tests can assert on final values. Tests
+  that exercise animation override `matchMedia` themselves and drive time with fake `requestAnimationFrame`
+  timers — don't wait on real wall-clock time (it flakes under a loaded full-suite run). It also resets
+  the hide-numbers flag after each test.

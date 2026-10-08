@@ -13,6 +13,16 @@ interface Update {
 const UPDATES: Update[] = [
   {
     date: '2026-10-08',
+    title: 'Hide numbers now stays hidden',
+    type: 'improvement',
+    items: [
+      'The eye toggle now stays on across refreshes and page changes, until you sign out or close the tab — no more numbers reappearing when you reload',
+      'One setting for the whole app instead of each page keeping its own',
+      'Reports chart axes are masked too, and the AI page tells you when numbers are hidden that its answers still show real figures',
+    ],
+  },
+  {
+    date: '2026-10-08',
     version: 'v4.3',
     title: 'A more polished interface',
     type: 'improvement',
@@ -408,7 +418,7 @@ const UPDATES: Update[] = [
       'Credit card bill reminder — early-month banner with one-click "Pay Now" appears while CC debt is outstanding (auto-hides after payment or after the 5th)',
       'Light theme — clean black & white professional minimalistic palette',
       'Summary bar redesigned — Net Worth promoted to a hero tile, secondary metrics in a denser grid',
-      'Changelog page is now publicly accessible — no login required, so anyone can see what shipped',
+      'Changelog page is now publicly accessible — no login required, so anyone can see what shipped (it has since moved behind sign-in along with the rest of the app)',
     ],
   },
   {
