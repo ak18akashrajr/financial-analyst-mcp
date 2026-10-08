@@ -18,8 +18,10 @@ import {
   Trophy,
   AlertOctagon,
   LineChart,
+  EyeOff,
 } from 'lucide-react';
 import { AssistantMarkdown } from '@/components/portfolio-ai/AssistantMarkdown';
+import { usePrivacy } from '@/contexts/PrivacyContext';
 import { useAIChat, type ModelPreference } from '@/contexts/PortfolioAIChatContext';
 
 const MODEL_PREFERENCE_OPTIONS: { value: ModelPreference; label: string }[] = [
@@ -67,6 +69,7 @@ const PortfolioAI = () => {
   // than local useState here — this page itself still unmounts on every route
   // change like any other route, but the chat history no longer lives on it.
   const { messages, isLoading, liveToolCalls, modelPreference, setModelPreference, send } = useAIChat();
+  const { hidden } = usePrivacy();
   const [input, setInput] = useState('');
   const chatBodyRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -136,6 +139,17 @@ const PortfolioAI = () => {
             </span>
           </div>
         </div>
+        {/* The hide-numbers setting masks figures the app draws itself; the assistant's answers are
+            free text written by the server, so they still contain real numbers. Say so, rather than
+            letting a persisted "hidden" imply this page is covered too. */}
+        {hidden && (
+          <div role="note" className="border-t border-amber-500/20 bg-amber-500/5">
+            <div className="max-w-6xl mx-auto px-4 py-1.5 flex items-center gap-2 text-[11px] text-amber-600 dark:text-amber-400">
+              <EyeOff className="w-3 h-3 shrink-0" aria-hidden="true" />
+              You have hidden your numbers, but the assistant's answers still show real figures.
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 flex max-w-6xl mx-auto w-full min-h-0">
