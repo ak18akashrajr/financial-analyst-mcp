@@ -6,6 +6,7 @@ import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 import { getMemberAvatar } from '@/lib/familyMemberAvatar';
 import { ALL_FAMILY_DISPLAY_NAME, getMemberDisplayName } from '@/lib/familyMemberDisplay';
 import { ProfileEnterLoadingScreen } from '@/components/ProfileEnterLoadingScreen';
+import { BrandedSplash } from '@/components/BrandedSplash';
 
 interface NavState {
   from?: Location;
@@ -43,9 +44,7 @@ export default function WhosWatching() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
+      <BrandedSplash />
     );
   }
 

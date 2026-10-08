@@ -1,6 +1,7 @@
 import { Link, Navigate } from 'react-router-dom';
 import { Landmark } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { BrandedSplash } from '@/components/BrandedSplash';
 
 /**
  * Public entry point at "/". Signed-out visitors see a minimal splash with a
@@ -13,9 +14,7 @@ export default function Landing() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
+      <BrandedSplash />
     );
   }
 

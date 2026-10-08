@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { BrandedSplash } from '@/components/BrandedSplash';
 
 /**
  * Single, centralized auth gate applied as a layout route in App.tsx —
@@ -20,9 +21,7 @@ export const ProtectedRoute = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
+      <BrandedSplash />
     );
   }
 

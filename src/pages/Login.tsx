@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { LoginForm } from '@/components/LoginForm';
 import { useAuth } from '@/contexts/AuthContext';
+import { BrandedSplash } from '@/components/BrandedSplash';
 
 /**
  * Public "/login" route. If a session already exists (e.g. a signed-in user
@@ -30,9 +31,7 @@ export default function Login() {
 
   if (loading || !initialSessionCheck) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
+      <BrandedSplash />
     );
   }
 
