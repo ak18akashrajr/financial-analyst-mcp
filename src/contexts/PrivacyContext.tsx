@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { getHidden, subscribe, toggleHidden } from '@/lib/privacyStore';
 
 interface PrivacyContextType {
   hidden: boolean;
@@ -6,16 +7,19 @@ interface PrivacyContextType {
   mask: (value: string) => string;
 }
 
-const PrivacyContext = createContext<PrivacyContextType>({ hidden: false, toggle: () => {}, mask: (v) => v });
-
+/**
+ * Kept so every page's existing `<PrivacyProvider>` wrapper still works, but it no longer holds any
+ * state: the hidden flag now lives in the shared, session-persisted store (src/lib/privacyStore.ts),
+ * so all pages see the same value and it survives a refresh.
+ */
 export function PrivacyProvider({ children }: { children: ReactNode }) {
-  const [hidden, setHidden] = useState(false);
-  const mask = (value: string) => (hidden ? '••••••' : value);
-  return (
-    <PrivacyContext.Provider value={{ hidden, toggle: () => setHidden((h) => !h), mask }}>
-      {children}
-    </PrivacyContext.Provider>
-  );
+  return <>{children}</>;
 }
 
-export const usePrivacy = () => useContext(PrivacyContext);
+export function usePrivacy(): PrivacyContextType {
+  const hidden = useSyncExternalStore(subscribe, getHidden, () => false);
+  return useMemo(
+    () => ({ hidden, toggle: toggleHidden, mask: (value: string) => (hidden ? '••••••' : value) }),
+    [hidden],
+  );
+}

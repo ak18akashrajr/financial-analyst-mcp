@@ -1,4 +1,10 @@
 import "@testing-library/jest-dom";
+import { afterEach } from "vitest";
+import { resetHidden } from "../lib/privacyStore";
+
+// The hide-numbers flag is now module-level, session-persisted state; reset it so one test toggling it
+// can never leak into the next.
+afterEach(() => resetHidden());
 
 // jsdom has no layout engine, so recharts' <ResponsiveContainer> (used by treemap/line/area
 // charts) can't measure its host element. Stub ResizeObserver and give every element a

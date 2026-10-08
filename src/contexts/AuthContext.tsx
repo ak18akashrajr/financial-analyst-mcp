@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { resetHidden } from '@/lib/privacyStore';
 
 interface AuthContextType {
   session: Session | null;
@@ -22,11 +23,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
+      // No session (never signed in, expired, or signed out in another way): nothing may persist.
+      if (!data.session) resetHidden();
       setSession(data.session);
       setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      // The "hide numbers" choice lasts until the session ends — including forced sign-outs (expired or
+      // revoked tokens), which arrive here as a null session rather than through signOut() below.
+      if (!newSession) resetHidden();
       setSession(newSession);
     });
 
@@ -40,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    resetHidden();
   };
 
   return (
