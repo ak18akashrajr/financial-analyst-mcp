@@ -64,9 +64,22 @@ describe('SideNav grouping', () => {
 
     expect(screen.queryByText('Analytics')).not.toBeInTheDocument();
     expect(screen.queryByText('Charts')).not.toBeInTheDocument();
-    // Icon-only links still carry a title attribute for accessibility
-    expect(screen.getByTitle('Charts')).toBeInTheDocument();
+    // Icon-only links keep an accessible name (aria-label) now that the native title tooltip is gone
+    expect(screen.getByLabelText('Charts')).toBeInTheDocument();
 
+    localStorage.removeItem('sidenav_collapsed');
+  });
+
+  it('uses Radix tooltips and aria-labels instead of native title attributes when collapsed', () => {
+    localStorage.setItem('sidenav_collapsed', '1');
+    const { container } = render(
+      <MemoryRouter initialEntries={['/overview']}>
+        <SideNav />
+      </MemoryRouter>,
+    );
+    expect(container.querySelector('aside [title]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
     localStorage.removeItem('sidenav_collapsed');
   });
 });
