@@ -66,7 +66,7 @@ export function DollarReturnsCard({ holdings, summary }: Props) {
   return (
     <Link
       to="/dollar-adjusted-returns"
-      className="block rounded-2xl border border-border bg-card p-5 hover:border-foreground/30 transition-colors group"
+      className="block rounded-2xl border border-border bg-card p-5 card-interactive group"
     >
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-2.5">
