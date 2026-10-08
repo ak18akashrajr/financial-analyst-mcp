@@ -6,8 +6,8 @@
 // AppLayout also mounts SecurityIncidentsProvider (docs/session-hijack-
 // detection-plan.md §4), which queries security_incidents on mount — that
 // needs a supabase mock now, same convention as dev-zone.test.tsx.
-import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { lazy } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AppLayout } from '@/components/AppLayout';
@@ -119,5 +119,36 @@ describe('AppLayout', () => {
 
     expect(screen.getAllByText(/Blackcrest Capital/i).length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole('status')).toBeInTheDocument();
+  });
+
+  it('replays the page transition when the pathname changes, but not on a query-string change', async () => {
+    function Nav() {
+      const navigate = useNavigate();
+      return (
+        <>
+          <button onClick={() => navigate('/reports')}>go-reports</button>
+          <button onClick={() => navigate('/reports?tab=x')}>go-query</button>
+        </>
+      );
+    }
+    render(
+      <MemoryRouter initialEntries={['/overview']}>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route path="/overview" element={<Nav />} />
+            <Route path="/reports" element={<Nav />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+    const first = screen.getByTestId('page-transition');
+    expect(first).toHaveClass('animate-in');
+
+    fireEvent.click(screen.getByText('go-reports'));
+    await waitFor(() => expect(screen.getByTestId('page-transition')).not.toBe(first));
+
+    const second = screen.getByTestId('page-transition');
+    fireEvent.click(screen.getByText('go-query'));
+    await waitFor(() => expect(screen.getByTestId('page-transition')).toBe(second));
   });
 });
