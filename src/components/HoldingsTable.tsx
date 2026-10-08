@@ -45,7 +45,7 @@ export function HoldingsTable({ holdings, onUpdatePrice, onUpdateTransaction, on
 
   return (
     <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[70vh] sticky-thead">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50">

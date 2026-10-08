@@ -170,6 +170,18 @@ All colors MUST be HSL.
 }
 
 @layer components {
+  /* Long tables: put this on the table's scroll wrapper (together with a max-height and overflow-auto)
+     and the header row stays pinned while the body scrolls. Applied to the <th> cells because sticky
+     on <thead>/<tr> and borders under border-collapse don't stick reliably; the gradient layers the
+     header's usual muted tint over the card colour so rows can't show through. */
+  .sticky-thead thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: linear-gradient(hsl(var(--muted) / 0.5), hsl(var(--muted) / 0.5)), hsl(var(--card));
+    box-shadow: inset 0 -1px 0 hsl(var(--border));
+  }
+
   /* Hover affordance shared by every clickable card/tile (Card `interactive` prop, and the raw
      <Link>/<button> tiles on the overview). Motion collapses under prefers-reduced-motion. */
   .card-interactive {

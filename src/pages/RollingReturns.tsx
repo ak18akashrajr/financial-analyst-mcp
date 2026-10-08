@@ -358,7 +358,7 @@ const RollingContent = () => {
         ) : (
           <>
             {/* Summary table */}
-            <Card className="overflow-x-auto mb-6">
+            <Card className="overflow-auto max-h-[70vh] sticky-thead mb-6">
               <table className="w-full text-sm">
                 <thead className="text-muted-foreground border-b border-border">
                   <tr className="text-left">
