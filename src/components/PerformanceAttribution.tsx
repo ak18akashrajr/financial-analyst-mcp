@@ -4,6 +4,7 @@ import { computePerformanceAttribution, type PerformanceContribution } from '@/l
 import type { DerivedHolding } from '@/types/portfolio';
 
 import { Card } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 function fmtCurrency(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -76,7 +77,7 @@ export function PerformanceAttribution({ holdings }: Props) {
               />
               <Bar dataKey="contributionPercent" name="Contribution to return" radius={[0, 4, 4, 0]}>
                 {contributions.map((c) => (
-                  <Cell key={c.symbol} fill={c.contributionPercent >= 0 ? '#22c55e' : '#ef4444'} />
+                  <Cell key={c.symbol} fill={c.contributionPercent >= 0 ? CHART_COLORS.gain : CHART_COLORS.loss} />
                 ))}
               </Bar>
             </BarChart>

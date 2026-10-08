@@ -730,9 +730,9 @@ One concise paragraph (3-4 sentences) summarising the period.
                 <Tooltip formatter={(v: any) => fmt(Number(v), hidden)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <ChartRangeReferenceArea selection={trendRangeSelection} data={trend} labelKey="label" />
-                <Line type="monotone" dataKey="invested" stroke="#64748b" strokeWidth={2} dot={false} name="Principal Capital Allocated" />
-                <Line type="monotone" dataKey="current" stroke="#0ea5e9" strokeWidth={2} dot={{ r: 3 }} name="Current" />
-                <Line type="monotone" dataKey="netWorth" stroke="#22c55e" strokeWidth={2} dot={{ r: 3 }} name="AUM" />
+                <Line type="monotone" dataKey="invested" stroke={CHART_COLORS.slate} strokeWidth={2} dot={false} name="Principal Capital Allocated" />
+                <Line type="monotone" dataKey="current" stroke={CHART_COLORS.sky} strokeWidth={2} dot={{ r: 3 }} name="Current" />
+                <Line type="monotone" dataKey="netWorth" stroke={CHART_COLORS.gain} strokeWidth={2} dot={{ r: 3 }} name="AUM" />
               </LineChart>
             </ResponsiveContainer>
             <ChartRangeBadge
@@ -931,6 +931,7 @@ export default Reports;
 // Audit content builders — every KPI on the page traces back to its source
 // ─────────────────────────────────────────────────────────────────────────────
 import type { DerivedHolding, Transaction } from '@/types/portfolio';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 const asOfLabel = (d: Date) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 

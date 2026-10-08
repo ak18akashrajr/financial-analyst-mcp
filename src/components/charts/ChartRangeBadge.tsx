@@ -2,6 +2,7 @@ import { ReferenceArea } from 'recharts';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import type { RangeSelection } from '@/hooks/useChartRangeSelection';
 import type { RangeReturnResult } from '@/lib/chartRange';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 export type ChartRangeUnit = 'currency' | 'rate' | 'percent';
 
@@ -61,8 +62,8 @@ export function ChartRangeReferenceArea<T>({
       x1={data[selection.startIndex][labelKey] as string | number}
       x2={data[selection.endIndex][labelKey] as string | number}
       strokeOpacity={0.4}
-      stroke="hsl(213, 75%, 55%)"
-      fill="hsl(213, 75%, 55%)"
+      stroke={CHART_COLORS.blue}
+      fill={CHART_COLORS.blue}
       fillOpacity={0.12}
     />
   );
@@ -112,8 +113,8 @@ export function ChartRangeBadge({
     result.changePercent === null
       ? 'hsl(var(--muted-foreground))'
       : isPositive
-        ? 'hsl(142, 71%, 45%)'
-        : 'hsl(0, 72%, 51%)';
+        ? CHART_COLORS.gain
+        : CHART_COLORS.loss;
 
   return (
     <div className="absolute top-2 right-2 rounded-lg border border-border bg-card p-3 shadow-lg text-xs z-10 min-w-[160px]">
@@ -143,8 +144,8 @@ export function ChartRangeBadge({
               xirrPercent === null
                 ? 'hsl(var(--muted-foreground))'
                 : xirrPercent >= 0
-                  ? 'hsl(142, 71%, 45%)'
-                  : 'hsl(0, 72%, 51%)',
+                  ? CHART_COLORS.gain
+                  : CHART_COLORS.loss,
           }}
           className="mt-0.5"
         >
