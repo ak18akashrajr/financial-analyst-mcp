@@ -115,6 +115,13 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 
+  /* Fixed-width digits in every table, so columns of prices/quantities/percentages line up and
+     don't jitter as live prices update. (IBM Plex Sans digits are proportional by default;
+     .font-mono is already fixed-width.) */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Minimal custom scrollbars */
   * {
     scrollbar-width: thin;
@@ -150,5 +157,13 @@ All colors MUST be HSL.
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  /* Hover affordance shared by every clickable card/tile (Card `interactive` prop, and the raw
+     <Link>/<button> tiles on the overview). Motion collapses under prefers-reduced-motion. */
+  .card-interactive {
+    @apply transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/30 hover:shadow-md;
   }
 }

@@ -4,6 +4,7 @@ import { AlertCircle, Landmark } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 import { LoginLoadingScreen } from '@/components/LoginLoadingScreen';
+import { PublicBackdrop } from '@/components/PublicBackdrop';
 
 // Swagger lines shown in place of Supabase's generic "Invalid login
 // credentials" — scoped to *that specific* error (see isBadCredentialsError
@@ -87,7 +88,7 @@ export const LoginForm = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4">
+    <PublicBackdrop>
       <form
         ref={formRef}
         onSubmit={handleLogin}
@@ -141,6 +142,6 @@ export const LoginForm = () => {
           {submitting ? 'Signing in...' : 'Sign in'}
         </button>
       </form>
-    </div>
+    </PublicBackdrop>
   );
 };

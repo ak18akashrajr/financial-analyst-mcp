@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+import { Link } from 'react-router-dom';
 import { Target, Sparkles } from 'lucide-react';
 import { runGoalMonteCarlo, solveRequiredSIP } from '@/lib/monteCarloAdvanced';
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
@@ -85,7 +86,21 @@ export function GoalProjection({
   }
 
   if (goals.length === 0) {
-    return <EmptyState icon={<Target className="w-6 h-6" />} text="No goals yet. Create one on the Goals page to run goal-linked projections." />;
+    return (
+      <EmptyState
+        icon={<Target className="w-5 h-5" />}
+        text="No goals yet"
+        description="Create one on the Goals page to run goal-linked projections."
+        action={
+          <Link
+            to="/goal-track"
+            className="inline-flex items-center rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
+          >
+            Go to Goals
+          </Link>
+        }
+      />
+    );
   }
 
   const chartData = result?.timelines.p50.map((v, i) => ({

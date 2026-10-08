@@ -112,7 +112,7 @@ export function XirrDetailsCard({ overallXirr, portfolioXirr, transactions }: Pr
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="lg:col-span-3 rounded-2xl border border-border bg-card p-5 flex flex-col justify-between min-h-[180px] text-left cursor-pointer hover:border-foreground/30 transition-colors"
+          className="lg:col-span-3 rounded-2xl border border-border bg-card p-5 flex flex-col justify-between min-h-[180px] text-left cursor-pointer card-interactive"
         >
           <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-foreground/5 text-foreground">
             <TrendingUp className="w-4 h-4" />

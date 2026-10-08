@@ -124,7 +124,7 @@ export default function FamilyMembers() {
               ))}
             </div>
           ) : members.length === 0 ? (
-            <EmptyState text="No family members yet — add one above." />
+            <EmptyState text="No family members yet" description="Add one above to track their portfolio and see a combined household view." />
           ) : (
             <ul className="divide-y divide-border">
               {members.map((m) => (

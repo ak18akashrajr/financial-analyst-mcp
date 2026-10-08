@@ -2,8 +2,19 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("rounded-lg border bg-card text-card-foreground", className)} {...props} />
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Clickable/navigable card: lifts slightly and firms up its border on hover (see .card-interactive). */
+  interactive?: boolean;
+}
+
+// Default surface is rounded-xl with a soft shadow; the hero/summary tier opts up to rounded-2xl
+// via className. (Previously rounded-lg and flat, so cards sat visually below the sidebar and hero.)
+const Card = React.forwardRef<HTMLDivElement, CardProps>(({ className, interactive, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("rounded-xl border bg-card text-card-foreground shadow-sm", interactive && "card-interactive", className)}
+    {...props}
+  />
 ));
 Card.displayName = "Card";
 

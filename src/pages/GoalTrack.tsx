@@ -426,7 +426,7 @@ function GoalTrackContent() {
         )}
 
         {goals.length === 0 ? (
-          <EmptyState icon={<Target className="w-8 h-8" />} text="No goals yet. Create your first one to start tracking." />
+          <EmptyState icon={<Target className="w-6 h-6" />} text="No goals yet" description="Create your first goal above to start tracking progress towards it." />
         ) : (
           <div className="space-y-4">
             {goals.map((goal) => {
