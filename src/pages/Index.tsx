@@ -24,6 +24,7 @@ import { SiteFooter } from '@/components/SiteFooter';
 import { getDynamicGreeting } from '@/lib/greeting';
 import { useActiveMemberName } from '@/hooks/useActiveMemberName';
 import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
+import { FadeIn } from '@/components/FadeIn';
 
 const IndexContent = () => {
   const { hidden, toggle } = usePrivacy();
@@ -108,7 +109,7 @@ const IndexContent = () => {
         </div>
 
         {/* Welcome */}
-        <DynamicWelcome />
+        <FadeIn index={0}><DynamicWelcome /></FadeIn>
 
         {/* CC Bill Reminder — first 5 days of month while debt is outstanding */}
         {cash.creditCardDebt > 0 && new Date().getDate() <= 5 && (
@@ -133,52 +134,56 @@ const IndexContent = () => {
         {/* Summary — Operating Cash / Cash Reserve / PF / Outstanding Liabilities are
             editable directly from their boxes here (Settle Now included on the
             liability box); the old separate Cash Management section was removed. */}
-        <SummaryBar
-          summary={summary}
-          transactions={transactions}
-          onUpdateCash={handleUpdateCash}
-          onPayCreditCard={payCreditCardBill}
-        />
+        <FadeIn index={1}>
+          <SummaryBar
+            summary={summary}
+            transactions={transactions}
+            onUpdateCash={handleUpdateCash}
+            onPayCreditCard={payCreditCardBill}
+          />
+        </FadeIn>
 
         {/* Family Net Worth Split — only meaningful in the combined "All Family" view; the
             component itself also no-ops below 2 members with a live split. */}
-        <FamilyNetWorthSplit splits={familyNetWorthSplits} members={members} hidden={hidden} />
+        <FadeIn index={2}><FamilyNetWorthSplit splits={familyNetWorthSplits} members={members} hidden={hidden} /></FadeIn>
 
         {/* Dollar-Adjusted Returns overview */}
-        <DollarReturnsCard holdings={holdings} summary={summary} />
+        <FadeIn index={3}><DollarReturnsCard holdings={holdings} summary={summary} /></FadeIn>
 
         {/* Expense-to-Income Ratio — auto-tracked from bank balance changes */}
-        <ExpenseIncomeRatioCard cashflow={monthlyCashflow} />
+        <FadeIn index={4}><ExpenseIncomeRatioCard cashflow={monthlyCashflow} /></FadeIn>
 
         {/* Debt % vs Net Worth */}
-        <DebtChart refreshKey={0} />
+        <FadeIn index={5}><DebtChart refreshKey={0} /></FadeIn>
 
         {/* Add Transaction */}
-        <AddTransactionForm transactions={transactions} onAdd={handleAddTransaction} />
+        <FadeIn index={6}><AddTransactionForm transactions={transactions} onAdd={handleAddTransaction} /></FadeIn>
 
         {/* Holdings */}
-        <div>
-          <h2 className="text-sm font-medium text-muted-foreground mb-2">Holdings (Derived from Transactions)</h2>
-          <HoldingsTable
-            holdings={holdings}
-            onUpdatePrice={updatePrice}
-            onUpdateTransaction={handleUpdateTransaction}
-            onDeleteTransaction={handleDeleteTransaction}
-            onUpdateMetadata={updateSymbolMetadata}
-          />
-        </div>
+        <FadeIn index={7}>
+          <div>
+            <h2 className="text-sm font-medium text-muted-foreground mb-2">Holdings (Derived from Transactions)</h2>
+            <HoldingsTable
+              holdings={holdings}
+              onUpdatePrice={updatePrice}
+              onUpdateTransaction={handleUpdateTransaction}
+              onDeleteTransaction={handleDeleteTransaction}
+              onUpdateMetadata={updateSymbolMetadata}
+            />
+          </div>
+        </FadeIn>
 
         {/* Exposure */}
-        <ExposureSection geography={exposure.geography} category={exposure.category} />
+        <FadeIn index={8}><ExposureSection geography={exposure.geography} category={exposure.category} /></FadeIn>
 
         {/* Recent Activity */}
-        <RecentActivity transactions={transactions} />
+        <FadeIn index={9}><RecentActivity transactions={transactions} /></FadeIn>
 
         {/* SIP Summary */}
-        <SIPSummary transactions={transactions} />
+        <FadeIn index={10}><SIPSummary transactions={transactions} /></FadeIn>
 
         {/* Top Movers */}
-        <TopMovers gainers={topMovers.gainers} losers={topMovers.losers} />
+        <FadeIn index={11}><TopMovers gainers={topMovers.gainers} losers={topMovers.losers} /></FadeIn>
       </div>
       <SiteFooter />
     </div>

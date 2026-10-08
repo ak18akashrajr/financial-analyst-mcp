@@ -39,10 +39,12 @@ if (typeof AbortSignal.timeout !== "function") {
   };
 }
 
+// Tests behave like a reduce-motion user: number count-ups (useCountUp) are skipped so assertions see
+// final values synchronously. Animation tests override window.matchMedia themselves.
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({
-    matches: false,
+    matches: query.includes("prefers-reduced-motion"),
     media: query,
     onchange: null,
     addListener: () => {},

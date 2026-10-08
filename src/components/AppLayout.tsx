@@ -48,20 +48,25 @@ export function AppLayout() {
             enteringFromLogin ? 'animate-in fade-in slide-in-from-bottom-2 duration-500' : ''
           }`}
         >
-          {/* A lazy page chunk suspends here, inside the layout, so the sidebar stays put and the
-              content area shows a page-shaped skeleton — rather than suspending up to App.tsx's
-              top-level boundary and replacing the whole screen (nav included) with the splash. */}
-          <Suspense
-            fallback={
-              <div className="min-h-screen bg-background">
-                <div className="max-w-6xl mx-auto px-4 py-5">
-                  <PageSkeleton showHeader />
+          {/* Keyed on pathname so each page change replays a short fade/rise — previously only the
+              post-login entrance animated and navigation swapped content abruptly. Query-string
+              changes (e.g. /dev-zone?tab=) keep the same pathname, so tabs don't re-animate. */}
+          <div key={location.pathname} data-testid="page-transition" className="animate-in fade-in slide-in-from-bottom-1 duration-300">
+            {/* A lazy page chunk suspends here, inside the layout, so the sidebar stays put and the
+                content area shows a page-shaped skeleton — rather than suspending up to App.tsx's
+                top-level boundary and replacing the whole screen (nav included) with the splash. */}
+            <Suspense
+              fallback={
+                <div className="min-h-screen bg-background">
+                  <div className="max-w-6xl mx-auto px-4 py-5">
+                    <PageSkeleton showHeader />
+                  </div>
                 </div>
-              </div>
-            }
-          >
-            <Outlet />
-          </Suspense>
+              }
+            >
+              <Outlet />
+            </Suspense>
+          </div>
         </div>
       </PortfolioAIChatProvider>
     </SecurityIncidentsProvider>
