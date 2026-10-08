@@ -108,7 +108,7 @@ export function MarketRegimeStrip({ onCapeChange }: Props) {
           </span>
         </div>
       ) : cape != null && z ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-muted/40 rounded-md p-3">
             <p className="text-[10px] uppercase text-muted-foreground tracking-wider inline-flex items-center gap-1">
               Current CAPE

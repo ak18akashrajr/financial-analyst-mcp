@@ -1,7 +1,7 @@
 // SideNav groups its items under small section labels (Analytics / Planning /
 // Tools) instead of one flat list — this covers that grouping renders
 // correctly and every route is still reachable.
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { SideNav } from '@/components/SideNav';
@@ -104,5 +104,44 @@ describe('SideNav grouping', () => {
     expect(screen.getByRole('link', { name: /reports/i })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: /reports/i })).toHaveClass('text-background');
     expect(screen.getAllByTestId('nav-active-pill')).toHaveLength(1);
+  });
+
+  it('re-measures the pill when the sidebar becomes visible after load (it is display:none below md, so every link measured 0x0)', async () => {
+    // jsdom has no layout; drive offsetTop/Left/Width/Height from a variable we can change mid-test.
+    const box = { top: 0, left: 0, width: 0, height: 0 };
+    const defs: Array<[string, () => number]> = [
+      ['offsetTop', () => box.top], ['offsetLeft', () => box.left],
+      ['offsetWidth', () => box.width], ['offsetHeight', () => box.height],
+    ];
+    const originals = defs.map(([k]) => [k, Object.getOwnPropertyDescriptor(HTMLElement.prototype, k)] as const);
+    defs.forEach(([k, get]) => Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get }));
+
+    let notify: (() => void) | undefined;
+    const OriginalRO = window.ResizeObserver;
+    window.ResizeObserver = class {
+      constructor(cb: () => void) { notify = cb; }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as never;
+
+    try {
+      render(<MemoryRouter initialEntries={['/overview']}><SideNav /></MemoryRouter>);
+      const pill = screen.getByTestId('nav-active-pill');
+      expect(pill).toHaveStyle({ width: '0px', height: '0px' });
+
+      // The viewport grows past md: the sidebar is now laid out and the nav's box changes.
+      box.top = 196; box.left = 12; box.width = 209; box.height = 40;
+      notify?.();
+      await waitFor(() => expect(screen.getByTestId('nav-active-pill')).toHaveStyle({ width: '209px', height: '40px', top: '196px' }));
+
+      // ...and a plain window resize also re-measures.
+      box.top = 240;
+      fireEvent(window, new Event('resize'));
+      await waitFor(() => expect(screen.getByTestId('nav-active-pill')).toHaveStyle({ top: '240px' }));
+    } finally {
+      window.ResizeObserver = OriginalRO;
+      originals.forEach(([k, d]) => d && Object.defineProperty(HTMLElement.prototype, k, d));
+    }
   });
 });

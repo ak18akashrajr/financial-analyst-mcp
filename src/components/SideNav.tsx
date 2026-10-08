@@ -31,8 +31,29 @@ export function SideNav() {
 
   const measurePill = useCallback(() => {
     const active = navRef.current?.querySelector<HTMLElement>('a[aria-current="page"]');
-    setPill(active ? { top: active.offsetTop, left: active.offsetLeft, width: active.offsetWidth, height: active.offsetHeight } : null);
+    const next = active ? { top: active.offsetTop, left: active.offsetLeft, width: active.offsetWidth, height: active.offsetHeight } : null;
+    setPill((prev) =>
+      prev && next && prev.top === next.top && prev.left === next.left && prev.width === next.width && prev.height === next.height
+        ? prev
+        : next,
+    );
   }, []);
+
+  // The sidebar is `hidden md:flex`, so when the page loads below the md breakpoint it is display:none
+  // and every link measures 0x0 — and growing the window later changes nothing React can see, so the
+  // pill stayed at 0x0 and the active label (dark-on-nothing) vanished. Re-measure whenever the nav's
+  // own box changes (shown/hidden, collapse transition) and on window resize.
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => measurePill()) : null;
+    observer?.observe(nav);
+    window.addEventListener('resize', measurePill);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', measurePill);
+    };
+  }, [measurePill]);
 
   useLayoutEffect(() => {
     measurePill();
