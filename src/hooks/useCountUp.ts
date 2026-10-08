@@ -1,16 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { canAnimate } from '@/lib/motion';
 
 const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-
-/**
- * Whether we can (and should) animate numbers: needs matchMedia to read the reduce-motion setting.
- * If it's unavailable (jsdom, very old browsers) we can't tell, so we err toward no animation — the
- * number simply shows its real value immediately.
- */
-function canAnimate(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
-  return !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
 
 interface CountUpOptions {
   /** Duration of the first count from 0 (ms). */
