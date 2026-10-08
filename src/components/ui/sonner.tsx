@@ -1,14 +1,16 @@
-import { useTheme } from "next-themes";
+import { useIsDark } from "@/hooks/useIsDark";
 import { Toaster as Sonner, toast } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme();
+  // Follows the <html class="dark"> that ThemeToggle sets; next-themes has no provider mounted here,
+  // so its useTheme() always reported "system" and toasts ignored the in-app theme.
+  const isDark = useIsDark();
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme={isDark ? "dark" : "light"}
       className="toaster group"
       toastOptions={{
         classNames: {
