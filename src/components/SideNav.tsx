@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { LogOut, Landmark, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +20,34 @@ export function SideNav() {
     if (typeof window === 'undefined') return false;
     return localStorage.getItem('sidenav_collapsed') === '1';
   });
+
+  // Sliding active-item pill: one absolutely-positioned element that glides to whichever link is
+  // current (measured from the link itself), instead of each link swapping its own background.
+  const location = useLocation();
+  const navRef = useRef<HTMLElement>(null);
+  const [pill, setPill] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  // Skip the transition for the very first placement so the pill doesn't fly in from (0,0).
+  const [pillAnimates, setPillAnimates] = useState(false);
+
+  const measurePill = useCallback(() => {
+    const active = navRef.current?.querySelector<HTMLElement>('a[aria-current="page"]');
+    setPill(active ? { top: active.offsetTop, left: active.offsetLeft, width: active.offsetWidth, height: active.offsetHeight } : null);
+  }, []);
+
+  useLayoutEffect(() => {
+    measurePill();
+  }, [location.pathname, collapsed, navGroups.length, measurePill]);
+
+  useEffect(() => {
+    // The collapse/expand width transition (300ms) moves the links after the layout effect above ran.
+    const t = setTimeout(measurePill, 320);
+    return () => clearTimeout(t);
+  }, [collapsed, measurePill]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setPillAnimates(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('sidenav_collapsed', collapsed ? '1' : '0');
@@ -86,7 +114,15 @@ export function SideNav() {
       </SideTip>
 
       {/* Nav */}
-      <nav className="flex-1 flex flex-col gap-1 overflow-y-auto">
+      <nav ref={navRef} className="relative flex-1 flex flex-col gap-1 overflow-y-auto">
+        {pill && (
+          <div
+            aria-hidden="true"
+            data-testid="nav-active-pill"
+            className={`pointer-events-none absolute rounded-lg bg-foreground ${pillAnimates ? 'transition-[top,left,width,height] duration-300 ease-out' : ''}`}
+            style={pill}
+          />
+        )}
         {navGroups.map((group, gi) => (
           <div key={group.label ?? `group-${gi}`} className={gi > 0 ? 'mt-3 pt-3 border-t border-border/60' : undefined}>
             {group.label && !collapsed && (
@@ -104,11 +140,11 @@ export function SideNav() {
                     end={t.to === '/overview'}
                     aria-label={collapsed ? t.label : undefined}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors ${
+                      `relative z-10 flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors ${
                         collapsed ? 'justify-center h-10 w-10 mx-auto' : 'px-3 py-2.5'
                       } ${
                         isActive
-                          ? 'bg-foreground text-background'
+                          ? 'text-background'
                           : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                       }`
                     }

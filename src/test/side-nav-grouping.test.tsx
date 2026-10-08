@@ -1,8 +1,8 @@
 // SideNav groups its items under small section labels (Analytics / Planning /
 // Tools) instead of one flat list — this covers that grouping renders
 // correctly and every route is still reachable.
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { SideNav } from '@/components/SideNav';
 import { useAuth } from '@/contexts/AuthContext';
@@ -81,5 +81,28 @@ describe('SideNav grouping', () => {
     expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
     localStorage.removeItem('sidenav_collapsed');
+  });
+
+  it('renders one sliding pill behind the current page link and moves it when the route changes', () => {
+    function Go() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate('/reports')}>go</button>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/overview']}>
+        <SideNav />
+        <Go />
+      </MemoryRouter>,
+    );
+    expect(screen.getAllByTestId('nav-active-pill')).toHaveLength(1);
+    const overview = screen.getByRole('link', { name: /overview/i });
+    expect(overview).toHaveAttribute('aria-current', 'page');
+    expect(overview).toHaveClass('text-background');
+    expect(overview).not.toHaveClass('bg-foreground');
+
+    fireEvent.click(screen.getByText('go'));
+    expect(screen.getByRole('link', { name: /reports/i })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: /reports/i })).toHaveClass('text-background');
+    expect(screen.getAllByTestId('nav-active-pill')).toHaveLength(1);
   });
 });
