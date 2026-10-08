@@ -14,6 +14,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { RequireProfileSelection } from "@/components/RequireProfileSelection";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { BrandedSplash } from '@/components/BrandedSplash';
+import { RouteTitle } from "@/components/RouteTitle";
 
 // Lazy — several of these (Charts, Projections, RollingReturns, Benchmark,
 // GoalTrack via GoalProjection) pull in recharts, so eagerly importing all
@@ -54,6 +55,7 @@ const App = () => (
           <Sonner />
           <Analytics />
           <BrowserRouter>
+            <RouteTitle />
             <Suspense fallback={<RouteFallback />}>
               <Routes>
                 {/* Public — no session required, and neither renders the sidebar/nav. */}
