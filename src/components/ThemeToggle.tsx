@@ -18,6 +18,8 @@ export function ThemeToggle() {
       root.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
+    // Keep the mobile browser bar colour in step (public/theme-init.js sets it on load).
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#090e1b' : '#ffffff');
   }, [dark]);
 
   // Apply on mount
