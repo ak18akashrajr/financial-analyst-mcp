@@ -115,6 +115,13 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 
+  /* Fixed-width digits in every table, so columns of prices/quantities/percentages line up and
+     don't jitter as live prices update. (IBM Plex Sans digits are proportional by default;
+     .font-mono is already fixed-width.) */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Minimal custom scrollbars */
   * {
     scrollbar-width: thin;

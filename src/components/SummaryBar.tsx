@@ -69,7 +69,7 @@ export function SummaryBar({ summary, transactions, onUpdateCash, onPayCreditCar
         <div className="relative flex items-start justify-between">
           <div>
             <p className="text-xs text-muted-foreground">Assets Under Management (AUM)</p>
-            <p className="mt-3 text-3xl sm:text-4xl font-semibold tracking-tight text-foreground">
+            <p className="mt-3 text-3xl sm:text-4xl font-semibold tracking-tight tabular-nums text-foreground">
               <AnimatedNumber value={summary.totalPortfolioValue} format={fmt} flash={!hidden} />
             </p>
           </div>
@@ -223,7 +223,7 @@ function StatCard({
       <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${accent}`}>{icon}</div>
       <div>
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className={`mt-1.5 text-2xl font-semibold tracking-tight ${valueClass || 'text-foreground'}`}>
+        <p className={`mt-1.5 text-2xl font-semibold tracking-tight tabular-nums ${valueClass || 'text-foreground'}`}>
           {value}
         </p>
         <p className="text-[11px] text-muted-foreground mt-1">{sub}</p>
@@ -251,7 +251,7 @@ function MiniStat({
       <div className="min-w-0">
         <p className="text-[11px] text-muted-foreground truncate">{label}</p>
         <p
-          className={`text-sm font-semibold tracking-tight truncate ${
+          className={`text-sm font-semibold tracking-tight tabular-nums truncate ${
             tone === 'loss' ? 'text-loss' : 'text-foreground'
           }`}
         >
@@ -315,7 +315,7 @@ function EditableMiniStat({
           </div>
           {!editing && (
             <p
-              className={`text-sm font-semibold tracking-tight truncate ${
+              className={`text-sm font-semibold tracking-tight tabular-nums truncate ${
                 tone === 'loss' ? 'text-loss' : 'text-foreground'
               }`}
             >
