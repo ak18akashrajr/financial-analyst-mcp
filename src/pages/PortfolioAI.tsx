@@ -251,8 +251,9 @@ const PortfolioAI = () => {
                       {[0, 1, 2].map(i => (
                         <div
                           key={i}
-                          className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-pulse"
-                          style={{ animationDelay: `${i * 0.18}s` }}
+                          data-testid="typing-dot"
+                          className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-typing-dot"
+                          style={{ animationDelay: `${i * 0.15}s` }}
                         />
                       ))}
                     </div>
