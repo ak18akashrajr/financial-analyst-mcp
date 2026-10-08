@@ -122,6 +122,15 @@ All colors MUST be HSL.
     font-variant-numeric: tabular-nums;
   }
 
+  /* One keyboard-focus ring for every hand-rolled control. The shadcn Button/Input primitives set
+     their own ring (and `focus-visible:outline-none`), which wins over this because :where() keeps
+     this rule at zero specificity. Mouse clicks don't trigger :focus-visible, so nothing changes
+     for pointer users. */
+  :where(button, a[href], summary, [role="button"], [role="tab"], [role="switch"], [role="checkbox"]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
   /* Minimal custom scrollbars */
   * {
     scrollbar-width: thin;
