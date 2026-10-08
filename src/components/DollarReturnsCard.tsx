@@ -6,6 +6,7 @@ import { usePrivacy } from '@/contexts/PrivacyContext';
 import type { DerivedHolding, PortfolioSummary } from '@/types/portfolio';
 import { attribution, fmtUsd, holdingsInUsd, latestRate, type FxRate } from '@/lib/fx';
 import { ArrowUpRight, DollarSign, TrendingDown, TrendingUp } from 'lucide-react';
+import { StatGridSkeleton } from '@/components/PageSkeleton';
 
 interface Props {
   holdings: DerivedHolding[];
@@ -81,7 +82,7 @@ export function DollarReturnsCard({ holdings, summary }: Props) {
       </div>
 
       {loading ? (
-        <p className="text-xs text-muted-foreground">Loading FX data…</p>
+        <StatGridSkeleton label="Loading FX data…" />
       ) : !view ? (
         <p className="text-xs text-muted-foreground">
           No USD-INR rates stored yet — open the deep dive to fetch them.

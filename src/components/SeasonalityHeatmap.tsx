@@ -9,6 +9,7 @@ import { buildMonthlyMovements, unpricedTradedSymbols, type MonthMovement } from
 import type { CurrentPrices, Transaction } from '@/types/portfolio';
 
 import { Card } from '@/components/ui/card';
+import { GridSkeleton } from '@/components/PageSkeleton';
 
 const MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
 
@@ -153,7 +154,7 @@ export function SeasonalityHeatmap({
       </p>
 
       {loading ? (
-        <p className="text-xs text-muted-foreground">Loading snapshots…</p>
+        <GridSkeleton rows={4} cols={13} label="Loading snapshots…" />
       ) : fys.length === 0 ? (
         <EmptyState compact text="No net-worth history yet." />
       ) : (
