@@ -130,6 +130,6 @@ describe('RiskMetrics page — Risk per ₹1 Return null-state clarity', () => {
   it('shows the empty state, not a crash, when there are no priced holdings', async () => {
     mockPortfolio([]);
     renderPage();
-    await waitFor(() => expect(screen.getByText(/no holdings with a live price yet/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/risk metrics need at least one holding with a live price/i)).toBeInTheDocument());
   });
 });

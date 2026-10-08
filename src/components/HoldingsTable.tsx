@@ -40,7 +40,7 @@ export function HoldingsTable({ holdings, onUpdatePrice, onUpdateTransaction, on
   };
 
   if (holdings.length === 0) {
-    return <EmptyState text="No holdings yet. Add transactions to get started." />;
+    return <EmptyState text="No holdings yet" description="Add a transaction above and your holdings will be derived from it." />;
   }
 
   return (

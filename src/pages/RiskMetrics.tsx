@@ -200,7 +200,7 @@ const RiskMetricsContent = () => {
         {isLoading ? (
           <PageSkeleton statCount={6} />
         ) : riskHoldings.length === 0 ? (
-          <EmptyState text="No holdings with a live price yet — nothing to compute risk metrics from." />
+          <EmptyState text="Nothing to compute yet" description="Risk metrics need at least one holding with a live price." />
         ) : (
           <>
             {missingPriceSymbols.length > 0 && (
