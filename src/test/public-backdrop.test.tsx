@@ -22,7 +22,9 @@ describe('Landing feature teaser', () => {
     vi.mocked(useAuth).mockReturnValue({ session: null, loading: false, signIn: vi.fn(), signOut: vi.fn() });
     render(<MemoryRouter><Landing /></MemoryRouter>);
     const list = screen.getByRole('list', { name: /what's inside/i });
-    expect(list.querySelectorAll('li')).toHaveLength(4);
+    expect(list.querySelectorAll('li')).toHaveLength(7);
+    // every chip keeps its icon
+    list.querySelectorAll('li').forEach((li) => expect(li.querySelector('svg')).toBeInTheDocument());
     expect(screen.getAllByRole('link', { name: /login/i })).toHaveLength(1);
   });
 });

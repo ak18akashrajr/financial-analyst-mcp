@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { createTypewriter, type Typewriter } from '@/lib/typewriter';
 
 // `toolTrace` records every real MCP tool this specific answer was grounded
 // in, in call order — attached once the answer finishes streaming so it's
@@ -138,6 +139,10 @@ export function PortfolioAIChatProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [liveToolCalls, setLiveToolCalls] = useState<string[]>([]);
   const [modelPreference, setModelPreference] = useState<ModelPreference>('auto');
+  const activeTypewriter = useRef<Typewriter | null>(null);
+
+  // The provider lives in AppLayout and unmounts on sign-out: stop any reveal still in flight.
+  useEffect(() => () => activeTypewriter.current?.cancel(), []);
 
   const send = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -151,50 +156,59 @@ export function PortfolioAIChatProvider({ children }: { children: ReactNode }) {
     // called this turn — every tool_call event fires before the answer's
     // first delta (see index.ts's per-turn loop: tool calls happen inside
     // the loop, text streaming only starts after it breaks), so by the time
-    // `upsert` creates the assistant message, this is already complete and
+    // `show` creates the assistant message, this is already complete and
     // stable. Reading it here avoids a stale-closure read of React state.
     const collectedTools: string[] = [];
-    let assistantSoFar = '';
-    const upsert = (chunk: string) => {
-      assistantSoFar += chunk;
+    // The server releases the whole (guardrail-approved) answer at once; the typewriter reveals it at a
+    // readable pace. `show` is called with the visible-so-far text on every reveal step.
+    const show = (visible: string) => {
       setMessages(prev => {
         const last = prev[prev.length - 1];
         if (last?.role === 'assistant') {
-          return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
+          return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: visible } : m);
         }
-        return [...prev, { role: 'assistant', content: assistantSoFar, toolTrace: [...collectedTools] }];
+        return [...prev, { role: 'assistant', content: visible, toolTrace: [...collectedTools] }];
       });
+    };
+    const typewriter = createTypewriter(show);
+    activeTypewriter.current = typewriter;
+
+    const endTurn = () => {
+      setIsLoading(false);
+      setLiveToolCalls([]);
     };
 
     const finish = (attribution?: string) => {
-      if (attribution) {
-        assistantSoFar += `\n\n---\n*🤖 Response by **${attribution}***\n`;
-        setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
-      }
-      setIsLoading(false);
-      setLiveToolCalls([]);
+      if (attribution) typewriter.push(`
+
+---
+*🤖 Response by **${attribution}***
+`);
+      // Stay "loading" until the reveal catches up, so the input can't be used (and a second turn can't
+      // start) while this answer is still being typed out.
+      typewriter.drained().then(endTurn);
     };
 
     try {
       await streamChat({
         messages: allMsgs,
         modelPreference,
-        onDelta: upsert,
+        onDelta: (chunk) => typewriter.push(chunk),
         onToolCall: (name) => {
           collectedTools.push(name);
           setLiveToolCalls([...collectedTools]);
         },
         onDone: finish,
         onError: (msg) => {
+          typewriter.finishNow();
           setMessages(prev => [...prev, { role: 'assistant', content: `⚠️ ${msg}` }]);
-          setIsLoading(false);
-          setLiveToolCalls([]);
+          endTurn();
         },
       });
     } catch {
+      typewriter.finishNow();
       setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Connection error. Please try again.' }]);
-      setIsLoading(false);
-      setLiveToolCalls([]);
+      endTurn();
     }
   }, [messages, isLoading, modelPreference]);
 
