@@ -664,7 +664,7 @@ One concise paragraph (3-4 sentences) summarising the period.
                 <BarChart data={growth.data}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                   <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => (hidden ? '•••' : `${(v / 1000).toFixed(0)}k`)} />
                   <Tooltip formatter={(v: any) => fmt(Number(v), hidden)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', fontSize: 12 }} />
                   <Bar dataKey="value" name="AUM" fill="hsl(var(--foreground))" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -726,7 +726,7 @@ One concise paragraph (3-4 sentences) summarising the period.
               <LineChart data={trend} {...trendRangeHandlers}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => (hidden ? '•••' : `${(v / 1000).toFixed(0)}k`)} />
                 <Tooltip formatter={(v: any) => fmt(Number(v), hidden)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <ChartRangeReferenceArea selection={trendRangeSelection} data={trend} labelKey="label" />
@@ -757,7 +757,7 @@ One concise paragraph (3-4 sentences) summarising the period.
               <BarChart data={trend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickFormatter={(v) => (hidden ? '•••' : `${(v / 1000).toFixed(0)}k`)} />
                 <Tooltip formatter={(v: any) => fmt(Number(v), hidden)} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', fontSize: 12 }} />
                 <Bar dataKey="periodPnl" name="P&L (this period)">
                   {trend.map((d, i) => <Cell key={i} fill={d.periodPnl >= 0 ? 'hsl(var(--gain))' : 'hsl(var(--loss))'} />)}
