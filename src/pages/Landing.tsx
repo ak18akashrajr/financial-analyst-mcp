@@ -1,13 +1,17 @@
 import { Link, Navigate } from 'react-router-dom';
-import { Bot, Calculator, Landmark, LineChart, TrendingUp } from 'lucide-react';
+import { Bot, Calculator, Flag, Gauge, Landmark, LineChart, TrendingUp, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { BrandedSplash } from '@/components/BrandedSplash';
 import { PublicBackdrop } from '@/components/PublicBackdrop';
 
+// Keep in sync with FEATURES in scripts/generate-og-image.py (the link-preview card shows the same chips).
 const FEATURES = [
   { label: 'Live holdings', Icon: TrendingUp },
   { label: 'Tax lots', Icon: Calculator },
   { label: 'Projections', Icon: LineChart },
+  { label: 'Risk metrics', Icon: Gauge },
+  { label: 'Goal tracking', Icon: Flag },
+  { label: 'Family view', Icon: Users },
   { label: 'AI analyst', Icon: Bot },
 ];
 
