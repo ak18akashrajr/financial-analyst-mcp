@@ -140,7 +140,7 @@ const PortfolioAI = () => {
 
       <div className="flex-1 flex max-w-6xl mx-auto w-full min-h-0">
         {/* Sidebar — preset questions */}
-        <div className="w-80 border-r border-border/80 flex-shrink-0 flex flex-col bg-card/30 hidden md:flex min-h-0">
+        <div className="w-80 border-r border-border/80 flex-shrink-0 flex flex-col bg-card/30 hidden lg:flex min-h-0">
           <div className="px-4 py-3.5 border-b border-border/80">
             <p className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground/70 flex items-center gap-1.5">
               <MessageSquare className="w-3 h-3" />
@@ -187,7 +187,7 @@ const PortfolioAI = () => {
                   risk exposure, stress scenarios, or get actionable insights — all grounded in your real data.
                 </p>
                 {/* Mobile preset buttons */}
-                <div className="grid grid-cols-2 gap-2 w-full max-w-lg md:hidden">
+                <div className="grid grid-cols-2 gap-2 w-full max-w-lg lg:hidden">
                   {PRESET_QUESTIONS.slice(0, 4).map((q, i) => {
                     const Icon = q.icon;
                     return (

@@ -106,7 +106,7 @@ export function SummaryBar({ summary, transactions, onUpdateCash, onPayCreditCar
       {/* Cash row — Operating Cash / Cash Reserve / PF / Outstanding Liabilities are
           editable in place (moved here from the old Cash Management section); Principal
           Capital Allocated is a derived figure, so it stays read-only. */}
-      <div className="lg:col-span-12 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+      <div className="lg:col-span-12 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
         <EditableMiniStat
           icon={<Wallet className="w-3.5 h-3.5" />}
           label="Operating Cash"

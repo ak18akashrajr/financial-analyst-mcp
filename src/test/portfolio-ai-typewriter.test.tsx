@@ -68,7 +68,8 @@ describe('PortfolioAI typewriter pacing', () => {
     window.matchMedia = originalMatchMedia;
   });
 
-  it('types the answer out progressively when motion is allowed, then shows it in full', async () => {
+  // Time-based (the reveal takes ~1.5-2.5s of real time), so give it headroom when the whole suite is running.
+  it('types the answer out progressively when motion is allowed, then shows it in full', { timeout: 20000 }, async () => {
     window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as never;
     renderPage();
     ask('How risky am I?');
@@ -81,14 +82,14 @@ describe('PortfolioAI typewriter pacing', () => {
         if (answer) lengths.push(answer.textContent!.length);
         expect(answer?.textContent).toContain('overall risk is modest right now.');
       },
-      { timeout: 4000, interval: 15 },
+      { timeout: 10000, interval: 15 },
     );
 
     // Saw at least one in-between state (not just empty -> full), and it grew monotonically.
     expect(lengths.some((n) => n > 0 && n < ANSWER.length)).toBe(true);
     for (let i = 1; i < lengths.length; i++) expect(lengths[i]).toBeGreaterThanOrEqual(lengths[i - 1]);
     // The attribution footer is revealed too.
-    await waitFor(() => expect(screen.getByText(/GPT-OSS 20B via Groq/)).toBeInTheDocument(), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByText(/GPT-OSS 20B via Groq/)).toBeInTheDocument(), { timeout: 10000 });
   });
 
   it('shows the answer immediately under prefers-reduced-motion', async () => {
