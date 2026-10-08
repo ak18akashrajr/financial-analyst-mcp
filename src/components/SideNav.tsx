@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { LogOut, Landmark, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,6 +7,8 @@ import { FamilyMemberSwitcher } from '@/components/FamilyMemberSwitcher';
 import { ActiveProfileButton } from '@/components/ActiveProfileButton';
 import { getVisibleNavGroups } from '@/components/navConfig';
 import { useActiveMemberRelationship } from '@/hooks/useActiveMemberRelationship';
+import { SideTip } from '@/components/SideTip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const EXPANDED = '16rem';
 const COLLAPSED = '5rem';
@@ -19,6 +21,34 @@ export function SideNav() {
     return localStorage.getItem('sidenav_collapsed') === '1';
   });
 
+  // Sliding active-item pill: one absolutely-positioned element that glides to whichever link is
+  // current (measured from the link itself), instead of each link swapping its own background.
+  const location = useLocation();
+  const navRef = useRef<HTMLElement>(null);
+  const [pill, setPill] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  // Skip the transition for the very first placement so the pill doesn't fly in from (0,0).
+  const [pillAnimates, setPillAnimates] = useState(false);
+
+  const measurePill = useCallback(() => {
+    const active = navRef.current?.querySelector<HTMLElement>('a[aria-current="page"]');
+    setPill(active ? { top: active.offsetTop, left: active.offsetLeft, width: active.offsetWidth, height: active.offsetHeight } : null);
+  }, []);
+
+  useLayoutEffect(() => {
+    measurePill();
+  }, [location.pathname, collapsed, navGroups.length, measurePill]);
+
+  useEffect(() => {
+    // The collapse/expand width transition (300ms) moves the links after the layout effect above ran.
+    const t = setTimeout(measurePill, 320);
+    return () => clearTimeout(t);
+  }, [collapsed, measurePill]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setPillAnimates(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('sidenav_collapsed', collapsed ? '1' : '0');
     document.documentElement.style.setProperty('--sidenav-w', collapsed ? COLLAPSED : EXPANDED);
@@ -29,6 +59,7 @@ export function SideNav() {
   };
 
   return (
+    <TooltipProvider delayDuration={150}>
     <aside
       className={`hidden md:flex fixed top-3 bottom-3 left-3 z-40 flex-col rounded-2xl border border-border bg-card text-card-foreground shadow-lg shadow-black/5 transition-[width] duration-300 ease-out overflow-hidden ${
         collapsed ? 'w-[4.25rem] p-2' : 'w-[15.25rem] p-3'
@@ -65,12 +96,13 @@ export function SideNav() {
       </div>
 
       {/* Collapse toggle */}
+      <SideTip label={collapsed ? 'Expand' : undefined}>
       <button
         onClick={() => setCollapsed((c) => !c)}
         className={`flex items-center gap-2 text-[11px] font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/70 hover:bg-accent transition-colors mb-3 ${
           collapsed ? 'justify-center h-8 w-full' : 'px-2.5 py-1.5'
         }`}
-        title={collapsed ? 'Expand' : 'Collapse'}
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
       >
         {collapsed ? <ChevronsRight className="w-3.5 h-3.5" /> : (
           <>
@@ -79,9 +111,18 @@ export function SideNav() {
           </>
         )}
       </button>
+      </SideTip>
 
       {/* Nav */}
-      <nav className="flex-1 flex flex-col gap-1 overflow-y-auto">
+      <nav ref={navRef} className="relative flex-1 flex flex-col gap-1 overflow-y-auto">
+        {pill && (
+          <div
+            aria-hidden="true"
+            data-testid="nav-active-pill"
+            className={`pointer-events-none absolute rounded-lg bg-foreground ${pillAnimates ? 'transition-[top,left,width,height] duration-300 ease-out' : ''}`}
+            style={pill}
+          />
+        )}
         {navGroups.map((group, gi) => (
           <div key={group.label ?? `group-${gi}`} className={gi > 0 ? 'mt-3 pt-3 border-t border-border/60' : undefined}>
             {group.label && !collapsed && (
@@ -93,17 +134,17 @@ export function SideNav() {
               {group.items.map((t) => {
                 const Icon = t.icon;
                 return (
+                  <SideTip key={t.to} label={collapsed ? t.label : undefined}>
                   <NavLink
-                    key={t.to}
                     to={t.to}
                     end={t.to === '/overview'}
-                    title={collapsed ? t.label : undefined}
+                    aria-label={collapsed ? t.label : undefined}
                     className={({ isActive }) =>
-                      `flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors ${
+                      `relative z-10 flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors ${
                         collapsed ? 'justify-center h-10 w-10 mx-auto' : 'px-3 py-2.5'
                       } ${
                         isActive
-                          ? 'bg-foreground text-background'
+                          ? 'text-background'
                           : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                       }`
                     }
@@ -111,6 +152,7 @@ export function SideNav() {
                     <Icon className="w-4 h-4 shrink-0" />
                     {!collapsed && <span className="truncate">{t.label}</span>}
                   </NavLink>
+                  </SideTip>
                 );
               })}
             </div>
@@ -121,16 +163,19 @@ export function SideNav() {
       {/* Footer */}
       <div className={`mt-3 pt-3 border-t border-border flex ${collapsed ? 'flex-col items-center gap-2' : 'items-center gap-2'}`}>
         <ThemeToggle />
-        <button
-          onClick={logout}
-          className={`flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-accent transition ${
-            collapsed ? 'w-9 h-9' : 'ml-auto w-8 h-8'
-          }`}
-          title="Logout"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-        </button>
+        <SideTip label="Logout" side={collapsed ? 'right' : 'top'}>
+          <button
+            onClick={logout}
+            className={`flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-accent transition ${
+              collapsed ? 'w-9 h-9' : 'ml-auto w-8 h-8'
+            }`}
+            aria-label="Logout"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </button>
+        </SideTip>
       </div>
     </aside>
+    </TooltipProvider>
   );
 }

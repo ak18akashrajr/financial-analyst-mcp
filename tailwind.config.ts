@@ -93,6 +93,11 @@ export default {
         shimmer: {
           "100%": { transform: "translateX(100%)" },
         },
+        // AI chat "thinking" dots (PortfolioAI.tsx): a travelling wave of small hops, one dot after the next.
+        "typing-dot": {
+          "0%, 60%, 100%": { transform: "translateY(0)", opacity: "0.4" },
+          "30%": { transform: "translateY(-4px)", opacity: "1" },
+        },
         // Indeterminate progress bar used by BrandedSplash: the bar slides across its track.
         indeterminate: {
           "0%": { transform: "translateX(-100%)" },
@@ -111,6 +116,7 @@ export default {
         "accordion-up": "accordion-up 0.2s ease-out",
         shake: "shake 0.4s ease-in-out",
         shimmer: "shimmer 1.6s ease-in-out infinite",
+        "typing-dot": "typing-dot 1.1s ease-in-out infinite",
         indeterminate: "indeterminate 1.3s ease-in-out infinite",
       },
     },

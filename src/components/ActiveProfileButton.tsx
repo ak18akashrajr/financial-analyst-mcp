@@ -4,6 +4,8 @@ import { useFamilyMemberSelection } from '@/contexts/FamilyMemberContext';
 import { useFamilyMembers } from '@/hooks/useFamilyMembers';
 import { getMemberAvatar } from '@/lib/familyMemberAvatar';
 import { ALL_FAMILY_DISPLAY_NAME, getMemberDisplayName } from '@/lib/familyMemberDisplay';
+import { SideTip } from '@/components/SideTip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 /**
  * Small avatar button that reopens the "Who's Watching" picker (src/pages/WhosWatching.tsx)
@@ -26,9 +28,10 @@ export function ActiveProfileButton({ collapsed }: { collapsed?: boolean }) {
   const switchProfile = () => navigate('/select-profile', { state: { from: location } });
 
   return (
+    <TooltipProvider delayDuration={150}>
+    <SideTip label={`Switch profile (currently ${label})`} side={collapsed ? 'right' : 'bottom'}>
     <button
       onClick={switchProfile}
-      title={`Switch profile (currently ${label})`}
       aria-label="Switch profile"
       className={`flex items-center justify-center rounded-lg font-semibold text-xs shrink-0 hover:ring-2 hover:ring-foreground/40 transition-all ${
         collapsed ? 'w-9 h-9 mx-auto' : 'w-8 h-8'
@@ -36,5 +39,7 @@ export function ActiveProfileButton({ collapsed }: { collapsed?: boolean }) {
     >
       {avatar ? avatar.initials : <Users className="w-4 h-4" />}
     </button>
+    </SideTip>
+    </TooltipProvider>
   );
 }

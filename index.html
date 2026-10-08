@@ -3,14 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Applies the saved theme before first paint. ThemeToggle only adds the "dark"
-         class from a React effect, i.e. after the page has already painted white, so
-         dark-mode users saw a light flash on every reload. Same key/value as ThemeToggle. -->
-    <script>
-      try {
-        if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
-      } catch (e) {}
-    </script>
+    <!-- Theme is applied before first paint by a same-origin script (an inline one would be blocked
+         by the script-src 'self' CSP in vercel.json). See public/theme-init.js. -->
+    <meta name="theme-color" content="#ffffff" />
+    <script src="/theme-init.js"></script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />

@@ -140,7 +140,7 @@ const TaxesContent = () => {
           <div className="p-4 border-b border-border">
             <h2 className="text-sm font-semibold text-foreground">Holdings Tax Breakdown (FIFO)</h2>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[70vh] sticky-thead">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
