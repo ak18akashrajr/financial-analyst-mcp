@@ -8,6 +8,7 @@ import { computeRangeReturn } from '@/lib/chartRange';
 import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/ChartRangeBadge';
 
 import { Card } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 type CrisisResult = ReturnType<typeof replayCrisis>;
 
@@ -95,8 +96,8 @@ function StressCrisisCard({ r, hidden }: { r: CrisisResult; hidden: boolean }) {
           <AreaChart data={r.timeline} {...handlers}>
             <defs>
               <linearGradient id={`gStress-${r.key}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="hsl(0,72%,51%)" stopOpacity={0.25} />
-                <stop offset="100%" stopColor="hsl(0,72%,51%)" stopOpacity={0} />
+                <stop offset="0%" stopColor={CHART_COLORS.loss} stopOpacity={0.25} />
+                <stop offset="100%" stopColor={CHART_COLORS.loss} stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
@@ -104,7 +105,7 @@ function StressCrisisCard({ r, hidden }: { r: CrisisResult; hidden: boolean }) {
             <YAxis tickFormatter={v => hidden ? '•••' : fmt(v)} tick={{ fontSize: 9 }} className="fill-muted-foreground" width={55} />
             <Tooltip formatter={(v: number) => hidden ? '••••' : fmt(v)} labelFormatter={(m) => `Month ${m}`} />
             <ChartRangeReferenceArea selection={selection} data={r.timeline} labelKey="month" />
-            <Area type="monotone" dataKey="value" stroke="hsl(0,72%,51%)" fill={`url(#gStress-${r.key})`} strokeWidth={2} />
+            <Area type="monotone" dataKey="value" stroke={CHART_COLORS.loss} fill={`url(#gStress-${r.key})`} strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
         <ChartRangeBadge selection={selection} result={rangeResult} onClear={clear} unit="currency" formatValue={fmt} valueLabel="Value" />

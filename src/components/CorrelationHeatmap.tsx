@@ -5,6 +5,7 @@ import { Activity } from 'lucide-react';
 import type { Transaction } from '@/types/portfolio';
 
 import { Card } from '@/components/ui/card';
+import { GridSkeleton } from '@/components/PageSkeleton';
 
 type PriceRow = { symbol: string; date: string; close: number };
 
@@ -134,7 +135,7 @@ export function CorrelationHeatmap({ transactions }: { transactions: Transaction
       </p>
 
       {loading ? (
-        <p className="text-xs text-muted-foreground">Loading historical prices…</p>
+        <GridSkeleton rows={6} cols={8} label="Loading historical prices…" />
       ) : cellSymbols.length < 2 ? (
         <p className="text-xs text-muted-foreground">
           Not enough historical data. Run “Backfill FY26-27 prices” on the Reports page first.

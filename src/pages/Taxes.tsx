@@ -8,6 +8,7 @@ import type { Category } from '@/types/portfolio';
 import { EmptyState } from '@/components/EmptyState';
 
 import { Card } from '@/components/ui/card';
+import { PageSkeleton } from '@/components/PageSkeleton';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -34,8 +35,10 @@ const TaxesContent = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <p className="text-muted-foreground">Generating tax report...</p>
+      <div className="min-h-screen bg-background">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <PageSkeleton showHeader variant="table" />
+        </div>
       </div>
     );
   }

@@ -38,6 +38,7 @@ import {
 import { weightedAssumptions } from '@/lib/assetClassAssumptions';
 
 import { Card } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 const HORIZON_OPTIONS = [6, 12, 24, 36, 60] as const;
 
@@ -533,14 +534,14 @@ const ForecastContent = () => {
                   <Area
                     dataKey="band"
                     stroke="none"
-                    fill="hsl(213, 75%, 55%)"
+                    fill={CHART_COLORS.blue}
                     fillOpacity={0.15}
                     name="p10–p90 band"
                     connectNulls
                     isAnimationActive={false}
                   />
                   <Line dataKey="realized" stroke="hsl(var(--foreground))" strokeWidth={2} dot={false} name="Realized" connectNulls isAnimationActive={false} />
-                  <Line dataKey="p50" stroke="hsl(213, 75%, 55%)" strokeWidth={2} strokeDasharray="4 3" dot={false} name="Median forecast" connectNulls isAnimationActive={false} />
+                  <Line dataKey="p50" stroke={CHART_COLORS.blue} strokeWidth={2} strokeDasharray="4 3" dot={false} name="Median forecast" connectNulls isAnimationActive={false} />
                 </ComposedChart>
               </ResponsiveContainer>
               <ChartRangeBadge
@@ -627,7 +628,7 @@ const ForecastContent = () => {
                             <td className="px-2 py-1.5 text-foreground">{f.cutoffDate}</td>
                             <td className="px-2 py-1.5 font-mono">{mask(`${fmt(f.predictedP10)} – ${fmt(f.predictedP90)}`)}</td>
                             <td className="px-2 py-1.5 font-mono">{mask(fmt(f.actual))}</td>
-                            <td className={`px-2 py-1.5 ${f.covered ? 'text-green-600' : 'text-red-600'}`}>
+                            <td className={`px-2 py-1.5 ${f.covered ? 'text-gain' : 'text-loss'}`}>
                               {f.covered ? '✓' : '✗'}
                             </td>
                           </tr>

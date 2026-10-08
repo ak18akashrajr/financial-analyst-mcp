@@ -26,6 +26,7 @@ import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 
 
 import { Card } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 function fmt(n: number): string {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
@@ -75,16 +76,16 @@ const XIRRTab = ({ result, hidden, inputs }: { result: XIRRProjectionResult; hid
         <ResponsiveContainer width="100%" height={280}>
           <AreaChart data={data}>
             <defs>
-              <linearGradient id="gBase" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(142,71%,45%)" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(142,71%,45%)" stopOpacity={0} /></linearGradient>
-              <linearGradient id="gCons" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(45,93%,47%)" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(45,93%,47%)" stopOpacity={0} /></linearGradient>
+              <linearGradient id="gBase" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={CHART_COLORS.gain} stopOpacity={0.3} /><stop offset="95%" stopColor={CHART_COLORS.gain} stopOpacity={0} /></linearGradient>
+              <linearGradient id="gCons" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={CHART_COLORS.amber} stopOpacity={0.3} /><stop offset="95%" stopColor={CHART_COLORS.amber} stopOpacity={0} /></linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
             <XAxis dataKey="year" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
             <YAxis tickFormatter={v => hidden ? '•••' : fmt(v)} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={70} />
             <Tooltip formatter={(v: number) => hidden ? '••••' : fmtFull(v)} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Area type="monotone" dataKey="base" name="Base XIRR" stroke="hsl(142,71%,45%)" fill="url(#gBase)" strokeWidth={2} />
-            <Area type="monotone" dataKey="conservative" name="Conservative (−20%)" stroke="hsl(45,93%,47%)" fill="url(#gCons)" strokeWidth={2} />
+            <Area type="monotone" dataKey="base" name="Base XIRR" stroke={CHART_COLORS.gain} fill="url(#gBase)" strokeWidth={2} />
+            <Area type="monotone" dataKey="conservative" name="Conservative (−20%)" stroke={CHART_COLORS.amber} fill="url(#gCons)" strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
       </Card>
@@ -133,9 +134,9 @@ const MonteCarloTab = ({ result, hidden }: { result: MonteCarloResult; hidden: b
             <YAxis tickFormatter={v => hidden ? '•••' : fmt(v)} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={70} />
             <Tooltip formatter={(v: number) => hidden ? '••••' : fmtFull(v)} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Area type="monotone" dataKey="p90" name="p90" stroke="hsl(142,71%,45%)" fill="none" strokeWidth={1.5} />
-            <Area type="monotone" dataKey="p50" name="Median" stroke="hsl(220,70%,55%)" fill="none" strokeWidth={2} />
-            <Area type="monotone" dataKey="p10" name="p10" stroke="hsl(0,72%,51%)" fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
+            <Area type="monotone" dataKey="p90" name="p90" stroke={CHART_COLORS.gain} fill="none" strokeWidth={1.5} />
+            <Area type="monotone" dataKey="p50" name="Median" stroke={CHART_COLORS.blue} fill="none" strokeWidth={2} />
+            <Area type="monotone" dataKey="p10" name="p10" stroke={CHART_COLORS.loss} fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
           </AreaChart>
         </ResponsiveContainer>
       </Card>
@@ -163,9 +164,9 @@ const SequenceTab = ({ result, hidden }: { result: SequenceRiskResult; hidden: b
             <YAxis tickFormatter={v => hidden ? '•••' : fmt(v)} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={70} />
             <Tooltip formatter={(v: number) => hidden ? '••••' : fmtFull(v)} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line type="monotone" dataKey="uniform" name="Uniform" stroke="hsl(220,70%,55%)" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="earlyBad" name="Early Bad" stroke="hsl(45,93%,47%)" strokeWidth={2} dot={false} strokeDasharray="5 5" />
-            <Line type="monotone" dataKey="lateBad" name="Late Bad" stroke="hsl(0,72%,51%)" strokeWidth={2} dot={false} strokeDasharray="5 5" />
+            <Line type="monotone" dataKey="uniform" name="Uniform" stroke={CHART_COLORS.blue} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="earlyBad" name="Early Bad" stroke={CHART_COLORS.amber} strokeWidth={2} dot={false} strokeDasharray="5 5" />
+            <Line type="monotone" dataKey="lateBad" name="Late Bad" stroke={CHART_COLORS.loss} strokeWidth={2} dot={false} strokeDasharray="5 5" />
           </LineChart>
         </ResponsiveContainer>
       </Card>

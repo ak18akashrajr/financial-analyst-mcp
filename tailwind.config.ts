@@ -89,6 +89,15 @@ export default {
         // Login form feedback when signIn() returns an error — see
         // LoginForm.tsx, which replays this by force-reflowing the class
         // rather than remounting, so focus/typed values survive.
+        // Skeleton shimmer: a highlight band sweeping across the placeholder (ui/skeleton.tsx).
+        shimmer: {
+          "100%": { transform: "translateX(100%)" },
+        },
+        // Indeterminate progress bar used by BrandedSplash: the bar slides across its track.
+        indeterminate: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(250%)" },
+        },
         shake: {
           "0%, 100%": { transform: "translateX(0)" },
           "20%": { transform: "translateX(-6px)" },
@@ -101,6 +110,8 @@ export default {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         shake: "shake 0.4s ease-in-out",
+        shimmer: "shimmer 1.6s ease-in-out infinite",
+        indeterminate: "indeterminate 1.3s ease-in-out infinite",
       },
     },
   },

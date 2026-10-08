@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/EmptyState';
 
 
 import { Card } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 interface Goal {
   id: string;
@@ -164,8 +165,8 @@ export function GoalProjection({
               <AreaChart data={chartData} {...fanRangeHandlers}>
                 <defs>
                   <linearGradient id="gGoal90" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(142,71%,45%)" stopOpacity={0.25} />
-                    <stop offset="100%" stopColor="hsl(142,71%,45%)" stopOpacity={0} />
+                    <stop offset="0%" stopColor={CHART_COLORS.gain} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={CHART_COLORS.gain} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
@@ -174,10 +175,10 @@ export function GoalProjection({
                 <Tooltip formatter={(v: number) => hidden ? '••••' : fmt(v)} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <ChartRangeReferenceArea selection={fanRangeSelection} data={chartData} labelKey="year" />
-                <Area type="monotone" dataKey="p90" name="p90 (optimistic)" stroke="hsl(142,71%,45%)" fill="url(#gGoal90)" strokeWidth={1.5} />
-                <Area type="monotone" dataKey="p50" name="Median" stroke="hsl(220,70%,55%)" fill="none" strokeWidth={2} />
-                <Area type="monotone" dataKey="p10" name="p10 (pessimistic)" stroke="hsl(0,72%,51%)" fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
-                <Area type="monotone" dataKey="target" name="Target" stroke="hsl(45,93%,47%)" fill="none" strokeWidth={1.5} strokeDasharray="6 2" />
+                <Area type="monotone" dataKey="p90" name="p90 (optimistic)" stroke={CHART_COLORS.gain} fill="url(#gGoal90)" strokeWidth={1.5} />
+                <Area type="monotone" dataKey="p50" name="Median" stroke={CHART_COLORS.blue} fill="none" strokeWidth={2} />
+                <Area type="monotone" dataKey="p10" name="p10 (pessimistic)" stroke={CHART_COLORS.loss} fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
+                <Area type="monotone" dataKey="target" name="Target" stroke={CHART_COLORS.amber} fill="none" strokeWidth={1.5} strokeDasharray="6 2" />
               </AreaChart>
             </ResponsiveContainer>
             <ChartRangeBadge

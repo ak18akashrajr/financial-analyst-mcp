@@ -13,6 +13,7 @@ import { FamilyMemberProvider } from "@/contexts/FamilyMemberContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { RequireProfileSelection } from "@/components/RequireProfileSelection";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { BrandedSplash } from '@/components/BrandedSplash';
 
 // Lazy — several of these (Charts, Projections, RollingReturns, Benchmark,
 // GoalTrack via GoalProjection) pull in recharts, so eagerly importing all
@@ -40,14 +41,9 @@ const WhosWatching = lazy(() => import("./pages/WhosWatching.tsx"));
 
 const queryClient = new QueryClient();
 
-// Same loading style as ProtectedRoute's own auth-resolving state, so a
-// lazy chunk load and an auth check look like the same kind of pause to the
-// user rather than two different loading UIs.
-const RouteFallback = () => (
-  <div className="min-h-screen bg-background flex items-center justify-center">
-    <p className="text-sm text-muted-foreground">Loading...</p>
-  </div>
-);
+// Same splash as ProtectedRoute's auth-resolving state, so a lazy chunk load and an auth check look
+// like the same kind of pause to the user rather than two different loading UIs.
+const RouteFallback = () => <BrandedSplash />;
 
 const App = () => (
   <ErrorBoundary>

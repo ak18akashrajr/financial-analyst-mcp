@@ -9,6 +9,7 @@ import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/Ch
 
 
 import { Card } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 function fmt(n: number) {
   if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)}Cr`;
@@ -100,12 +101,12 @@ export function FireModule({
               <YAxis tickFormatter={v => hidden ? '•••' : fmt(v)} tick={{ fontSize: 11 }} className="fill-muted-foreground" width={70} />
               <Tooltip formatter={(v: number) => hidden ? '••••' : fmt(v)} labelFormatter={(l) => `Age ${l}`} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <ReferenceLine x={retirementAge} stroke="hsl(45,93%,47%)" strokeDasharray="4 4" label={{ value: 'Retire', position: 'top', fill: 'hsl(45,93%,47%)', fontSize: 10 }} />
-              <ReferenceLine y={result.requiredCorpusAtRetirement} stroke="hsl(0,72%,51%)" strokeDasharray="2 2" label={{ value: 'Required', position: 'right', fill: 'hsl(0,72%,51%)', fontSize: 10 }} />
+              <ReferenceLine x={retirementAge} stroke={CHART_COLORS.amber} strokeDasharray="4 4" label={{ value: 'Retire', position: 'top', fill: CHART_COLORS.amber, fontSize: 10 }} />
+              <ReferenceLine y={result.requiredCorpusAtRetirement} stroke={CHART_COLORS.loss} strokeDasharray="2 2" label={{ value: 'Required', position: 'right', fill: CHART_COLORS.loss, fontSize: 10 }} />
               <ChartRangeReferenceArea selection={corpusRangeSelection} data={combinedTL} labelKey="age" />
-              <Line type="monotone" dataKey="p90" name="p90" stroke="hsl(142,71%,45%)" dot={false} strokeWidth={1.5} />
-              <Line type="monotone" dataKey="p50" name="Median" stroke="hsl(220,70%,55%)" dot={false} strokeWidth={2} />
-              <Line type="monotone" dataKey="p10" name="p10" stroke="hsl(0,72%,51%)" dot={false} strokeWidth={1.5} strokeDasharray="4 4" />
+              <Line type="monotone" dataKey="p90" name="p90" stroke={CHART_COLORS.gain} dot={false} strokeWidth={1.5} />
+              <Line type="monotone" dataKey="p50" name="Median" stroke={CHART_COLORS.blue} dot={false} strokeWidth={2} />
+              <Line type="monotone" dataKey="p10" name="p10" stroke={CHART_COLORS.loss} dot={false} strokeWidth={1.5} strokeDasharray="4 4" />
             </LineChart>
           </ResponsiveContainer>
           <ChartRangeBadge

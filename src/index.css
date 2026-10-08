@@ -41,6 +41,13 @@ All colors MUST be HSL.
     --gain: 152 60% 42%;
     --loss: 0 72% 55%;
 
+    /* Chart series colours that aren't gain/loss. Defined once here so every chart picks them up
+       (and so a theme tweak is one edit) instead of repeating hsl(...) literals per chart. */
+    --chart-blue: 213 75% 55%;
+    --chart-amber: 45 93% 47%;
+    --chart-sky: 199 89% 48%;
+    --chart-slate: 215 16% 47%;
+
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 0 0% 10%;
     --sidebar-primary: 0 0% 0%;
@@ -82,6 +89,11 @@ All colors MUST be HSL.
 
     --gain: 152 60% 45%;
     --loss: 0 72% 55%;
+
+    --chart-blue: 213 75% 60%;
+    --chart-amber: 45 93% 52%;
+    --chart-sky: 199 89% 55%;
+    --chart-slate: 215 20% 62%;
 
     --sidebar-background: 224 50% 7%;
     --sidebar-foreground: 220 13% 91%;
@@ -125,5 +137,18 @@ All colors MUST be HSL.
   }
   *::-webkit-scrollbar-corner {
     background: transparent;
+  }
+}
+
+/* Respect the OS "reduce motion" setting: collapse animations/transitions to (near) instant. Spinners
+   are exempt — they're the only signal that something is still working, and a frozen one looks hung. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *:not(.animate-spin)::before,
+  *:not(.animate-spin)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

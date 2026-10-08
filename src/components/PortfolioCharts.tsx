@@ -19,6 +19,7 @@ import { todayLocalDateString } from '@/lib/dateUtils';
 import { buildPortfolioTimeline } from '@/lib/portfolioTimeline';
 
 import { Card } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', {
@@ -79,7 +80,7 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
   // Determine if latest P&L is negative for color
   const latestPnl = timelineData[timelineData.length - 1]?.pnl ?? 0;
   const pnlIsNegative = latestPnl < 0;
-  const pnlColor = pnlIsNegative ? 'hsl(0, 72%, 51%)' : 'hsl(142, 71%, 45%)';
+  const pnlColor = pnlIsNegative ? CHART_COLORS.loss : CHART_COLORS.gain;
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
@@ -109,12 +110,12 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
             <AreaChart data={timelineData} {...investedVsCurrent.handlers}>
               <defs>
                 <linearGradient id="gradInvested" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(220, 70%, 55%)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="hsl(220, 70%, 55%)" stopOpacity={0} />
+                  <stop offset="5%" stopColor={CHART_COLORS.blue} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={CHART_COLORS.blue} stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="gradCurrent" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0} />
+                  <stop offset="5%" stopColor={CHART_COLORS.gain} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={CHART_COLORS.gain} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
@@ -136,7 +137,7 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
                 type="monotone"
                 dataKey="invested"
                 name="Principal Capital Allocated"
-                stroke="hsl(220, 70%, 55%)"
+                stroke={CHART_COLORS.blue}
                 fill="url(#gradInvested)"
                 strokeWidth={2}
               />
@@ -144,7 +145,7 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
                 type="monotone"
                 dataKey="currentValue"
                 name="Current Value"
-                stroke="hsl(142, 71%, 45%)"
+                stroke={CHART_COLORS.gain}
                 fill="url(#gradCurrent)"
                 strokeWidth={2}
               />
@@ -188,7 +189,7 @@ export function PortfolioCharts({ transactions, currentPrices }: Props) {
                 width={60}
               />
               <Tooltip content={<CustomTooltip />} />
-              <ReferenceLine y={0} stroke="hsl(0, 0%, 50%)" strokeDasharray="3 3" />
+              <ReferenceLine y={0} stroke={CHART_COLORS.muted} strokeDasharray="3 3" />
               <ChartRangeReferenceArea selection={pnlOverTime.selection} data={timelineData} labelKey="dateLabel" />
               <Area
                 type="monotone"

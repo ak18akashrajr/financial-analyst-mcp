@@ -15,6 +15,7 @@ import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/Ch
 import { InfoHint, LabelWithHint } from '@/components/InfoHint';
 
 import { Card } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 // Mirrors BENCHMARK_TICKERS in supabase/functions/fetch-benchmark-prices/index.ts — the friendly
 // symbols benchmark_history is keyed by (not the underlying Yahoo tickers).
@@ -316,8 +317,8 @@ const BenchmarkContent = () => {
                     />
                     <Legend wrapperStyle={{ fontSize: 11 }} />
                     <ChartRangeReferenceArea selection={selection} data={chartData} labelKey="label" />
-                    <Line type="monotone" dataKey="portfolioIndex" stroke="#22c55e" strokeWidth={2} dot={false} name="Portfolio (holdings)" />
-                    <Line type="monotone" dataKey="benchmarkIndex" stroke="#0ea5e9" strokeWidth={2} dot={false} name={benchmarkLabel} />
+                    <Line type="monotone" dataKey="portfolioIndex" stroke={CHART_COLORS.gain} strokeWidth={2} dot={false} name="Portfolio (holdings)" />
+                    <Line type="monotone" dataKey="benchmarkIndex" stroke={CHART_COLORS.sky} strokeWidth={2} dot={false} name={benchmarkLabel} />
                   </LineChart>
                 </ResponsiveContainer>
                 <ChartRangeBadge

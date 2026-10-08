@@ -72,7 +72,7 @@ export function SignalDecomposition({ signal }: Props) {
               <InfoHint title="Confidence" side="bottom">Share of total factor weight backed by real data. Missing inputs (no forward PE, no dividend, no CAPE) contribute zero points and drag confidence down. Below 60% the verdict is thin — treat it as directional only.</InfoHint>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-600 border border-emerald-500/30">
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-gain/10 text-gain border border-gain/30">
               <ShieldCheck className="w-3 h-3" />
               Confidence {(signal.confidence * 100).toFixed(0)}%
               <InfoHint title="Confidence" side="bottom" formula="available factor weight ÷ total weight">Share of total factor weight backed by real fetched data rather than missing inputs. 100% means every one of the six factors had live data.</InfoHint>
@@ -88,12 +88,12 @@ export function SignalDecomposition({ signal }: Props) {
           <div className="absolute inset-y-0 left-1/2 w-px bg-border" />
           {signal.score >= 0 ? (
             <div
-              className="absolute inset-y-0 left-1/2 bg-emerald-500/70 rounded-r-full"
+              className="absolute inset-y-0 left-1/2 bg-gain/70 rounded-r-full"
               style={{ width: `${Math.min(50, (signal.score / 100) * 50)}%` }}
             />
           ) : (
             <div
-              className="absolute inset-y-0 bg-red-500/70 rounded-l-full"
+              className="absolute inset-y-0 bg-loss/70 rounded-l-full"
               style={{
                 right: '50%',
                 width: `${Math.min(50, (Math.abs(signal.score) / 100) * 50)}%`,
@@ -112,9 +112,9 @@ export function SignalDecomposition({ signal }: Props) {
       <div className="divide-y divide-border">
         {signal.factors.map(f => {
           const barWidth = (Math.abs(f.points) / maxAbs) * 50;
-          const posColor = f.direction === 'positive' ? 'bg-emerald-500/70' : f.direction === 'negative' ? 'bg-red-500/70' : 'bg-muted-foreground/30';
+          const posColor = f.direction === 'positive' ? 'bg-gain/70' : f.direction === 'negative' ? 'bg-loss/70' : 'bg-muted-foreground/30';
           const Icon = f.direction === 'positive' ? TrendingUp : f.direction === 'negative' ? TrendingDown : Minus;
-          const iconColor = f.direction === 'positive' ? 'text-emerald-500' : f.direction === 'negative' ? 'text-red-500' : 'text-muted-foreground';
+          const iconColor = f.direction === 'positive' ? 'text-gain' : f.direction === 'negative' ? 'text-loss' : 'text-muted-foreground';
 
           return (
             <div key={f.key} className={`px-4 py-3 ${!f.available ? 'opacity-50' : ''}`}>
@@ -139,7 +139,7 @@ export function SignalDecomposition({ signal }: Props) {
                   </span>
                 </div>
 
-                <span className={`text-sm font-mono font-semibold shrink-0 ${f.direction === 'positive' ? 'text-emerald-500' : f.direction === 'negative' ? 'text-red-500' : 'text-muted-foreground'}`}>
+                <span className={`text-sm font-mono font-semibold shrink-0 ${f.direction === 'positive' ? 'text-gain' : f.direction === 'negative' ? 'text-loss' : 'text-muted-foreground'}`}>
                   {f.points >= 0 ? '+' : ''}{f.points.toFixed(1)}
                 </span>
               </div>

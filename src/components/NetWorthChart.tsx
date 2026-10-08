@@ -15,6 +15,7 @@ import { ChartRangeBadge, ChartRangeReferenceArea } from '@/components/charts/Ch
 import type { Transaction } from '@/types/portfolio';
 
 import { Card } from '@/components/ui/card';
+import { CHART_COLORS } from '@/lib/chartColors';
 
 function fmt(n: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -74,7 +75,7 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
     return (
       <Card className="p-3 shadow-lg text-xs">
         <p className="font-medium text-foreground mb-1">{label}</p>
-        <p style={{ color: 'hsl(213, 75%, 55%)' }}>
+        <p style={{ color: CHART_COLORS.blue }}>
           AUM: {hidden ? '••••••' : fmt(payload[0].value)}
         </p>
       </Card>
@@ -106,7 +107,7 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
           className="h-full rounded-full transition-all"
           style={{
             width: `${Math.min(percentOfGoal, 100)}%`,
-            backgroundColor: 'hsl(38, 92%, 50%)',
+            backgroundColor: CHART_COLORS.amber,
           }}
         />
       </div>
@@ -115,8 +116,8 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
           <AreaChart data={data} {...handlers}>
             <defs>
               <linearGradient id="gradNetWorth" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="hsl(213, 75%, 55%)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="hsl(213, 75%, 55%)" stopOpacity={0} />
+                <stop offset="5%" stopColor={CHART_COLORS.blue} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={CHART_COLORS.blue} stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/30" />
@@ -128,7 +129,7 @@ export function NetWorthChart({ currentNetWorth, portfolioValue, liquidCash, vau
               type="monotone"
               dataKey="net_worth"
               name="AUM"
-              stroke="hsl(213, 75%, 55%)"
+              stroke={CHART_COLORS.blue}
               fill="url(#gradNetWorth)"
               strokeWidth={2}
             />

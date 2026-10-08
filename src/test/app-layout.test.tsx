@@ -8,6 +8,7 @@
 // needs a supabase mock now, same convention as dev-zone.test.tsx.
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { lazy } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { AppLayout } from '@/components/AppLayout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -102,5 +103,21 @@ describe('AppLayout', () => {
     renderLayout([{ pathname: '/overview', state: { justLoggedIn: true } }]);
     await waitFor(() => expect(screen.getByText('Dashboard Content')).toBeInTheDocument());
     expect(screen.getByTestId('app-content')).toHaveClass('animate-in');
+  });
+
+  it('keeps the nav mounted and shows a page skeleton while a lazy page chunk is still loading', () => {
+    const NeverLoads = lazy(() => new Promise<never>(() => {}));
+    render(
+      <MemoryRouter initialEntries={['/slow']}>
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route path="/slow" element={<NeverLoads />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByText(/Blackcrest Capital/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('status')).toBeInTheDocument();
   });
 });

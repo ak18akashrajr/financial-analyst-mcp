@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { SideNav } from '@/components/SideNav';
 import { MobileTopNav } from '@/components/MobileTopNav';
 import { SecurityIncidentBanner } from '@/components/SecurityIncidentBanner';
 import { SecurityIncidentsProvider } from '@/contexts/SecurityIncidentsContext';
 import { PortfolioAIChatProvider } from '@/contexts/PortfolioAIChatContext';
+import { PageSkeleton } from '@/components/PageSkeleton';
 
 /**
  * Chrome for the authenticated app only. Nested inside <ProtectedRoute> in
@@ -47,7 +48,20 @@ export function AppLayout() {
             enteringFromLogin ? 'animate-in fade-in slide-in-from-bottom-2 duration-500' : ''
           }`}
         >
-          <Outlet />
+          {/* A lazy page chunk suspends here, inside the layout, so the sidebar stays put and the
+              content area shows a page-shaped skeleton — rather than suspending up to App.tsx's
+              top-level boundary and replacing the whole screen (nav included) with the splash. */}
+          <Suspense
+            fallback={
+              <div className="min-h-screen bg-background">
+                <div className="max-w-6xl mx-auto px-4 py-5">
+                  <PageSkeleton showHeader />
+                </div>
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </div>
       </PortfolioAIChatProvider>
     </SecurityIncidentsProvider>
