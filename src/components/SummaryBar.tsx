@@ -3,6 +3,7 @@ import type { CashSettings, PortfolioSummary, Transaction } from '@/types/portfo
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { TrendingUp, TrendingDown, ArrowUpRight, Wallet, Vault, CreditCard, Landmark, Pencil, Check } from 'lucide-react';
 import { XirrDetailsCard } from '@/components/XirrDetailsCard';
+import { AnimatedNumber } from '@/components/AnimatedNumber';
 
 import { Card } from '@/components/ui/card';
 
@@ -25,7 +26,7 @@ type CashField = 'liquid' | 'vault' | 'pf' | 'debt';
 const CASHFLOW_TRACKED_FIELDS: CashField[] = ['liquid', 'vault'];
 
 export function SummaryBar({ summary, transactions, onUpdateCash, onPayCreditCard }: Props) {
-  const { mask } = usePrivacy();
+  const { mask, hidden } = usePrivacy();
   const fmt = (n: number) => mask(fmtRaw(n));
 
   const pnlPositive = summary.totalPnl >= 0;
@@ -69,7 +70,7 @@ export function SummaryBar({ summary, transactions, onUpdateCash, onPayCreditCar
           <div>
             <p className="text-xs text-muted-foreground">Assets Under Management (AUM)</p>
             <p className="mt-3 text-3xl sm:text-4xl font-semibold tracking-tight text-foreground">
-              {fmt(summary.totalPortfolioValue)}
+              <AnimatedNumber value={summary.totalPortfolioValue} format={fmt} flash={!hidden} />
             </p>
           </div>
           <span
@@ -94,7 +95,7 @@ export function SummaryBar({ summary, transactions, onUpdateCash, onPayCreditCar
         icon={<ArrowUpRight className="w-4 h-4" />}
         accent="bg-gain/10 text-gain"
         label="Realized & Unrealized Alpha"
-        value={fmt(summary.totalPnl)}
+        value={<AnimatedNumber value={summary.totalPnl} format={fmt} />}
         sub={`${pnlPositive ? '+' : ''}${summary.totalPnlPercent.toFixed(2)}% all-time`}
         valueClass={pnlPositive ? 'text-gain' : 'text-loss'}
       />
@@ -213,7 +214,7 @@ function StatCard({
   icon: React.ReactNode;
   accent: string;
   label: string;
-  value: string;
+  value: React.ReactNode;
   sub: string;
   valueClass?: string;
 }) {
