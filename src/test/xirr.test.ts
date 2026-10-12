@@ -119,3 +119,24 @@ describe('calculateXIRR', () => {
     expect(calculateXIRR(reordered)!).toBeCloseTo(calculateXIRR(cfs)!, 6);
   });
 });
+
+// Audit (Low, XIRR / dates): flows that all sit on one instant have no time elapsed, so there is no rate to solve.
+describe('calculateXIRR — flows on a single instant', () => {
+  const d = new Date('2024-03-01T10:00:00Z');
+
+  it('returns null for a net-zero set on the same instant instead of the 10% seed', () => {
+    // Buy 100, sell 100 at the same moment: NPV is 0 at EVERY rate, so any rate "solves" it. The solver used to
+    // return its 10% starting guess as though it were a measured return.
+    expect(calculateXIRR([{ amount: -100, date: d }, { amount: 100, date: new Date(d) }])).toBeNull();
+  });
+
+  it('returns null for a same-instant set that is not net-zero, as before', () => {
+    expect(calculateXIRR([{ amount: -100, date: d }, { amount: 130, date: new Date(d) }])).toBeNull();
+  });
+
+  it('still solves flows a single day apart', () => {
+    const next = new Date(d.getTime() + 24 * 60 * 60 * 1000);
+    const r = calculateXIRR([{ amount: -100, date: d }, { amount: 100.1, date: next }]);
+    expect(r).not.toBeNull();
+  });
+});
