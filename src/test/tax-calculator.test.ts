@@ -313,3 +313,50 @@ describe('generateTaxReport — category rules (audit H5)', () => {
     expect(report.excluded).toEqual([]);
   });
 });
+
+// Audit (Low, XIRR / dates): float residue created phantom lots.
+describe('generateTaxReport — float residue after a sell', () => {
+  it('does not report a fully-sold symbol as a holding because of 2.8e-17 left in a lot', () => {
+    // 0.1 + 0.2 bought, 0.3 sold: in floating point the second lot is left with ~2.8e-17 rather than 0.
+    const transactions: Transaction[] = [
+      txn({ symbol: 'FRAC', type: 'BUY', quantity: 0.1, price: 100, date: daysAgo(400) }),
+      txn({ symbol: 'FRAC', type: 'BUY', quantity: 0.2, price: 100, date: daysAgo(300) }),
+      txn({ symbol: 'FRAC', type: 'SELL', quantity: 0.3, price: 120, date: daysAgo(10) }),
+    ];
+    const report = generateTaxReport(transactions, { FRAC: 130 }, { FRAC: { category: 'Equity' } });
+
+    expect(report.holdings).toEqual([]);
+    expect(report.totalSTCG + report.totalLTCG).toBe(0);
+  });
+
+  it('still reports a genuine small remainder', () => {
+    const transactions: Transaction[] = [
+      txn({ symbol: 'FRAC', type: 'BUY', quantity: 0.3, price: 100, date: daysAgo(400) }),
+      txn({ symbol: 'FRAC', type: 'SELL', quantity: 0.1, price: 120, date: daysAgo(10) }),
+    ];
+    const report = generateTaxReport(transactions, { FRAC: 130 }, { FRAC: { category: 'Equity' } });
+    expect(report.holdings).toHaveLength(1);
+    expect(report.holdings[0].lots).toHaveLength(1);
+    expect(report.holdings[0].lots[0].quantity).toBeCloseTo(0.2, 9);
+  });
+});
+
+describe('hasSameDayReentry — uses the IST calendar day (audit, Low)', () => {
+  it('flags a sell and re-buy on the same IST day even though their UTC dates differ', () => {
+    // SELL at 20:30Z on Mar 1 is 02:00 IST on Mar 2; BUY at 05:00Z on Mar 2 is 10:30 IST on Mar 2.
+    const transactions: Transaction[] = [
+      txn({ symbol: 'TCS', type: 'SELL', quantity: 5, price: 100, date: '2026-03-01T20:30:00Z' }),
+      txn({ symbol: 'TCS', type: 'BUY', quantity: 5, price: 101, date: '2026-03-02T05:00:00Z' }),
+    ];
+    expect(hasSameDayReentry('TCS', transactions)).toBe(true);
+  });
+
+  it('does not flag a buy and sell that share a UTC date but fall on different IST days', () => {
+    // BUY at 10:00Z on Mar 1 is 15:30 IST on Mar 1; SELL at 20:30Z on Mar 1 is 02:00 IST on Mar 2.
+    const transactions: Transaction[] = [
+      txn({ symbol: 'TCS', type: 'BUY', quantity: 5, price: 100, date: '2026-03-01T10:00:00Z' }),
+      txn({ symbol: 'TCS', type: 'SELL', quantity: 5, price: 101, date: '2026-03-01T20:30:00Z' }),
+    ];
+    expect(hasSameDayReentry('TCS', transactions)).toBe(false);
+  });
+});
