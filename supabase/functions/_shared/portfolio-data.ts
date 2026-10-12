@@ -162,7 +162,9 @@ export function computeHoldingsFromTxns(
   return Object.entries(bySymbol)
     .filter(([, h]) => h.qty > 1e-9)
     .map(([symbol, h]) => {
-      const hasPriceData = symbol in priceMap;
+      // A stored price of 0 is not a price: it would value the holding at ₹0 and book a -100% loss. Treat it as
+      // missing, so it is flagged and excluded like any other unpriced symbol.
+      const hasPriceData = symbol in priceMap && Number(priceMap[symbol]) > 0;
       const cp = hasPriceData ? Number(priceMap[symbol]) : 0;
       const currentValue = hasPriceData ? cp * h.qty : 0;
       const pnl = hasPriceData ? currentValue - h.invested : 0;

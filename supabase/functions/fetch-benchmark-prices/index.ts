@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
         const points: { date: string; close: number }[] = [];
         for (let i = 0; i < ts.length; i++) {
           const c = closes[i];
-          if (c == null) continue;
+          if (c == null || !Number.isFinite(c) || c <= 0) continue; // a 0 close is a bad bar, not an index level
           points.push({ date: new Date(ts[i] * 1000).toISOString().slice(0, 10), close: c });
         }
         result[sym] = points;
