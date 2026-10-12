@@ -173,7 +173,7 @@ _No High items open — H1–H6 are all done (see Archive)._
 3. ~~M2, M4, M7, M10~~ — done (batch 3, [PR #194](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/194); M7's valuation-model follow-ups remain). **M1 is
    still open, waiting on Question 2.**
 3b. ~~M6, M16, M22~~ — done (batch 5, [PR #197](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/197); M16's date-change follow-up remains).
-3c. ~~M11, M14, M20~~ — done (batch 6, PR pending). M5 and M13 are not started: from the audit's own
+3c. ~~M11, M14, M20~~ — done (batch 6, [PR #198](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/198)). M5 and M13 are not started: from the audit's own
    description both need a design decision first (re-verify before touching either).
 4. The rest, after the questions above are answered. Edge-function fixes need
    `npx supabase@1.190.0 functions deploy --use-api` to take effect.
@@ -191,8 +191,8 @@ remains.
 <details>
 <summary>Archive (completed)</summary>
 
-- [x] **Calculation audit, batch 6 — M11, M14, M20** (2026-10-07). Branch `fix/audit-batch-6`, PR pending
-      (number to be filled in on opening). M20 changes an edge function (auto-deployed on merge); M11 and M14
+- [x] **Calculation audit, batch 6 — M11, M14, M20** (2026-10-07). Branch `fix/audit-batch-6`, merged via
+      [PR #198](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/198). M20 changes an edge function (auto-deployed on merge); M11 and M14
       are frontend only. Nothing in this batch depended on the owner's open questions.
       - **M11 — "Step-up SIP equivalent" matched total rupees, not future value.** New
         `stepUpEquivalentSIP` ([`monteCarloAdvanced.ts`](src/lib/monteCarloAdvanced.ts)) equates the expected
