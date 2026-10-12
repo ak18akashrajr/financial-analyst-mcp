@@ -49,3 +49,20 @@ export function todayLocalDateString(): string {
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
+
+const IST_OFFSET_MS = 330 * 60 * 1000; // IST is UTC+05:30 and has no DST
+
+/**
+ * The IST calendar day (`YYYY-MM-DD`) a stored date belongs to — the client counterpart of `txnDayIst` in
+ * supabase/functions/_shared/portfolio-data.ts (hand-synced; the bundles can't import each other).
+ *
+ * `transactions.date` is a `timestamptz`, so Postgres hands it back as a UTC timestamp such as
+ * "2026-09-30T20:30:00+00:00" — which is 02:00 IST on 1 Oct. Slicing the first ten characters files that trade
+ * under 30 Sep. A bare `YYYY-MM-DD` is already a day and passes through unchanged.
+ */
+export function istDayOf(dateStr: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const t = Date.parse(dateStr);
+  if (Number.isNaN(t)) return dateStr.slice(0, 10);
+  return new Date(t + IST_OFFSET_MS).toISOString().slice(0, 10);
+}

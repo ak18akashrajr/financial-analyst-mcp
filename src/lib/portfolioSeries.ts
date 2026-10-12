@@ -28,6 +28,7 @@
  *    ~30% zero returns, deflating the sample standard deviation while still being annualized by
  *    √252 — i.e. a systematically understated volatility.
  */
+import { istDayOf } from './dateUtils';
 
 /** One `historical_prices` row, narrowed to what this module needs. Ascending order not required. */
 export interface PriceBar {
@@ -98,9 +99,10 @@ const MIN_QTY = 1e-9;
 function toDayString(value: string): string {
   if (!value) return '';
   const s = String(value);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const parsed = new Date(s);
-  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
+  // A full timestamp is converted to its IST day (istDayOf), not sliced: Postgres returns timestamptz in UTC, so
+  // a trade at 02:00 IST on 1 Oct ("2026-09-30T20:30:00+00:00") was attributed to 30 Sep's bar.
+  const day = istDayOf(s);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '';
 }
 
 /** Whole days between two `YYYY-MM-DD` strings, parsed as UTC midnight so DST can't shift it. */

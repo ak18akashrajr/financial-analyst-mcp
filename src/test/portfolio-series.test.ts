@@ -234,3 +234,23 @@ describe('buildValueSeries granularity reporting', () => {
     expect(series.periodsPerYear).toBe(12);
   });
 });
+
+// Audit (Low, XIRR / dates): a timestamptz trade was filed under the UTC date prefix instead of its IST day.
+describe('buildValueSeries — transaction timestamps map to their IST day', () => {
+  it('attributes a 02:00 IST trade (20:30Z the day before) to the IST date\'s bar', () => {
+    const txns = [buy('A', '2026-09-30T20:30:00+00:00', 10, 100)];
+    const prices: PricesBySymbol = { A: bars([['2026-09-30', 100], ['2026-10-01', 105]]) };
+
+    const series = buildValueSeries(txns, prices);
+
+    // The series starts on the first transaction's day. The old UTC-prefix handling started it on 30 Sep and put
+    // the ₹1,000 of new money on that bar; the trade is an IST 1 Oct trade, so there is no 30 Sep point at all.
+    expect(series.points.map((p) => p.date)).toEqual(['2026-10-01']);
+    expect(series.points[0].netFlow).toBe(1000);
+  });
+
+  it('leaves a bare-date transaction on its own day', () => {
+    const series = buildValueSeries([buy('A', '2026-09-30', 10, 100)], { A: bars([['2026-09-30', 100], ['2026-10-01', 105]]) });
+    expect(series.points.find((p) => p.date === '2026-09-30')!.netFlow).toBe(1000);
+  });
+});
