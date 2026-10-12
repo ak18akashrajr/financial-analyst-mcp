@@ -85,6 +85,11 @@ export function calculateXIRR(cashFlows: CashFlow[]): number | null {
 
   const d0 = cashFlows.reduce((min, cf) => (cf.date < min ? cf.date : min), cashFlows[0].date);
 
+  // Every flow on one instant means no time elapses, so there is no rate to solve for. NPV is then the same
+  // number at every rate: with a net-zero set (buy 100, sell 100 the same moment) every rate "solves" it and
+  // the solver used to hand back its 10% seed as if it were a measured return.
+  if (cashFlows.every((cf) => cf.date.getTime() === d0.getTime())) return null;
+
   for (const guess of START_GUESSES) {
     const rate = newton(guess, cashFlows, d0);
     if (rate !== null) return rate;

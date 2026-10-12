@@ -100,15 +100,12 @@ _No High items open — H1–H6 are all done (see Archive)._
 
 ### Low
 
-- [ ] **XIRR / dates:** same-day net-zero flows return the seed 10% (`xirr.ts:46`); tax holding
-      period uses elapsed 24h blocks, so a lot can read short-term up to a day late
-      (`taxCalculator.ts:148`); `hasSameDayReentry` groups by UTC date (`taxCalculator.ts:274`);
-      float residue (~2.8e-17) creates phantom lots in the Tax report (`taxCalculator.ts:198`);
-      `forecast.ts:53-59` `toDayString` slices the UTC date.
-- [ ] **Unpriced / zero prices:** client values a symbol with no price at ₹0 (stays in invested,
-      shows −100%), server excludes it; a stored price of 0 is accepted by `fetch-prices` and
-      treated as valid by `hasPriceData`; `fetch-historical-prices` / `fetch-benchmark-prices` only
-      skip null. `fetch-fx-rates` already guards `<= 0` — copy that.
+- [ ] **XIRR / dates (remaining):** the tax holding period uses elapsed 24h blocks, so a lot can read
+      short-term up to a day late (`taxCalculator.ts`, `holdingDays`). Tied to Question 4 — whether "more
+      than 12 months" is a calendar-month or a > 365-day test — so not changed.
+- [ ] **Unpriced prices (remaining):** the client values a symbol with no price at ₹0 (stays in
+      invested, shows −100%) while the server excludes it. Which behaviour is right is a design decision
+      (the zero-price guards themselves are done — see Archive).
 - [ ] **Display:** Family split % can exceed 100% with a negative-net-worth member
       (`FamilyNetWorthSplit.tsx:25,44`); one thinly-priced symbol blanks the whole Correlation
       heatmap (`CorrelationHeatmap.tsx:90-101`); Debt/Net-worth charts don't refresh in-session
@@ -173,8 +170,10 @@ _No High items open — H1–H6 are all done (see Archive)._
 3. ~~M2, M4, M7, M10~~ — done (batch 3, [PR #194](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/194); M7's valuation-model follow-ups remain). **M1 is
    still open, waiting on Question 2.**
 3b. ~~M6, M16, M22~~ — done (batch 5, [PR #197](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/197); M16's date-change follow-up remains).
-3c. ~~M11, M14, M20~~ — done (batch 6, PR pending). M5 and M13 are not started: from the audit's own
+3c. ~~M11, M14, M20~~ — done (batch 6, [PR #198](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/198)). M5 and M13 are not started: from the audit's own
    description both need a design decision first (re-verify before touching either).
+3d. ~~Low: XIRR same-instant, float-residue lots, IST day for re-entry and the value series, zero-price guards~~ —
+   done (batch 7, PR pending).
 4. The rest, after the questions above are answered. Edge-function fixes need
    `npx supabase@1.190.0 functions deploy --use-api` to take effect.
 
@@ -191,8 +190,29 @@ remains.
 <details>
 <summary>Archive (completed)</summary>
 
-- [x] **Calculation audit, batch 6 — M11, M14, M20** (2026-10-07). Branch `fix/audit-batch-6`, PR pending
-      (number to be filled in on opening). M20 changes an edge function (auto-deployed on merge); M11 and M14
+- [x] **Calculation audit, batch 7 — Low items that needed no owner decision** (2026-10-12). Branch
+      `fix/audit-batch-7`, PR pending (number to be filled in on opening). Edge-function parts (price-fetch
+      guards, `forecast.ts`, `portfolio-data.ts`) deploy automatically on merge; the rest is frontend only.
+      Deliberately not started: everything waiting on the owner's open questions.
+      - **XIRR, flows on one instant.** [`calculateXIRR`](src/lib/xirr.ts) returns null when every flow shares
+        an instant: NPV is then the same at every rate, and a net-zero set (buy 100, sell 100 at the same
+        moment) used to come back as the solver's 10% seed.
+      - **`toDayString` used the UTC date.** A full timestamp now maps to its IST day (bare dates pass through)
+        in both hand-mirrored copies — [`portfolioSeries.ts`](src/lib/portfolioSeries.ts) and the edge
+        function [`forecast.ts`](supabase/functions/_shared/forecast.ts) — via a new `istDayOf` in
+        [`dateUtils.ts`](src/lib/dateUtils.ts), the client counterpart of the server's `txnDayIst`. A trade at
+        02:00 IST on 1 Oct (stored as `2026-09-30T20:30:00+00:00`) used to land on 30 Sep's bar.
+      - **Tax report.** Lots below 1e-9 are ignored, so buys of 0.1 and 0.2 sold as 0.3 no longer leave a 2.8e-17
+        phantom lot that lists a fully-sold symbol as a holding; `hasSameDayReentry` groups by the IST day instead
+        of the UTC date prefix.
+      - **Zero prices.** `fetch-prices`, `fetch-historical-prices` and `fetch-benchmark-prices` now skip
+        non-finite and non-positive values (as `fetch-fx-rates` already did) instead of storing a 0, and
+        `computeHoldingsFromTxns` treats a stored 0 in the price map as no price — flagged and excluded rather
+        than valued at ₹0 with a −100% loss, so rows already holding a 0 stop poisoning totals.
+      All of it has tests that fail against the old code (11 of the new ones in a combined run).
+
+- [x] **Calculation audit, batch 6 — M11, M14, M20** (2026-10-07). Branch `fix/audit-batch-6`, merged via
+      [PR #198](https://github.com/ak18akashrajr/financial-analyst-mcp/pull/198). M20 changes an edge function (auto-deployed on merge); M11 and M14
       are frontend only. Nothing in this batch depended on the owner's open questions.
       - **M11 — "Step-up SIP equivalent" matched total rupees, not future value.** New
         `stepUpEquivalentSIP` ([`monteCarloAdvanced.ts`](src/lib/monteCarloAdvanced.ts)) equates the expected

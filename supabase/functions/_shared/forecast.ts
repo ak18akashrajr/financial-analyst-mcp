@@ -50,12 +50,18 @@ export interface ValueSeries {
 
 const MIN_QTY = 1e-9;
 
+const IST_OFFSET_MS = 330 * 60 * 1000; // IST is UTC+05:30 and has no DST
+
+// Mirrors toDayString in src/lib/portfolioSeries.ts: a bare date passes through, a full timestamp becomes its IST
+// day (same rule as txnDayIst in portfolio-data.ts). Slicing the first ten characters filed a trade at 02:00 IST
+// on 1 Oct ("2026-09-30T20:30:00+00:00") under 30 Sep's bar.
 function toDayString(value: string): string {
   if (!value) return "";
   const s = String(value);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const parsed = new Date(s);
-  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const t = Date.parse(s);
+  if (Number.isNaN(t)) return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : "";
+  return new Date(t + IST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 function daysBetween(a: string, b: string): number {

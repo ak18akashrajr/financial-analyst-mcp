@@ -1008,3 +1008,28 @@ describe("listTransactions", () => {
     expect(result.transactions[0].date).toBe("2026-06-15");
   });
 });
+
+describe("computeHoldingsFromTxns — a stored price of 0 is not a price (audit, Low)", () => {
+  const open: Txn[] = [{ symbol: "TCS", type: "BUY", quantity: 5, price: 200, date: "2026-01-15" }];
+
+  it("treats a 0 in the price map as missing rather than valuing the holding at ₹0 with a -100% loss", () => {
+    const [h] = computeHoldingsFromTxns(open, { TCS: 0 }, META);
+    expect(h.hasPriceData).toBe(false);
+    expect(h.currentValue).toBe(0);
+    expect(h.pnl).toBe(0); // not -1000
+    expect(h.pnlPercent).toBe(0); // not -100
+    expect(h.invested).toBe(1000);
+  });
+
+  it("is excluded from totals by splitByPriceAvailability like any other unpriced symbol", () => {
+    const { priced, missingSymbols } = splitByPriceAvailability(computeHoldingsFromTxns(open, { TCS: 0 }, META));
+    expect(priced).toEqual([]);
+    expect(missingSymbols).toEqual(["TCS"]);
+  });
+
+  it("still prices a normal positive price", () => {
+    const [h] = computeHoldingsFromTxns(open, { TCS: 250 }, META);
+    expect(h.hasPriceData).toBe(true);
+    expect(h.currentValue).toBe(1250);
+  });
+});

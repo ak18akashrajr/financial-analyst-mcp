@@ -1,5 +1,5 @@
 import type { Transaction, Category } from '@/types/portfolio';
-import { parseLocalDate } from './dateUtils';
+import { istDayOf, parseLocalDate } from './dateUtils';
 
 export interface TaxLot {
   buyDate: string;
@@ -53,6 +53,7 @@ export interface TaxReport {
 }
 
 const LTCG_EXEMPTION = 125000; // ₹1.25 lakh
+const MIN_LOT_QTY = 1e-9; // below this a lot is float residue, not a position
 const CESS_RATE = 0.04; // 4% Health & Education Cess
 
 /**
@@ -178,12 +179,17 @@ function computeLotsForSymbol(
     }
   }
 
+  // Float arithmetic can leave a sliver of a lot after a sell that should have emptied it: buys of 0.1 and 0.2
+  // sold as 0.3 leave 2.8e-17 of the second lot. Drop anything that small so a fully-sold symbol isn't reported
+  // as a holding with a phantom lot.
+  const openLots = buyLots.filter(lot => lot.quantity > MIN_LOT_QTY);
+
   // Remaining buy lots are current holdings — compute tax for hypothetical sale today
   const thresholdDays = getLTThresholdDays(category);
   const stcgRate = getSTCGRate(category);
   const ltcgRate = getLTCGRate(category);
 
-  return buyLots.map(lot => {
+  return openLots.map(lot => {
     // lot.date is a bare Postgres DATE string ('YYYY-MM-DD', no time/offset) — parse it as LOCAL
     // midnight (matching `today`, a real local Date instant), not UTC midnight. Otherwise, in a
     // timezone ahead of UTC, holdingDays is undercounted by the local/UTC offset, which can flip
@@ -250,7 +256,7 @@ export function generateTaxReport(
     lots.forEach(l => (l.symbol = symbol));
 
     const totalQuantity = lots.reduce((s, l) => s + l.quantity, 0);
-    if (totalQuantity <= 0) continue;
+    if (totalQuantity <= MIN_LOT_QTY) continue;
 
     const totalInvested = lots.reduce((s, l) => s + l.buyPrice * l.quantity, 0);
     const totalCurrentValue = totalQuantity * price;
@@ -326,7 +332,9 @@ export function hasSameDayReentry(symbol: string, transactions: Transaction[]): 
   const daysWithActivity = new Map<string, { buy: boolean; sell: boolean }>();
   for (const t of transactions) {
     if (t.symbol !== symbol) continue;
-    const day = t.date.slice(0, 10);
+    // The IST calendar day, not the first ten characters: a timestamptz comes back in UTC, so a trade at 02:00 IST
+    // sits on the previous UTC date and a same-day sell and re-buy could look like different days (or vice versa).
+    const day = istDayOf(t.date);
     const entry = daysWithActivity.get(day) ?? { buy: false, sell: false };
     if (t.type === 'BUY') entry.buy = true; else entry.sell = true;
     daysWithActivity.set(day, entry);

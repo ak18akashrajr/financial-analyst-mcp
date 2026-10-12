@@ -56,7 +56,10 @@ Deno.serve(async (req) => {
         const meta = data?.chart?.result?.[0]?.meta;
         const regularMarketPrice = meta?.regularMarketPrice;
 
-        if (regularMarketPrice != null) {
+        // A price of 0 (or NaN/negative) is not a quote — Yahoo returns it for halted or delisted tickers. Storing
+        // it made the app value the holding at ₹0 with a -100% loss. Treat it like a missing price, as
+        // fetch-fx-rates already does for rates.
+        if (typeof regularMarketPrice === "number" && Number.isFinite(regularMarketPrice) && regularMarketPrice > 0) {
           prices[symbol] = regularMarketPrice;
         } else {
           prices[symbol] = null;
