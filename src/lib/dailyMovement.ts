@@ -246,12 +246,12 @@ export interface FySummary {
   profitRatePct: number;
   /** Sum of the FY's daily P&L, ₹ (holdings only, flow-adjusted). */
   pnl: number;
-  /** False until today (IST) is strictly after the FY's last weekday in March. */
+  /** False until today (IST) reaches the FY's last weekday in March (its last trading day). */
   final: boolean;
 }
 
 export function summarizeFy(days: DayMovement[], fy: number, todayIst: string): FySummary {
-  const s: FySummary = { fy, green: 0, red: 0, grey: 0, active: 0, profitRatePct: 0, pnl: 0, final: todayIst > lastWeekdayOfMonth(fy + 1, 3) };
+  const s: FySummary = { fy, green: 0, red: 0, grey: 0, active: 0, profitRatePct: 0, pnl: 0, final: todayIst >= lastWeekdayOfMonth(fy + 1, 3) };
   for (const d of days) {
     if (fyOf(d.date) !== fy) continue;
     s[d.cls]++;

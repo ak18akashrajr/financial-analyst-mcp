@@ -138,9 +138,10 @@ describe('summarizeFy', () => {
     expect(s.pnl).toBeCloseTo(5);
   });
 
-  it('is final only after the last weekday of March, and a FY with no days has rate 0', () => {
-    expect(summarizeFy([], 2025, '2026-04-01').final).toBe(true); // 31 Mar 2026 is a Tuesday
-    expect(summarizeFy([], 2025, '2026-03-31').final).toBe(false);
+  it('is final from the last weekday of March, and a FY with no days has rate 0', () => {
+    // 31 Mar 2026 is a Tuesday — final from that last trading day itself, not before it.
+    expect(summarizeFy([], 2025, '2026-03-31').final).toBe(true);
+    expect(summarizeFy([], 2025, '2026-03-30').final).toBe(false);
     expect(summarizeFy([], 2026, '2026-11-04').profitRatePct).toBe(0);
   });
 });

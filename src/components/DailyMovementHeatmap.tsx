@@ -142,14 +142,44 @@ function MonthDetail({ s, hidden }: { s: MonthSummary; hidden: boolean }) {
 }
 
 function FyStatement({ s, hidden }: { s: FySummary; hidden: boolean }) {
-  const outcome = Math.round(Math.abs(s.pnl)) === 0 ? null : s.pnl > 0 ? 'profit' : 'loss';
+  const rate = s.profitRatePct.toFixed(1);
+  const days = (
+    <>
+      <b className="text-foreground">{s.green}</b> of <b className="text-foreground">{s.active}</b> active trading days (<b className="text-foreground">{rate}%</b>)
+    </>
+  );
+  const flat = Math.round(Math.abs(s.pnl)) === 0;
+  const amount = <b className={hidden ? 'text-foreground' : tone(s.pnl)}>{fmtInr(Math.abs(s.pnl), hidden)}</b>;
+  const outcome = flat ? (
+    <>net flat ({amount})</>
+  ) : s.pnl > 0 ? (
+    <>a net profit of {amount}</>
+  ) : (
+    <>a net loss of {amount}</>
+  );
+  const label = fyLabel(s.fy);
+  const tail = s.final ? '' : ' so far';
+
+  let lead: ReactNode;
+  if (s.profitRatePct > 50 && s.pnl < 0 && !flat) {
+    lead = <>Even though {days} were profitable, {label}{tail} ended with {outcome}.</>;
+  } else if (s.profitRatePct < 50 && s.pnl > 0 && !flat) {
+    lead = <>Although only {days} were profitable, {label}{tail} ended with {outcome}.</>;
+  } else if (s.profitRatePct < 50) {
+    lead = <>Only {days} were profitable in {label}{tail}, with {outcome}.</>;
+  } else {
+    lead = <>{days} were profitable in {label}{tail}, with {outcome}.</>;
+  }
+
   return (
-    <p className="text-xs text-muted-foreground" data-testid="fy-statement">
-      {fyLabel(s.fy)}{s.final ? '' : ' so far'}: <b className="text-foreground">{s.green}</b> of <b className="text-foreground">{s.active}</b> active trading days
-      closed profitable (<b className="text-foreground">{s.profitRatePct.toFixed(1)}%</b> profit rate)
-      {' '}· net {outcome ?? 'P&L'}{' '}
-      <b className={hidden ? 'text-foreground' : tone(s.pnl)}>{fmtSignedInr(s.pnl, hidden)}</b>
-    </p>
+    <div className="text-xs text-muted-foreground space-y-0.5" data-testid="fy-statement">
+      <p>{lead}</p>
+      {!s.final && (
+        <p className="text-[10px]" data-testid="fy-in-progress">
+          {label} is still in progress — figures are as of YTD.
+        </p>
+      )}
+    </div>
   );
 }
 
