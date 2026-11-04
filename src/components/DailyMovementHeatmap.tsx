@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, Info } from 'lucide-react';
+import { Activity, ChevronDown, Info } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { logClientError } from '@/lib/clientErrorLogging';
@@ -10,8 +10,10 @@ import {
   buildDailyMovements,
   fyMonthIdx,
   fyOf,
+  summarizeFy,
   summarizeMonths,
   type DayMovement,
+  type FySummary,
   type MonthSummary,
 } from '@/lib/dailyMovement';
 import type { PricesBySymbol } from '@/lib/portfolioSeries';
@@ -139,6 +141,48 @@ function MonthDetail({ s, hidden }: { s: MonthSummary; hidden: boolean }) {
   );
 }
 
+function FyStatement({ s, hidden }: { s: FySummary; hidden: boolean }) {
+  const rate = s.profitRatePct.toFixed(1);
+  const days = (
+    <>
+      <b className="text-foreground">{s.green}</b> of <b className="text-foreground">{s.active}</b> active trading days (<b className="text-foreground">{rate}%</b>)
+    </>
+  );
+  const flat = Math.round(Math.abs(s.pnl)) === 0;
+  const amount = <b className={hidden ? 'text-foreground' : tone(s.pnl)}>{fmtInr(Math.abs(s.pnl), hidden)}</b>;
+  const outcome = flat ? (
+    <>net flat ({amount})</>
+  ) : s.pnl > 0 ? (
+    <>a net profit of {amount}</>
+  ) : (
+    <>a net loss of {amount}</>
+  );
+  const label = fyLabel(s.fy);
+  const tail = s.final ? '' : ' so far';
+
+  let lead: ReactNode;
+  if (s.profitRatePct > 50 && s.pnl < 0 && !flat) {
+    lead = <>Even though {days} were profitable, {label}{tail} ended with {outcome}.</>;
+  } else if (s.profitRatePct < 50 && s.pnl > 0 && !flat) {
+    lead = <>Although only {days} were profitable, {label}{tail} ended with {outcome}.</>;
+  } else if (s.profitRatePct < 50) {
+    lead = <>Only {days} were profitable in {label}{tail}, with {outcome}.</>;
+  } else {
+    lead = <>{days} were profitable in {label}{tail}, with {outcome}.</>;
+  }
+
+  return (
+    <div className="text-xs text-muted-foreground space-y-0.5" data-testid="fy-statement">
+      <p>{lead}</p>
+      {!s.final && (
+        <p className="text-[10px]" data-testid="fy-in-progress">
+          {label} is still in progress — figures are as of YTD.
+        </p>
+      )}
+    </div>
+  );
+}
+
 type PriceRow = { symbol: string; date: string; close: number };
 
 export function DailyMovementHeatmap({ transactions }: { transactions: Transaction[] }) {
@@ -146,6 +190,7 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
   const [rows, setRows] = useState<PriceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFy, setSelectedFy] = useState<number | null>(null);
+  const [showMonths, setShowMonths] = useState(false);
 
   const symbols = useMemo(() => Array.from(new Set(transactions.map((t) => t.symbol))).sort(), [transactions]);
 
@@ -185,6 +230,8 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
   const months = useMemo(() => summarizeMonths(days, todayIst), [days, todayIst]);
   const fys = useMemo(() => [...new Set(days.map((d) => fyOf(d.date)))].sort((a, b) => a - b), [days]);
   const activeFy = selectedFy != null && fys.includes(selectedFy) ? selectedFy : fys[fys.length - 1];
+
+  const fySummary = useMemo(() => (activeFy == null ? null : summarizeFy(days, activeFy, todayIst)), [days, activeFy, todayIst]);
 
   // One lookup: `${monthIdx}-${dayOfMonth}` → DayMovement, for the selected FY.
   const dayCells = useMemo(() => {
@@ -226,6 +273,7 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
                 </button>
               ))}
             </div>
+            {fySummary && fySummary.active > 0 && <div className="mb-2"><FyStatement s={fySummary} hidden={hidden} /></div>}
             <div className="overflow-x-auto">
               <table className="text-[9px] font-mono border-separate border-spacing-0.5" aria-label={`Daily movement ${fyLabel(activeFy)}`}>
                 <thead>
@@ -265,8 +313,19 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
           </div>
 
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-              Monthly summary · <span className="text-gain">Profitable</span> · <span className="text-loss">Non Profitable</span> · Minimal Price movements
+            <button
+              type="button"
+              onClick={() => setShowMonths((v) => !v)}
+              aria-expanded={showMonths}
+              className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronDown className={`w-3 h-3 transition-transform ${showMonths ? '' : '-rotate-90'}`} />
+              Monthly summary
+            </button>
+            {showMonths && (
+            <>
+            <p className="text-[10px] text-muted-foreground mt-1 mb-1">
+              <span className="text-gain">Profitable</span> · <span className="text-loss">Non Profitable</span> · Minimal Price movements
             </p>
             <div className="overflow-x-auto">
               <table className="text-[10px] font-mono border-separate border-spacing-1" aria-label="Monthly profitable day counts">
@@ -316,6 +375,8 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </div>
 
           {symbolsWithoutPrices.length > 0 && (

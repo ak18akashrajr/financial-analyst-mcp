@@ -5,6 +5,7 @@ import {
   fyMonthIdx,
   fyOf,
   lastWeekdayOfMonth,
+  summarizeFy,
   summarizeMonths,
 } from '@/lib/dailyMovement';
 
@@ -122,5 +123,25 @@ describe('summarizeMonths', () => {
     const m = summarizeMonths([mk('2026-10-29', 'green', 1)], '2026-10-30');
     expect(m.get('2026-6')!.final).toBe(false);
     expect(summarizeMonths([mk('2026-10-29', 'green', 1)], '2026-10-31').get('2026-6')!.final).toBe(true);
+  });
+});
+
+describe('summarizeFy', () => {
+  const mk = (date: string, cls: 'green' | 'red' | 'grey', pnl: number) =>
+    ({ date, prevDate: date, prevValue: 1, value: 1, netFlow: 0, pnl, pct: 0, cls, moves: [] });
+
+  it('rate = green ÷ all active days (grey stays in the total); only that FY is counted', () => {
+    const days = [mk('2026-04-01', 'green', 10), mk('2026-05-04', 'red', -4), mk('2026-06-01', 'grey', 0), mk('2026-07-01', 'green', 1), mk('2027-01-04', 'red', -2), mk('2026-03-31', 'green', 99)];
+    const s = summarizeFy(days, 2026, '2026-11-04');
+    expect(s).toMatchObject({ green: 2, red: 2, grey: 1, active: 5, final: false });
+    expect(s.profitRatePct).toBeCloseTo(40);
+    expect(s.pnl).toBeCloseTo(5);
+  });
+
+  it('is final from the last weekday of March, and a FY with no days has rate 0', () => {
+    // 31 Mar 2026 is a Tuesday — final from that last trading day itself, not before it.
+    expect(summarizeFy([], 2025, '2026-03-31').final).toBe(true);
+    expect(summarizeFy([], 2025, '2026-03-30').final).toBe(false);
+    expect(summarizeFy([], 2026, '2026-11-04').profitRatePct).toBe(0);
   });
 });
