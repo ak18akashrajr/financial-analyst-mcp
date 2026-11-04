@@ -5,6 +5,7 @@ import { NetWorthChart } from '@/components/NetWorthChart';
 import { DebtChart } from '@/components/DebtChart';
 import { PerformanceAttribution } from '@/components/PerformanceAttribution';
 import { SeasonalityHeatmap } from '@/components/SeasonalityHeatmap';
+import { DailyMovementHeatmap } from '@/components/DailyMovementHeatmap';
 import { CorrelationHeatmap } from '@/components/CorrelationHeatmap';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
@@ -80,6 +81,7 @@ const ChartsContent = () => {
 
         {/* Seasonality + Correlation */}
         <SeasonalityHeatmap transactions={transactions} currentPrices={currentPrices} />
+        <DailyMovementHeatmap transactions={transactions} />
         <CorrelationHeatmap transactions={transactions} />
       </div>
     </div>
