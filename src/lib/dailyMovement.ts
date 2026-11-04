@@ -234,3 +234,30 @@ export function summarizeMonths(days: DayMovement[], todayIst: string): Map<stri
   }
   return out;
 }
+
+export interface FySummary {
+  fy: number;
+  green: number;
+  red: number;
+  grey: number;
+  /** green + red + grey — every trading day with a computable move. */
+  active: number;
+  /** green ÷ active × 100 (grey days stay in the denominator); 0 when there are no active days. */
+  profitRatePct: number;
+  /** Sum of the FY's daily P&L, ₹ (holdings only, flow-adjusted). */
+  pnl: number;
+  /** False until today (IST) is strictly after the FY's last weekday in March. */
+  final: boolean;
+}
+
+export function summarizeFy(days: DayMovement[], fy: number, todayIst: string): FySummary {
+  const s: FySummary = { fy, green: 0, red: 0, grey: 0, active: 0, profitRatePct: 0, pnl: 0, final: todayIst > lastWeekdayOfMonth(fy + 1, 3) };
+  for (const d of days) {
+    if (fyOf(d.date) !== fy) continue;
+    s[d.cls]++;
+    s.active++;
+    s.pnl += d.pnl;
+  }
+  s.profitRatePct = s.active > 0 ? (s.green / s.active) * 100 : 0;
+  return s;
+}

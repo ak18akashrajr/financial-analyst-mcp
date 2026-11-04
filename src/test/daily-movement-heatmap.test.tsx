@@ -50,9 +50,29 @@ describe('DailyMovementHeatmap', () => {
 
   it('summarises the month as active days split into green / red / grey', async () => {
     render(<DailyMovementHeatmap transactions={TXNS} />);
+    // Collapsed by default; expand the toggle first.
+    const toggle = await screen.findByRole('button', { name: /Monthly summary/ });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /Day counts for Oct/ })).not.toBeInTheDocument();
+    fireEvent.click(toggle);
     const month = await screen.findByRole('button', { name: /Day counts for Oct FY26-27/ });
     // 27 Oct green (+10%), 28 Oct red (−10%), 29 Oct grey (+0.01%)
     expect(month).toHaveTextContent('1·1·1');
+  });
+
+  it('states the FY profit rate and a net profit/loss, with ₹ masked when hidden', async () => {
+    render(<DailyMovementHeatmap transactions={TXNS} />);
+    // 3 active days: 1 profitable → 33.3%; P&L = +100 −110 +0.1 = −9.9 → loss
+    const stmt = await screen.findByTestId('fy-statement');
+    expect(stmt).toHaveTextContent('FY26-27 so far: 1 of 3 active trading days closed profitable (33.3% profit rate)');
+    expect(stmt).toHaveTextContent('net loss −₹10');
+  });
+
+  it('hides the FY ₹ figure when numbers are hidden', async () => {
+    vi.mocked(usePrivacy).mockReturnValue({ hidden: true, toggle: vi.fn() } as unknown as ReturnType<typeof usePrivacy>);
+    render(<DailyMovementHeatmap transactions={TXNS} />);
+    const stmt = await screen.findByTestId('fy-statement');
+    expect(stmt).not.toHaveTextContent('₹');
   });
 
   it('masks ₹ amounts when numbers are hidden', async () => {

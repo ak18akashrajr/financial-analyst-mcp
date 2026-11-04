@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, Info } from 'lucide-react';
+import { Activity, ChevronDown, Info } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { logClientError } from '@/lib/clientErrorLogging';
@@ -10,8 +10,10 @@ import {
   buildDailyMovements,
   fyMonthIdx,
   fyOf,
+  summarizeFy,
   summarizeMonths,
   type DayMovement,
+  type FySummary,
   type MonthSummary,
 } from '@/lib/dailyMovement';
 import type { PricesBySymbol } from '@/lib/portfolioSeries';
@@ -139,6 +141,18 @@ function MonthDetail({ s, hidden }: { s: MonthSummary; hidden: boolean }) {
   );
 }
 
+function FyStatement({ s, hidden }: { s: FySummary; hidden: boolean }) {
+  const outcome = Math.round(Math.abs(s.pnl)) === 0 ? null : s.pnl > 0 ? 'profit' : 'loss';
+  return (
+    <p className="text-xs text-muted-foreground" data-testid="fy-statement">
+      {fyLabel(s.fy)}{s.final ? '' : ' so far'}: <b className="text-foreground">{s.green}</b> of <b className="text-foreground">{s.active}</b> active trading days
+      closed profitable (<b className="text-foreground">{s.profitRatePct.toFixed(1)}%</b> profit rate)
+      {' '}· net {outcome ?? 'P&L'}{' '}
+      <b className={hidden ? 'text-foreground' : tone(s.pnl)}>{fmtSignedInr(s.pnl, hidden)}</b>
+    </p>
+  );
+}
+
 type PriceRow = { symbol: string; date: string; close: number };
 
 export function DailyMovementHeatmap({ transactions }: { transactions: Transaction[] }) {
@@ -146,6 +160,7 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
   const [rows, setRows] = useState<PriceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedFy, setSelectedFy] = useState<number | null>(null);
+  const [showMonths, setShowMonths] = useState(false);
 
   const symbols = useMemo(() => Array.from(new Set(transactions.map((t) => t.symbol))).sort(), [transactions]);
 
@@ -185,6 +200,8 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
   const months = useMemo(() => summarizeMonths(days, todayIst), [days, todayIst]);
   const fys = useMemo(() => [...new Set(days.map((d) => fyOf(d.date)))].sort((a, b) => a - b), [days]);
   const activeFy = selectedFy != null && fys.includes(selectedFy) ? selectedFy : fys[fys.length - 1];
+
+  const fySummary = useMemo(() => (activeFy == null ? null : summarizeFy(days, activeFy, todayIst)), [days, activeFy, todayIst]);
 
   // One lookup: `${monthIdx}-${dayOfMonth}` → DayMovement, for the selected FY.
   const dayCells = useMemo(() => {
@@ -226,6 +243,7 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
                 </button>
               ))}
             </div>
+            {fySummary && fySummary.active > 0 && <div className="mb-2"><FyStatement s={fySummary} hidden={hidden} /></div>}
             <div className="overflow-x-auto">
               <table className="text-[9px] font-mono border-separate border-spacing-0.5" aria-label={`Daily movement ${fyLabel(activeFy)}`}>
                 <thead>
@@ -265,8 +283,19 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
           </div>
 
           <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-              Monthly summary · <span className="text-gain">Profitable</span> · <span className="text-loss">Non Profitable</span> · Minimal Price movements
+            <button
+              type="button"
+              onClick={() => setShowMonths((v) => !v)}
+              aria-expanded={showMonths}
+              className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronDown className={`w-3 h-3 transition-transform ${showMonths ? '' : '-rotate-90'}`} />
+              Monthly summary
+            </button>
+            {showMonths && (
+            <>
+            <p className="text-[10px] text-muted-foreground mt-1 mb-1">
+              <span className="text-gain">Profitable</span> · <span className="text-loss">Non Profitable</span> · Minimal Price movements
             </p>
             <div className="overflow-x-auto">
               <table className="text-[10px] font-mono border-separate border-spacing-1" aria-label="Monthly profitable day counts">
@@ -316,6 +345,8 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
                 </tbody>
               </table>
             </div>
+            </>
+            )}
           </div>
 
           {symbolsWithoutPrices.length > 0 && (
