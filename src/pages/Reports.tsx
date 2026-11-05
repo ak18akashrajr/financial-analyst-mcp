@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
   buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge, percentChangeOver, nearestSnapshot, periodOpeningAsOf, periodClosingAsOf,
-  type PeriodDef, type PeriodType, type HistoricalPriceMap, type PeriodGrowthPoint, periodExtreme, hasRecordedBaseline,
+  type PeriodDef, type PeriodType, type HistoricalPriceMap, type PeriodGrowthPoint, periodExtreme, hasRecordedBaseline, getFYStart, RECORDING_START_FY,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
 import { buildPeriodBridge, type PeriodBridge } from '@/lib/netWorthMovement';
@@ -250,6 +250,8 @@ const ReportsContent = () => {
     if (!active || transactions.length === 0) return null;
     const priorAsOf = new Date(endAsOf);
     priorAsOf.setFullYear(priorAsOf.getFullYear() - 1);
+    // The prior-year point must fall inside recorded history; before FY2026-27 it is too thin to compare against.
+    if (priorAsOf < getFYStart(RECORDING_START_FY)) return null;
     const earliestTxnDate = transactions.reduce(
       (min, t) => { const d = parseLocalDate(t.date); return d < min ? d : min; },
       parseLocalDate(transactions[0].date),

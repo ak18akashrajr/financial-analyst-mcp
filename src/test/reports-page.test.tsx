@@ -223,7 +223,8 @@ describe('Reports page', () => {
     expect(screen.getByRole('button', { name: /Next fiscal year/i })).toBeDisabled();
   });
 
-  it('shows a YoY growth chip comparing AUM to the same calendar date one year ago', async () => {
+  it('hides the YoY chip and AUM Growth chart when the prior-year comparison predates the recording start (FY2026-27)', async () => {
+    // Default "now" is 2026-08-22: the prior-year point (2025-08-22) is before 1-Apr-2026, so no YoY is shown.
     historicalPriceRows.push({ symbol: 'TCS', date: '2025-08-01', close: 120 });
     mockedUsePortfolio.mockReturnValue(baseHookValue({
       transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2025-04-15' }],
@@ -231,40 +232,42 @@ describe('Reports page', () => {
     }));
     renderReports();
 
-    // Default active period is in-progress Q2 FY2026-27 (asOf = "now" = 2026-08-22).
-    // Prior year (2025-08-22) marks TCS at its ₹120 historical close → netWorth ₹1,200.
-    // Today, live-marked at ₹200 → netWorth ₹2,000. Δ = 800, % = 800/1200*100 = 66.67%.
-    // The AUM Growth chart's own badge repeats this same figure (see the dedicated
-    // test below), so this now matches two elements — assert at least the headline
-    // chip's occurrence rather than a single exact match.
+    await waitFor(() => expect(screen.getByText('Board Commentary')).toBeInTheDocument());
+    expect(screen.queryByText(/% YoY/)).not.toBeInTheDocument();
+    expect(screen.queryByText('AUM Growth')).not.toBeInTheDocument();
+  });
+
+  it('shows a YoY growth chip once the prior-year comparison is inside recorded history', async () => {
+    // now = 2027-08-22 → in-progress Q2 FY2027-28; prior-year point 2026-08-22 is on/after 1-Apr-2026.
+    vi.setSystemTime(new Date('2027-08-22T00:00:00Z'));
+    historicalPriceRows.push({ symbol: 'TCS', date: '2026-08-01', close: 120 });
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2025-04-15' }],
+      currentPrices: { TCS: 200 },
+    }));
+    renderReports();
+
+    // Prior year marks TCS at ₹120 → ₹1,200. Today live @ ₹200 → ₹2,000. Δ = 800 → +66.67%.
     await waitFor(() => expect(screen.getAllByText(/\+66\.67% YoY/).length).toBeGreaterThanOrEqual(1));
   });
 
-  it('shows the AUM Growth chart comparing Last Year, previous period, and current period', async () => {
-    historicalPriceRows.push({ symbol: 'TCS', date: '2025-08-01', close: 120 });
+  it('shows the AUM Growth chart comparing Last Year, previous period, and current period once recorded', async () => {
+    vi.setSystemTime(new Date('2027-08-22T00:00:00Z'));
+    historicalPriceRows.push({ symbol: 'TCS', date: '2026-08-01', close: 120 });
     mockedUsePortfolio.mockReturnValue(baseHookValue({
       transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2025-04-15' }],
       currentPrices: { TCS: 200 },
     }));
     renderReports();
 
-    // Default active period is in-progress Q2 FY2026-27. Prev period (Q1) and the
-    // prior-year point both mark TCS at the only historical close available
-    // (2025-08-01 @ ₹120 → netWorth ₹1,200); today is live-marked @ ₹200 → ₹2,000.
-    // So both comparisons land on the same 66.67% figure, per the YoY test above.
-    // Recharts renders period shortLabels ("Q1 2026-27" etc.) in several places on
-    // this page already (period picker, trend chart, P&L bar chart), so scope every
-    // assertion to the AUM Growth card itself rather than a page-wide getByText.
-    // The bars' own generic wording ("Last Quarter"/"Current Quarter" vs. jsdom's
-    // recharts tick rendering, which merges/wraps multi-word tick text under this
-    // suite's fixed-size layout stub) is covered precisely by the pure
-    // buildGrowthComparison unit tests in period-reports.test.ts instead.
+    // Previous period (Q1 FY2027-28) and the prior-year point both mark TCS at the ₹120 close → ₹1,200.
+    // Current period is live @ ₹200 → ₹2,000. Both comparisons are +66.67%.
     const heading = await screen.findByText('AUM Growth');
     const card = heading.closest('.rounded-2xl') as HTMLElement;
     expect(card).not.toBeNull();
     expect(within(card).getByText('+66.67% YoY')).toBeInTheDocument();
     expect(
-      within(card).getByText('vs previous period (Q1 2026-27): +66.67% · vs last year: +66.67%'),
+      within(card).getByText('vs previous period (Q1 2027-28): +66.67% · vs last year: +66.67%'),
     ).toBeInTheDocument();
   });
 
