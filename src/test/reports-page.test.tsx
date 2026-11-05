@@ -352,6 +352,73 @@ describe('Reports page', () => {
   });
 });
 
+describe('Reports page — best / worst period label on the Earnings cover', () => {
+  beforeEach(() => {
+    historicalPriceRows.length = 0;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-22T00:00:00Z')); // inside Q2 FY2026-27
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // One ₹-per-unit price per quarter-end gives AUM = 10 × close (no cash, no snapshots):
+  //  Q2 FY25-26 (close 90)  → 900   (−10% vs Q1)
+  //  Q3 FY25-26 (close 100) → 1000  (+11.11% vs Q2)
+  //  Q4 FY25-26 (close 100) → 1000  (0% vs Q3)
+  //  Q1 FY26-27 (close 150) → 1500  (+50% vs Q4)  ← best
+  // Q1 FY25-26 has no prior quarter on record, so it is not ranked.
+  const quarterFixture = () => {
+    historicalPriceRows.push(
+      { symbol: 'TCS', date: '2025-06-30', close: 100 },
+      { symbol: 'TCS', date: '2025-09-30', close: 90 },
+      { symbol: 'TCS', date: '2025-12-31', close: 100 },
+      { symbol: 'TCS', date: '2026-03-31', close: 100 },
+      { symbol: 'TCS', date: '2026-06-30', close: 150 },
+    );
+    mockedUsePortfolio.mockReturnValue(baseHookValue({
+      transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2025-04-15' }],
+      currentPrices: { TCS: 150 },
+    }));
+  };
+
+  it('shows "Best quarter so far" with the QoQ figure when the completed quarter is the top-ranked one', async () => {
+    quarterFixture();
+    renderReports();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Q1 2026-27/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Q1 2026-27/ }));
+
+    await waitFor(() => expect(screen.getByText('Best quarter so far · +50.00% QoQ')).toBeInTheDocument());
+    expect(screen.queryByText(/Worst quarter so far/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Worst quarter so far" for the bottom-ranked completed quarter', async () => {
+    quarterFixture();
+    renderReports();
+
+    await waitFor(() => expect(screen.getByText('FY2026-27')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Previous fiscal year/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Q2 2025-26/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Q2 2025-26/ }));
+
+    await waitFor(() => expect(screen.getByText('Worst quarter so far · -10.00% QoQ')).toBeInTheDocument());
+  });
+
+  it('shows no best/worst label for a quarter in the middle of the ranking', async () => {
+    quarterFixture();
+    renderReports();
+
+    await waitFor(() => expect(screen.getByText('FY2026-27')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Previous fiscal year/i }));
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /Q4 2025-26/ })[0]).toBeInTheDocument());
+    fireEvent.click(screen.getAllByRole('button', { name: /Q4 2025-26/ })[0]); // period picker chip (the name also appears in a movement column)
+
+    await waitFor(() => expect(screen.getByText('Q4 · Jan–Mar 2026')).toBeInTheDocument());
+    expect(screen.queryByText(/so far/)).not.toBeInTheDocument();
+  });
+});
+
 // Audit M9: the AUM KPI used to fall back to a 0 percentage when the previous period's AUM was zero, showing a
 // green "+0.00% vs <previous period>" for a portfolio that had just gone from ₹0 to something.
 describe('Reports page — period-over-period against an empty previous period (audit M9)', () => {
