@@ -458,6 +458,18 @@ export function percentChangeOver(delta: number, base: number): number | null {
   return (delta / base) * 100;
 }
 
+/**
+ * First fiscal year (by start year) of recorded portfolio history: FY2026-27, starting 1 Apr 2026.
+ * Before this, the previous period's AUM is too small to be a real baseline (e.g. Q1 FY26-27 showed
+ * +277.41% QoQ against Q4 FY25-26), so no period-over-period comparison or ranking uses such a baseline.
+ */
+export const RECORDING_START_FY = 2026;
+
+/** True when `prev` (the baseline period) starts on or after the recording start. */
+export function hasRecordedBaseline(prev: PeriodDef): boolean {
+  return prev.start >= getFYStart(RECORDING_START_FY);
+}
+
 export interface PeriodGrowthPoint {
   key: string;
   /** Period-over-period AUM change in %, or null when it has no real baseline (see percentChangeOver). */
