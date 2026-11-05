@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
   buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge, percentChangeOver, nearestSnapshot, periodOpeningAsOf, periodClosingAsOf,
-  type PeriodDef, type PeriodType, type HistoricalPriceMap,
+  type PeriodDef, type PeriodType, type HistoricalPriceMap, type PeriodGrowthPoint, periodExtreme,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
 import { buildPeriodBridge, type PeriodBridge } from '@/lib/netWorthMovement';
@@ -320,6 +320,32 @@ const ReportsContent = () => {
       ? computeRangeReturn(trend, trendRangeSelection.startIndex, trendRangeSelection.endIndex, 'netWorth', 'label')
       : null;
 
+  // Period-over-period AUM change for every COMPLETED period of this type, across all fiscal years
+  // with data (not just the browsed FY). Same figure the cover shows for a single period, so the
+  // best/worst label always agrees with the QoQ / HoH / FY-FY number printed next to it.
+  const allPeriodGrowth = useMemo<PeriodGrowthPoint[]>(() => {
+    const now = new Date();
+    const netWorthAtClose = (p: PeriodDef) => buildSnapshot(
+      periodClosingAsOf(p, 'completed'), transactions, currentPrices, symbolMetaLite, history, cash,
+      { historicalPrices, useLive: false },
+    ).netWorth;
+    const out: PeriodGrowthPoint[] = [];
+    for (let fy = earliestFYStartYear; fy <= currentFYStartYear; fy++) {
+      const ps = buildPeriods(fy, type);
+      ps.forEach((p, i) => {
+        if (periodStatus(p, now) !== 'completed') return;
+        let prev: PeriodDef | undefined;
+        if (i > 0) prev = ps[i - 1];
+        else if (fy - 1 >= earliestFYStartYear) { const pf = buildPeriods(fy - 1, type); prev = pf[pf.length - 1]; }
+        if (!prev) return; // first period on record: no baseline, so not ranked
+        const base = netWorthAtClose(prev);
+        out.push({ key: p.key, pct: percentChangeOver(netWorthAtClose(p) - base, base) });
+      });
+    }
+    return out;
+  }, [type, earliestFYStartYear, currentFYStartYear, transactions, currentPrices, symbolMetaLite, history, cash, historicalPrices]);
+  const extreme = useMemo(() => (active ? periodExtreme(active.key, allPeriodGrowth) : null), [active, allPeriodGrowth]);
+
   if (!active || loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -577,6 +603,11 @@ One concise paragraph (3-4 sentences) summarising the period.
                       {fmtPct(periodOverPeriod.pct)} {periodOverPeriodBadge(type)}
                     </span>
                   }>{audits.aum}</AuditPopover>
+                )}
+                {extreme && (
+                  <span className={`text-xs font-medium ${extreme.kind === 'best' ? 'text-gain' : 'text-loss'}`}>
+                    {extreme.kind === 'best' ? 'Best' : 'Worst'} {type === 'quarter' ? 'quarter' : type === 'half' ? 'half-year' : 'year'} so far · {fmtPct(extreme.pct)} {periodOverPeriodBadge(type)}
+                  </span>
                 )}
                 {yoy && (
                   <AuditPopover title="Year-over-year (YoY)" trigger={

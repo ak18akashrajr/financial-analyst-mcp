@@ -458,6 +458,41 @@ export function percentChangeOver(delta: number, base: number): number | null {
   return (delta / base) * 100;
 }
 
+export interface PeriodGrowthPoint {
+  key: string;
+  /** Period-over-period AUM change in %, or null when it has no real baseline (see percentChangeOver). */
+  pct: number | null;
+}
+
+export interface PeriodExtreme {
+  kind: 'best' | 'worst';
+  pct: number;
+}
+
+/**
+ * Whether `activeKey` is the strongest or weakest of the completed periods in `points`.
+ * Returns null (no label) when:
+ *  - fewer than two periods have a real growth % to rank against;
+ *  - the active period isn't one of the ranked periods (e.g. still in progress or upcoming);
+ *  - it ties another period for the top or bottom spot, so there is no single "best"/"worst";
+ *  - "best" would not be a gain (pct must be > 0) or "worst" would not be a loss (pct must be < 0).
+ */
+export function periodExtreme(activeKey: string, points: PeriodGrowthPoint[]): PeriodExtreme | null {
+  const ranked = points.filter((p): p is { key: string; pct: number } => p.pct !== null && Number.isFinite(p.pct));
+  if (ranked.length < 2) return null;
+  const active = ranked.find(p => p.key === activeKey);
+  if (!active) return null;
+  const max = Math.max(...ranked.map(p => p.pct));
+  const min = Math.min(...ranked.map(p => p.pct));
+  if (active.pct === max && max > 0 && ranked.filter(p => p.pct === max).length === 1) {
+    return { kind: 'best', pct: active.pct };
+  }
+  if (active.pct === min && min < 0 && ranked.filter(p => p.pct === min).length === 1) {
+    return { kind: 'worst', pct: active.pct };
+  }
+  return null;
+}
+
 export function buildGrowthComparison(
   type: PeriodType,
   yoy: { prevValue: number; pct: number } | null,
