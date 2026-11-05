@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { logClientError } from '@/lib/clientErrorLogging';
 import {
   buildPeriods, periodStatus, buildSnapshot, buildActivity, projectPeriod, calendarMonths, fyStartYearFor, buildGrowthComparison, periodOverPeriodBadge, percentChangeOver, nearestSnapshot, periodOpeningAsOf, periodClosingAsOf,
-  type PeriodDef, type PeriodType, type HistoricalPriceMap, type PeriodGrowthPoint, periodExtreme,
+  type PeriodDef, type PeriodType, type HistoricalPriceMap, type PeriodGrowthPoint, periodExtreme, hasRecordedBaseline,
 } from '@/lib/periodReports';
 import { parseLocalDate } from '@/lib/dateUtils';
 import { buildPeriodBridge, type PeriodBridge } from '@/lib/netWorthMovement';
@@ -233,7 +233,7 @@ const ReportsContent = () => {
       const prevFYPeriods = buildPeriods(fyStartYear - 1, type);
       prev = prevFYPeriods[prevFYPeriods.length - 1];
     }
-    if (!prev) return null;
+    if (!prev || !hasRecordedBaseline(prev)) return null; // before FY2026-27 the baseline is not real data
     const prevSt = periodStatus(prev);
     const prevEnd = periodClosingAsOf(prev, prevSt);
     const prevSnap = buildSnapshot(prevEnd, transactions, currentPrices, symbolMetaLite, history, cash, { historicalPrices, useLive: false });
@@ -337,7 +337,7 @@ const ReportsContent = () => {
         let prev: PeriodDef | undefined;
         if (i > 0) prev = ps[i - 1];
         else if (fy - 1 >= earliestFYStartYear) { const pf = buildPeriods(fy - 1, type); prev = pf[pf.length - 1]; }
-        if (!prev) return; // first period on record: no baseline, so not ranked
+        if (!prev || !hasRecordedBaseline(prev)) return; // no recorded baseline (before FY2026-27): not ranked
         const base = netWorthAtClose(prev);
         out.push({ key: p.key, pct: percentChangeOver(netWorthAtClose(p) - base, base) });
       });

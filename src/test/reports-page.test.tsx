@@ -318,7 +318,7 @@ describe('Reports page', () => {
     expect(screen.queryByText('AUM Growth')).not.toBeInTheDocument();
   });
 
-  it('compares H1 against the prior fiscal year\'s H2 instead of showing "First period", when that prior-FY data actually exists', async () => {
+  it('does not compare H1 FY2026-27 against the pre-recording H2 FY2025-26, even when that data exists', async () => {
     // Only historical close available: ₹130 on 2026-02-01, inside H2 FY2025-26
     // (Oct 2025–Mar 2026) but after the YoY lookback date (2025-08-22).
     historicalPriceRows.push({ symbol: 'TCS', date: '2026-02-01', close: 130 });
@@ -335,19 +335,21 @@ describe('Reports page', () => {
     // active period. H1 is index 0 of this FY's half list, so its real predecessor,
     // H2 FY2025-26, isn't in that list at all — it has to be looked up in the prior FY.
     await waitFor(() => expect(screen.getByText('H1 · Apr–Sep 2026')).toBeInTheDocument());
-    expect(screen.queryByText('First period')).not.toBeInTheDocument();
 
     // H2 FY2025-26 ends 2026-04-01; the ₹130 close (2026-02-01) is the latest at-or-before
     // that date → prev netWorth = 10 × ₹130 = ₹1,300. Today, live @ ₹200 → ₹2,000.
     // Δ = 700, % = 700 / 1300 × 100 = 53.8461...% → "+53.85%".
-    await waitFor(() => expect(screen.getByText('+53.85% vs H2 2025-26')).toBeInTheDocument());
+    // Before FY2026-27 nothing is a recorded baseline, so H2 FY2025-26 is NOT used (it was +53.85%
+    // before the recording-start cutoff).
+    await waitFor(() => expect(screen.getAllByText('First period').length).toBeGreaterThan(0));
+    expect(screen.queryByText(/vs H2 2025-26/)).not.toBeInTheDocument();
 
-    // AUM Growth chart should also now render (both yoy and periodOverPeriod resolved).
-    expect(screen.getByText('AUM Growth')).toBeInTheDocument();
+    // No period-over-period baseline → the AUM Growth chart is hidden.
+    expect(screen.queryByText('AUM Growth')).not.toBeInTheDocument();
 
     // Headline strip badge: "QoQ" only ever means Quarter-over-Quarter — Half-Yearly
     // view must label this same comparison "HoH" instead, not the quarterly acronym.
-    expect(screen.getByText('+53.85% HoH')).toBeInTheDocument();
+    expect(screen.queryByText(/HoH/)).not.toBeInTheDocument();
     expect(screen.queryByText(/QoQ/)).not.toBeInTheDocument();
   });
 });
@@ -356,25 +358,23 @@ describe('Reports page — best / worst period label on the Earnings cover', () 
   beforeEach(() => {
     historicalPriceRows.length = 0;
     vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-08-22T00:00:00Z')); // inside Q2 FY2026-27
+    vi.setSystemTime(new Date('2027-01-15T00:00:00Z')); // Q3 FY2026-27 completed, Q4 in progress
   });
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  // One ₹-per-unit price per quarter-end gives AUM = 10 × close (no cash, no snapshots):
-  //  Q2 FY25-26 (close 90)  → 900   (−10% vs Q1)
-  //  Q3 FY25-26 (close 100) → 1000  (+11.11% vs Q2)
-  //  Q4 FY25-26 (close 100) → 1000  (0% vs Q3)
-  //  Q1 FY26-27 (close 150) → 1500  (+50% vs Q4)  ← best
-  // Q1 FY25-26 has no prior quarter on record, so it is not ranked.
+  // Recording starts at FY2026-27. The 2025 holding is priced at ₹1 on 31-Mar-2026, so the pre-recording
+  // Q4 FY25-26 AUM is tiny. AUM = 10 × close:
+  //  Q1 FY26-27 (close 100) → 1000  (no QoQ: its baseline is pre-recording, so it is not ranked)
+  //  Q2 FY26-27 (close 90)  → 900   (−10.00% QoQ)  ← worst
+  //  Q3 FY26-27 (close 110) → 1100  (+22.22% QoQ)  ← best
   const quarterFixture = () => {
     historicalPriceRows.push(
-      { symbol: 'TCS', date: '2025-06-30', close: 100 },
-      { symbol: 'TCS', date: '2025-09-30', close: 90 },
-      { symbol: 'TCS', date: '2025-12-31', close: 100 },
-      { symbol: 'TCS', date: '2026-03-31', close: 100 },
-      { symbol: 'TCS', date: '2026-06-30', close: 150 },
+      { symbol: 'TCS', date: '2026-03-31', close: 1 },
+      { symbol: 'TCS', date: '2026-06-30', close: 100 },
+      { symbol: 'TCS', date: '2026-09-30', close: 90 },
+      { symbol: 'TCS', date: '2026-12-31', close: 110 },
     );
     mockedUsePortfolio.mockReturnValue(baseHookValue({
       transactions: [{ id: '1', symbol: 'TCS', type: 'BUY', quantity: 10, price: 100, date: '2025-04-15' }],
@@ -382,39 +382,36 @@ describe('Reports page — best / worst period label on the Earnings cover', () 
     }));
   };
 
-  it('shows "Best quarter so far" with the QoQ figure when the completed quarter is the top-ranked one', async () => {
+  it('shows "Best quarter so far" with the QoQ figure for the top-ranked completed FY2026-27 quarter', async () => {
+    quarterFixture();
+    renderReports();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Q3 2026-27/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Q3 2026-27/ }));
+
+    await waitFor(() => expect(screen.getByText('Best quarter so far · +22.22% QoQ')).toBeInTheDocument());
+    expect(screen.queryByText(/Worst quarter so far/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Worst quarter so far" for the bottom-ranked completed FY2026-27 quarter', async () => {
+    quarterFixture();
+    renderReports();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Q2 2026-27/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Q2 2026-27/ }));
+
+    await waitFor(() => expect(screen.getByText('Worst quarter so far · -10.00% QoQ')).toBeInTheDocument());
+  });
+
+  it('does not show the inflated pre-recording QoQ for Q1 FY2026-27, nor rank it', async () => {
     quarterFixture();
     renderReports();
 
     await waitFor(() => expect(screen.getByRole('button', { name: /Q1 2026-27/ })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /Q1 2026-27/ }));
 
-    await waitFor(() => expect(screen.getByText('Best quarter so far · +50.00% QoQ')).toBeInTheDocument());
-    expect(screen.queryByText(/Worst quarter so far/)).not.toBeInTheDocument();
-  });
-
-  it('shows "Worst quarter so far" for the bottom-ranked completed quarter', async () => {
-    quarterFixture();
-    renderReports();
-
-    await waitFor(() => expect(screen.getByText('FY2026-27')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /Previous fiscal year/i }));
-    await waitFor(() => expect(screen.getByRole('button', { name: /Q2 2025-26/ })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /Q2 2025-26/ }));
-
-    await waitFor(() => expect(screen.getByText('Worst quarter so far · -10.00% QoQ')).toBeInTheDocument());
-  });
-
-  it('shows no best/worst label for a quarter in the middle of the ranking', async () => {
-    quarterFixture();
-    renderReports();
-
-    await waitFor(() => expect(screen.getByText('FY2026-27')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /Previous fiscal year/i }));
-    await waitFor(() => expect(screen.getAllByRole('button', { name: /Q4 2025-26/ })[0]).toBeInTheDocument());
-    fireEvent.click(screen.getAllByRole('button', { name: /Q4 2025-26/ })[0]); // period picker chip (the name also appears in a movement column)
-
-    await waitFor(() => expect(screen.getByText('Q4 · Jan–Mar 2026')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('First period').length).toBeGreaterThan(0));
+    expect(screen.queryByText(/QoQ/)).not.toBeInTheDocument();
     expect(screen.queryByText(/so far/)).not.toBeInTheDocument();
   });
 });
