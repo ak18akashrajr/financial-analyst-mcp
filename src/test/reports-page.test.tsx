@@ -223,7 +223,7 @@ describe('Reports page', () => {
     expect(screen.getByRole('button', { name: /Next fiscal year/i })).toBeDisabled();
   });
 
-  it('hides the YoY chip and AUM Growth chart when the prior-year comparison predates the recording start (FY2026-27)', async () => {
+  it('hides the YoY figure and the last-year bar when the prior-year comparison predates the recording start (FY2026-27)', async () => {
     // Default "now" is 2026-08-22: the prior-year point (2025-08-22) is before 1-Apr-2026, so no YoY is shown.
     historicalPriceRows.push({ symbol: 'TCS', date: '2025-08-01', close: 120 });
     mockedUsePortfolio.mockReturnValue(baseHookValue({
@@ -234,7 +234,10 @@ describe('Reports page', () => {
 
     await waitFor(() => expect(screen.getByText('Board Commentary')).toBeInTheDocument());
     expect(screen.queryByText(/% YoY/)).not.toBeInTheDocument();
-    expect(screen.queryByText('AUM Growth')).not.toBeInTheDocument();
+    // The chart still shows, with the previous-quarter and current-quarter bars only.
+    const card = (await screen.findByText('AUM Growth')).closest('.rounded-2xl') as HTMLElement;
+    expect(within(card).getByText('vs previous period (Q1 2026-27): +66.67%')).toBeInTheDocument();
+    expect(within(card).queryByText(/vs last year/)).not.toBeInTheDocument();
   });
 
   it('shows a YoY growth chip once the prior-year comparison is inside recorded history', async () => {

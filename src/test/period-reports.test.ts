@@ -259,12 +259,23 @@ describe('buildGrowthComparison', () => {
   const yoy = { prevValue: 1200, pct: 66.67 };
   const periodOverPeriod = { prevLabel: 'Q1 2026-27', prevValue: 1200, pct: 66.67 };
 
-  it('returns null when there is no prior-year comparison', () => {
-    expect(buildGrowthComparison('quarter', null, periodOverPeriod, 2000)).toBeNull();
+  it('leaves out the prior-year bar when there is no recorded prior-year comparison', () => {
+    const result = buildGrowthComparison('quarter', null, periodOverPeriod, 2000);
+    expect(result?.data.map(d => d.label)).toEqual(['Last Quarter', 'Current Quarter']);
+    expect(result?.yoyPct).toBeNull();
+    expect(result?.periodOverPeriodPct).toBe(66.67);
   });
 
-  it('returns null when there is no previous-period comparison', () => {
-    expect(buildGrowthComparison('quarter', yoy, null, 2000)).toBeNull();
+  it('leaves out the previous-period bar when there is no recorded previous period', () => {
+    const result = buildGrowthComparison('quarter', yoy, null, 2000);
+    expect(result?.data.map(d => d.label)).toEqual(['Last Year', 'Current Quarter']);
+    expect(result?.periodOverPeriodLabel).toBeNull();
+    expect(result?.periodOverPeriodPct).toBeNull();
+    expect(result?.yoyPct).toBe(66.67);
+  });
+
+  it('returns null when only the current bar is left (nothing to compare against)', () => {
+    expect(buildGrowthComparison('quarter', null, null, 2000)).toBeNull();
   });
 
   it('labels bars generically ("Last Quarter"/"Current Quarter"), not with the period\'s specific code', () => {
