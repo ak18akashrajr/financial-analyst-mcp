@@ -439,9 +439,16 @@ export interface GrowthComparisonPoint {
   value: number;
 }
 export interface GrowthComparison {
-  data: [GrowthComparisonPoint, GrowthComparisonPoint, GrowthComparisonPoint];
-  yoyPct: number;
-  periodOverPeriodLabel: string;
+  /**
+   * Bars in order: prior-year bar, previous-period bar, current-period bar. A prior-year or previous-period
+   * bar is left out when it has no recorded baseline (before the recording start), so the chart can have
+   * 2 or 3 bars. The current bar is always present.
+   */
+  data: GrowthComparisonPoint[];
+  /** Null when there is no recorded prior-year baseline. */
+  yoyPct: number | null;
+  /** Null when there is no recorded previous period. */
+  periodOverPeriodLabel: string | null;
   /** Null when the previous period's AUM was zero (or negative) — there is no base to take a % of. */
   periodOverPeriodPct: number | null;
 }
@@ -511,7 +518,6 @@ export function buildGrowthComparison(
   periodOverPeriod: { prevLabel: string; prevValue: number; pct: number | null } | null,
   currentValue: number,
 ): GrowthComparison | null {
-  if (!yoy || !periodOverPeriod) return null;
   // Yearly view's "previous period" is a full prior FY, which sits almost exactly
   // where the YoY bar (same calendar date, 1 year ago) already sits too — word them
   // distinctly ("1 Year Ago" vs "Last Year") so the two bars don't read as the same
@@ -520,14 +526,16 @@ export function buildGrowthComparison(
   const yoyLabel = type === 'year' ? '1 Year Ago' : 'Last Year';
   const periodNoun = type === 'half' ? 'Half' : type === 'year' ? 'Year' : 'Quarter';
   const prevLabel = type === 'year' ? 'Last Year' : `Last ${periodNoun}`;
+  const data: GrowthComparisonPoint[] = [];
+  if (yoy) data.push({ label: yoyLabel, value: yoy.prevValue });
+  if (periodOverPeriod) data.push({ label: prevLabel, value: periodOverPeriod.prevValue });
+  data.push({ label: `Current ${periodNoun}`, value: currentValue });
+  // One bar on its own is not a comparison.
+  if (data.length < 2) return null;
   return {
-    data: [
-      { label: yoyLabel, value: yoy.prevValue },
-      { label: prevLabel, value: periodOverPeriod.prevValue },
-      { label: `Current ${periodNoun}`, value: currentValue },
-    ],
-    yoyPct: yoy.pct,
-    periodOverPeriodLabel: periodOverPeriod.prevLabel,
-    periodOverPeriodPct: periodOverPeriod.pct,
+    data,
+    yoyPct: yoy ? yoy.pct : null,
+    periodOverPeriodLabel: periodOverPeriod ? periodOverPeriod.prevLabel : null,
+    periodOverPeriodPct: periodOverPeriod ? periodOverPeriod.pct : null,
   };
 }

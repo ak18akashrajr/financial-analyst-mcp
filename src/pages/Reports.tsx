@@ -688,9 +688,11 @@ One concise paragraph (3-4 sentences) summarising the period.
             <div className="flex items-center gap-2 mb-3">
               <TrendingUp className="w-4 h-4 text-foreground" />
               <h3 className="text-sm font-semibold text-foreground">AUM Growth</h3>
-              <span className={`ml-auto text-xs font-medium ${growth.yoyPct >= 0 ? 'text-gain' : 'text-loss'}`}>
-                {fmtPct(growth.yoyPct)} YoY
-              </span>
+              {growth.yoyPct !== null && (
+                <span className={`ml-auto text-xs font-medium ${growth.yoyPct >= 0 ? 'text-gain' : 'text-loss'}`}>
+                  {fmtPct(growth.yoyPct)} YoY
+                </span>
+              )}
             </div>
             <div className="h-56">
               <ResponsiveContainer>
@@ -704,7 +706,10 @@ One concise paragraph (3-4 sentences) summarising the period.
               </ResponsiveContainer>
             </div>
             <p className="text-[11px] text-muted-foreground mt-2">
-              vs previous period ({growth.periodOverPeriodLabel}): {fmtPct(growth.periodOverPeriodPct)} · vs last year: {fmtPct(growth.yoyPct)}
+              {[
+                growth.periodOverPeriodLabel !== null ? `vs previous period (${growth.periodOverPeriodLabel}): ${fmtPct(growth.periodOverPeriodPct)}` : null,
+                growth.yoyPct !== null ? `vs last year: ${fmtPct(growth.yoyPct)}` : null,
+              ].filter(Boolean).join(' · ')}
             </p>
           </Card>
         )}
