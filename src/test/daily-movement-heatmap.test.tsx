@@ -2,18 +2,25 @@
 // summary must show the green/red/grey counts of active trading days.
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { logClientError } from '@/lib/clientErrorLogging';
 import { DailyMovementHeatmap } from '@/components/DailyMovementHeatmap';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import type { Transaction } from '@/types/portfolio';
 
+vi.mock('@/lib/clientErrorLogging', () => ({ logClientError: vi.fn() }));
 vi.mock('@/contexts/PrivacyContext', () => ({ usePrivacy: vi.fn() }));
 
 const mk = (...closes: [string, number][]) => closes.map(([date, close]) => ({ symbol: 'AAA', date, close }));
 const DEFAULT_PRICES = mk(['2026-10-26', 100], ['2026-10-27', 110], ['2026-10-28', 99], ['2026-10-29', 99.01]);
-const state = vi.hoisted(() => ({ prices: [] as { symbol: string; date: string; close: number }[] }));
+const state = vi.hoisted(() => ({
+  prices: [] as { symbol: string; date: string; close: number }[],
+  afterRefresh: null as { symbol: string; date: string; close: number }[] | null,
+  invoke: undefined as any,
+}));
 
 vi.mock('@/integrations/supabase/client', () => ({
   supabase: {
+    functions: { invoke: (...a: unknown[]) => state.invoke(...a) },
     from: () => {
       const q: any = {
         select: () => q,
@@ -33,6 +40,12 @@ const TXNS: Transaction[] = [
 describe('DailyMovementHeatmap', () => {
   beforeEach(() => {
     state.prices = DEFAULT_PRICES;
+    state.afterRefresh = null;
+    // The edge function upserts into historical_prices; model that by swapping what the next read returns.
+    state.invoke = vi.fn(async () => {
+      if (state.afterRefresh) state.prices = state.afterRefresh;
+      return { data: {}, error: null };
+    });
     vi.mocked(usePrivacy).mockReturnValue({ hidden: false, toggle: vi.fn() } as unknown as ReturnType<typeof usePrivacy>);
   });
 
@@ -115,5 +128,32 @@ describe('DailyMovementHeatmap', () => {
     fireEvent.pointerMove(cell, { pointerType: 'mouse' });
     await screen.findByText(/What moved/);
     expect(screen.queryByText('+₹100')).not.toBeInTheDocument();
+  });
+
+  it('auto-refreshes daily prices on load (no manual backfill) and shows the newly fetched day', async () => {
+    state.afterRefresh = [...DEFAULT_PRICES, { symbol: 'AAA', date: '2026-10-30', close: 120 }];
+    render(<DailyMovementHeatmap transactions={TXNS} />);
+    expect(await screen.findByRole('button', { name: /Daily movement for .*29 Oct,? 2026/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Daily movement for .*30 Oct,? 2026/ })).toBeInTheDocument();
+    expect(state.invoke).toHaveBeenCalledTimes(1);
+    const [fn, opts] = state.invoke.mock.calls[0];
+    expect(fn).toBe('fetch-historical-prices');
+    expect(opts.body).toMatchObject({ symbols: ['AAA'], interval: '1d' });
+    expect(typeof opts.body.range).toBe('string');
+    expect(await screen.findByTestId('price-freshness')).toHaveTextContent('Daily prices through 2026-10-30');
+  });
+
+  it('keeps showing stored data and says so when the refresh fails', async () => {
+    state.invoke = vi.fn(async () => ({ data: null, error: new Error('boom') }));
+    render(<DailyMovementHeatmap transactions={TXNS} />);
+    expect(await screen.findByRole('button', { name: /Daily movement for .*27 Oct,? 2026/ })).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn't refresh prices — showing stored data through 2026-10-29/)).toBeInTheDocument();
+    expect(logClientError).toHaveBeenCalled();
+  });
+
+  it('does not call the refresh with no holdings', async () => {
+    render(<DailyMovementHeatmap transactions={[]} />);
+    await screen.findByText(/Not enough daily price history/);
+    expect(state.invoke).not.toHaveBeenCalled();
   });
 });
