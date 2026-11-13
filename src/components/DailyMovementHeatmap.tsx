@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Activity, ChevronDown, Info } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { logClientError } from '@/lib/clientErrorLogging';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { istDayOf } from '@/lib/dateUtils';
+import { pickRefreshRange } from '@/lib/dailyPriceRefresh';
 import {
   NEUTRAL_BAND_PCT,
   buildDailyMovements,
@@ -191,6 +192,10 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
   const [loading, setLoading] = useState(true);
   const [selectedFy, setSelectedFy] = useState<number | null>(null);
   const [showMonths, setShowMonths] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const refreshedFor = useRef<string | null>(null);
 
   const symbols = useMemo(() => Array.from(new Set(transactions.map((t) => t.symbol))).sort(), [transactions]);
 
@@ -202,7 +207,8 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
         setLoading(false);
         return;
       }
-      setLoading(true);
+      // Only the first load shows the skeleton; the post-refresh reload swaps data in place.
+      if (reloadKey === 0) setLoading(true);
       const { data, error } = await fetchAllPages((from, to) =>
         supabase
           .from('historical_prices')
@@ -218,7 +224,33 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [symbols]);
+  }, [symbols, reloadKey]);
+
+  // On every visit, top up the stored daily bars from Yahoo (fetch-historical-prices upserts them), then
+  // reload. Runs once per symbol set per mount, after the stored rows have loaded so the range can be sized
+  // to the gap. A failure leaves the stored data in place and is surfaced as a note, not an empty card.
+  useEffect(() => {
+    const key = symbols.join(',');
+    if (loading || symbols.length === 0 || refreshedFor.current === key) return;
+    refreshedFor.current = key;
+    const latest: Record<string, string> = {};
+    for (const r of rows) if (!latest[r.symbol] || r.date > latest[r.symbol]) latest[r.symbol] = r.date;
+    const range = pickRefreshRange(symbols, latest, istDayOf(new Date().toISOString()));
+    (async () => {
+      setRefreshing(true);
+      setRefreshFailed(false);
+      try {
+        const { error } = await supabase.functions.invoke('fetch-historical-prices', { body: { symbols, range, interval: '1d' } });
+        if (error) throw error;
+        setReloadKey((k) => k + 1);
+      } catch (e: any) {
+        logClientError('DailyMovementHeatmap', 'Auto-refresh of daily prices failed', { error: e?.message ?? String(e), symbols, range });
+        setRefreshFailed(true);
+      } finally {
+        setRefreshing(false);
+      }
+    })();
+  }, [loading, symbols, rows]);
 
   const { days, symbolsWithoutPrices } = useMemo(() => {
     const bySym: PricesBySymbol = {};
@@ -226,6 +258,7 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
     return buildDailyMovements(transactions, bySym);
   }, [rows, transactions]);
 
+  const latestBar = useMemo(() => rows.reduce((m, r) => (r.date > m ? r.date : m), ''), [rows]);
   const todayIst = istDayOf(new Date().toISOString());
   const months = useMemo(() => summarizeMonths(days, todayIst), [days, todayIst]);
   const fys = useMemo(() => [...new Set(days.map((d) => fyOf(d.date)))].sort((a, b) => a - b), [days]);
@@ -251,14 +284,14 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
         removed from the move). A day within ±{NEUTRAL_BAND_PCT}% counts as a minimal price movement. Hover a day for what moved; hover a month for its counts.
       </p>
 
-      {loading ? (
-        <GridSkeleton rows={4} cols={13} label="Loading daily prices…" />
+      {loading || (refreshing && days.length === 0) ? (
+        <GridSkeleton rows={4} cols={13} label={loading ? 'Loading daily prices…' : 'Fetching daily prices…'} />
       ) : days.length === 0 ? (
-        <EmptyState compact text="Not enough daily price history. Run “Backfill FY” on the Reports page first." />
+        <EmptyState compact text={refreshFailed ? 'Not enough daily price history, and the automatic price refresh failed. Try again later.' : 'Not enough daily price history.'} />
       ) : (
         <div className="space-y-6">
           <div>
-            <div className="flex items-center gap-1.5 mb-2">
+            <div className="flex flex-wrap items-center gap-1.5 mb-2">
               {fys.map((fy) => (
                 <button
                   key={fy}
@@ -272,6 +305,13 @@ export function DailyMovementHeatmap({ transactions }: { transactions: Transacti
                   {fyLabel(fy)}
                 </button>
               ))}
+              <span className={`ml-auto text-[10px] ${refreshFailed ? 'text-amber-600' : 'text-muted-foreground'}`} data-testid="price-freshness">
+                {refreshing
+                  ? 'Refreshing daily prices…'
+                  : refreshFailed
+                    ? `Couldn't refresh prices — showing stored data${latestBar ? ` through ${latestBar}` : ''}`
+                    : latestBar ? `Daily prices through ${latestBar}` : ''}
+              </span>
             </div>
             {fySummary && fySummary.active > 0 && <div className="mb-2"><FyStatement s={fySummary} hidden={hidden} /></div>}
             <div className="overflow-x-auto">
