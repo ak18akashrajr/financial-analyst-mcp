@@ -47,6 +47,36 @@ if (typeof AbortSignal.timeout !== "function") {
 
 // Tests behave like a reduce-motion user: number count-ups (useCountUp) are skipped so assertions see
 // final values synchronously. Animation tests override window.matchMedia themselves.
+// Node 25+ ships an experimental global `localStorage` / `sessionStorage` that, without a
+// --localstorage-file flag, is an object with no methods (getItem is not a function). It shadows
+// jsdom's working Storage in this environment. CI runs Node 22, where the jsdom one is used. Only
+// when the global is missing the Storage methods do we install a small in-memory replacement,
+// so tests behave the same on either Node version.
+function installStorageIfBroken(name: "localStorage" | "sessionStorage") {
+  const current = (globalThis as Record<string, unknown>)[name] as Partial<Storage> | undefined;
+  if (current && typeof current.getItem === "function" && typeof current.clear === "function") return;
+  const data = new Map<string, string>();
+  const shim: Storage = {
+    get length() {
+      return data.size;
+    },
+    key: (index: number) => Array.from(data.keys())[index] ?? null,
+    getItem: (key: string) => (data.has(String(key)) ? (data.get(String(key)) as string) : null),
+    setItem: (key: string, value: string) => {
+      data.set(String(key), String(value));
+    },
+    removeItem: (key: string) => {
+      data.delete(String(key));
+    },
+    clear: () => {
+      data.clear();
+    },
+  };
+  Object.defineProperty(globalThis, name, { value: shim, configurable: true, writable: true });
+}
+installStorageIfBroken("localStorage");
+installStorageIfBroken("sessionStorage");
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({
