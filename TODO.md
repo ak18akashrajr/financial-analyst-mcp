@@ -3,6 +3,29 @@
 Running list of action items for this repo. Add new items to the bottom of the relevant section;
 check items off (`- [x]`) when merged, and note the PR number.
 
+## Status as of 2026-11-26 — immediate next action
+
+Two branches are pushed to `origin` and ready for a PR; neither is merged or opened yet.
+
+- **`fix/audit-medium-batch-8-monthly-rate`** (commit `c0ad27a`) — closes **M12** below (one
+  monthly-rate convention, `(1+r)^(1/12)−1`, across the Monte Carlo/FIRE/step-up code). Frontend
+  only, no edge-function deploy needed. Tests and `tsc --noEmit` pass. **Not pushed yet** — push
+  it, then open the PR.
+- **`fix/pre-existing-test-failures`** (commit `a5ddcd2`, pushed) — unrelated to the audit: a
+  Node 25+ environment bug (an experimental global `localStorage`/`sessionStorage` with no working
+  methods was shadowing jsdom's own) was causing 44 local test failures across 7 files
+  (`app-layout`, `reports-page`, `side-nav-grouping`, `mobile-top-nav`, `sip-summary`,
+  `privacy-persistence`, `theme-init-script`). CI runs Node 22 and was never affected. Fixed with a
+  guarded shim in [`src/test/setup.ts`](src/test/setup.ts) that only installs when the global is
+  broken. Full suite now passes 1352/1352. **Next: open a PR for this branch too.**
+
+**Immediate action:** open PRs for both branches above (`gh pr create` or the compare links), get
+the three required checks green, merge. After that, the remaining Medium items (M1, M3, M5, M7,
+M13, M15–M19, M21, M23) are all blocked on the owner decisions in the "Questions that block (or
+shape) the fixes above" section further down — answer those next, in particular M15 (relabel vs.
+recompute portfolio volatility) and M17 (reject oversells at entry, including a SQL RPC change)
+where the owner has already been asked to pick.
+
 ## Open: calculation audit (2026-10-01)
 
 Whole-codebase audit of calculation logic (client `src/`, edge functions and SQL in `supabase/`).
